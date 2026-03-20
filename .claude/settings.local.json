@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(go list:*)",
+      "Bash(go get:*)",
+      "Bash(go build:*)",
+      "Bash(npm install:*)",
+      "Bash(go mod:*)"
+    ]
+  }
+}

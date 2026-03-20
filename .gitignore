@@ -1,0 +1,48 @@
+# ========== Common ==========
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.sqlite
+*.db
+
+# ========== Go ==========
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+sync_relay.db
+
+# ========== Node & JS Frameworks ==========
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# React / Next.js / Vite / Expo
+dist/
+build/
+out/
+.next/
+.expo/
+web-build/
+.swc/
+coverage/
+
+# ========== Wails (server-dashboard) ==========
+# Wails build output
+build/bin/
+
+# ========== IDEs & Editors ==========
+.idea/
+.vscode/
+*.swp
+*.swo

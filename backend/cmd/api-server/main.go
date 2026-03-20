@@ -1,0 +1,294 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/edulinker/backend/internal/config"
+	"github.com/edulinker/backend/internal/core/aigateway"
+	"github.com/edulinker/backend/internal/core/auth"
+	"github.com/edulinker/backend/internal/core/filegateway"
+	"github.com/edulinker/backend/internal/core/handlers"
+	"github.com/edulinker/backend/internal/core/middleware"
+	"github.com/edulinker/backend/internal/core/notify"
+	"github.com/edulinker/backend/internal/core/registry"
+	"github.com/edulinker/backend/internal/core/syncagent"
+	"github.com/edulinker/backend/internal/database"
+	"github.com/edulinker/backend/internal/database/models"
+	"github.com/edulinker/backend/internal/plugins/aianalysis"
+	"github.com/edulinker/backend/internal/plugins/announcement"
+	"github.com/edulinker/backend/internal/plugins/attendance"
+	"github.com/edulinker/backend/internal/plugins/curriculum"
+	"github.com/edulinker/backend/internal/plugins/gatong"
+	"github.com/edulinker/backend/internal/plugins/linker"
+	"github.com/edulinker/backend/internal/plugins/messenger"
+	"github.com/edulinker/backend/internal/plugins/pcinfo"
+	"github.com/edulinker/backend/internal/plugins/schoolevents"
+	"github.com/edulinker/backend/internal/plugins/sendoc"
+	"github.com/edulinker/backend/internal/plugins/studentalert"
+	"github.com/edulinker/backend/internal/plugins/studentmgmt"
+	"github.com/edulinker/backend/internal/plugins/teacherscreen"
+	"github.com/edulinker/backend/internal/plugins/todo"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/websocket/v2"
+)
+
+func main() {
+	// Load configuration
+	cfg := config.Load()
+
+	// Connect to database
+	db, err := database.Connect(cfg.Database)
+	if err != nil {
+		log.Fatalf("❌ Database connection failed: %v", err)
+	}
+
+	// Run migrations (includes Notification and FileRecord tables)
+	if err := database.AutoMigrate(db); err != nil {
+		log.Fatalf("❌ Migration failed: %v", err)
+	}
+
+	// Seed phase 1 plugins
+	if err := database.SeedPlugins(db); err != nil {
+		log.Fatalf("❌ Seed failed: %v", err)
+	}
+
+	// Connect to Redis
+	rdb, err := database.ConnectRedis(cfg.Redis)
+	if err != nil {
+		log.Printf("⚠️ Redis connection failed (non-fatal): %v", err)
+	}
+
+	// Initialize services
+	authSvc := auth.NewService(cfg.JWT.Secret, cfg.JWT.ExpiryHours, cfg.JWT.RefreshExpiryHr)
+
+	// Initialize WebSocket Hub
+	wsHub := notify.NewHub(rdb)
+	go wsHub.Run()
+
+	// Initialize Notification Service
+	notifySvc := notify.NewNotificationService(db, wsHub)
+
+	// Initialize File Gateway
+	fileGW, err := filegateway.NewGateway(db, filegateway.GatewayConfig{
+		MinIOEndpoint:   cfg.MinIO.Endpoint,
+		MinIOAccessKey:  cfg.MinIO.AccessKey,
+		MinIOSecretKey:  cfg.MinIO.SecretKey,
+		MinIOBucket:     cfg.MinIO.Bucket,
+		MinIOUseSSL:     cfg.MinIO.UseSSL,
+		WasabiEndpoint:  cfg.Wasabi.Endpoint,
+		WasabiAccessKey: cfg.Wasabi.AccessKey,
+		WasabiSecretKey: cfg.Wasabi.SecretKey,
+		WasabiBucket:    cfg.Wasabi.Bucket,
+		WasabiRegion:    cfg.Wasabi.Region,
+	})
+	if err != nil {
+		log.Printf("⚠️ File Gateway initialization failed (non-fatal): %v", err)
+	}
+
+	// Initialize AI Gateway (Proxy to local Ollama)
+	aiSvc := aigateway.NewService("http://localhost:11434")
+
+	// Initialize plugin manager & register Phase 1 plugins
+	pluginMgr := registry.NewManager()
+
+	msgPlugin := messenger.New(db, wsHub)
+	todoPlugin := todo.New(db)
+	annPlugin := announcement.New(db, notifySvc)
+	alertPlugin := studentalert.New(db, notifySvc)
+	attnPlugin := attendance.New(db, notifySvc)
+	gatongPlugin := gatong.New(db, notifySvc)
+	sendocPlugin := sendoc.New(db)
+	smPlugin := studentmgmt.New(db)
+	curriculumPlugin := curriculum.New(db)
+	aiPlugin := aianalysis.New(db)
+	eventsPlugin := schoolevents.New(db)
+	linkerPlugin := linker.New(db)
+	pcPlugin := pcinfo.New(db)
+	screenPlugin := teacherscreen.New(db)
+
+	pluginMgr.Register(msgPlugin)
+	pluginMgr.Register(todoPlugin)
+	pluginMgr.Register(annPlugin)
+	pluginMgr.Register(alertPlugin)
+	pluginMgr.Register(attnPlugin)
+	pluginMgr.Register(gatongPlugin)
+	pluginMgr.Register(sendocPlugin)
+	pluginMgr.Register(smPlugin)
+	pluginMgr.Register(curriculumPlugin)
+	pluginMgr.Register(aiPlugin)
+	pluginMgr.Register(eventsPlugin)
+	pluginMgr.Register(linkerPlugin)
+	pluginMgr.Register(pcPlugin)
+	pluginMgr.Register(screenPlugin)
+
+	// Initialize SyncAgent (Bridge to Cloud)
+	agent := syncagent.New(db, "http://localhost:8080/api/sync")
+	syncagent.RegisterProvider("announcement", annPlugin)
+	syncagent.RegisterProvider("schoolevents", eventsPlugin)
+	syncagent.RegisterProvider("curriculum", curriculumPlugin)
+	agent.Start()
+
+	// Create Fiber app
+	app := fiber.New(fiber.Config{
+		AppName:      "edulinker API v1.0.0",
+		ErrorHandler: customErrorHandler,
+	})
+
+	// Global middleware
+	app.Use(recover.New())
+	app.Use(logger.New(logger.Config{
+		Format: "${time} | ${status} | ${latency} | ${method} ${path}\n",
+	}))
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowMethods: "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
+	}))
+
+	// --- Health check ---
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":     "ok",
+			"service":    "edulinker-api",
+			"version":    "1.0.0",
+			"ws_clients": wsHub.OnlineCount(),
+		})
+	})
+
+	// --- WebSocket endpoint ---
+	app.Use("/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	app.Get("/ws/connect", websocket.New(func(conn *websocket.Conn) {
+		// Parse token from query parameter
+		tokenStr := conn.Query("token", "")
+		if tokenStr == "" {
+			conn.Close()
+			return
+		}
+
+		claims, err := authSvc.ValidateToken(tokenStr)
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"invalid token"}`))
+			conn.Close()
+			return
+		}
+
+		client := &notify.Client{
+			ID:       claims.UserID,
+			SchoolID: claims.SchoolID,
+			Role:     string(claims.Role),
+			Conn:     conn,
+			Send:     make(chan []byte, 256),
+		}
+
+		wsHub.Register(client)
+		go notify.WritePump(client)
+		notify.ReadPump(client, wsHub)
+	}))
+
+	// --- Public routes (no auth) ---
+	authHandler := handlers.NewAuthHandler(db, authSvc)
+	schoolHandler := handlers.NewSchoolHandler(db)
+	api := app.Group("/api")
+
+	// Mount AI Gateway
+	aiSvc.RegisterRoutes(api.Group("/core"))
+
+	authRoutes := api.Group("/auth")
+	authRoutes.Post("/login", authHandler.Login)
+	authRoutes.Post("/student-login", authHandler.StudentLogin)
+	authRoutes.Post("/refresh", authHandler.Refresh)
+	authRoutes.Post("/register", authHandler.Register)
+	api.Post("/setup", schoolHandler.SetupSchool)
+
+	// --- Protected routes (require auth) ---
+	protected := api.Group("", middleware.AuthMiddleware(authSvc))
+	protected.Get("/auth/me", authHandler.Me)
+
+	// --- Core plugin management ---
+	pluginHandler := handlers.NewPluginHandler(db)
+	coreRoutes := protected.Group("/core")
+	coreRoutes.Get("/plugins", pluginHandler.ListPlugins)
+	coreRoutes.Put("/plugins/:id/toggle", middleware.RoleMiddleware(models.RoleAdmin), pluginHandler.TogglePlugin)
+	coreRoutes.Get("/plugins/:id/status", pluginHandler.GetPluginStatus)
+
+	// --- School management ---
+	coreRoutes.Get("/school", schoolHandler.GetSchool)
+	coreRoutes.Get("/schools", middleware.RoleMiddleware(models.RoleAdmin), schoolHandler.ListSchools)
+
+	// --- User management ---
+	userHandler := handlers.NewUserHandler(db)
+	userRoutes := coreRoutes.Group("/users")
+	userRoutes.Post("/", middleware.RoleMiddleware(models.RoleAdmin), userHandler.CreateUser)
+	userRoutes.Post("/add-student", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.AddStudent)
+	userRoutes.Post("/import-students", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.ImportStudentsExcel)
+	userRoutes.Delete("/students-by-class", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DeleteStudentsByClass)
+	userRoutes.Get("/", userHandler.ListUsers)
+	userRoutes.Get("/:id", userHandler.GetUser)
+	userRoutes.Put("/:id", userHandler.UpdateUser)
+	userRoutes.Delete("/:id", middleware.RoleMiddleware(models.RoleAdmin), userHandler.DeleteUser)
+
+	// --- Notification management ---
+	notifyHandler := handlers.NewNotifyHandler(notifySvc)
+	notifyRoutes := coreRoutes.Group("/notifications")
+	notifyRoutes.Post("/send", notifyHandler.SendNotification)
+	notifyRoutes.Get("/", notifyHandler.GetNotifications)
+	notifyRoutes.Put("/:id/read", notifyHandler.MarkRead)
+	notifyRoutes.Put("/read-all", notifyHandler.MarkAllRead)
+
+	// --- File management ---
+	if fileGW != nil {
+		fileHandler := handlers.NewFileHandler(fileGW)
+		fileRoutes := coreRoutes.Group("/files")
+		fileRoutes.Post("/upload", fileHandler.Upload)
+		fileRoutes.Get("/", fileHandler.ListFiles)
+		fileRoutes.Get("/:id", fileHandler.Download)
+		fileRoutes.Delete("/:id", fileHandler.Delete)
+	}
+
+	// --- Mount plugin routes ---
+	pluginMgr.MountRoutes(app)
+
+	// Start server
+	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
+	log.Printf("🚀 edulinker API server starting on %s", addr)
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := app.Listen(addr); err != nil {
+			log.Fatalf("❌ Server failed: %v", err)
+		}
+	}()
+
+	<-quit
+	log.Println("🛑 Shutting down server...")
+	wsHub.Stop()
+	if err := app.Shutdown(); err != nil {
+		log.Fatalf("❌ Server shutdown failed: %v", err)
+	}
+	log.Println("👋 Server stopped")
+}
+
+func customErrorHandler(c *fiber.Ctx, err error) error {
+	code := fiber.StatusInternalServerError
+	if e, ok := err.(*fiber.Error); ok {
+		code = e.Code
+	}
+	return c.Status(code).JSON(fiber.Map{
+		"error": err.Error(),
+	})
+}
