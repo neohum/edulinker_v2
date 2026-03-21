@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
+
 	"github.com/edulinker/backend/internal/core/filegateway"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -55,10 +58,17 @@ func (h *FileHandler) Download(c *fiber.Ctx) error {
 	}
 	defer reader.Close()
 
+	// Read entire file to set Content-Length properly
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to read file"})
+	}
+
 	c.Set("Content-Type", record.ContentType)
+	c.Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	c.Set("Content-Disposition", "inline; filename=\""+record.FileName+"\"")
 
-	return c.SendStream(reader)
+	return c.Send(data)
 }
 
 // Delete removes a file.

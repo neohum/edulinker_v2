@@ -144,19 +144,31 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
   const handleAddStudent = async () => {
     setAddError('')
     const { grade, classNum, number, name } = addForm
-    if (!grade || !classNum || !number || !name.trim()) {
+    
+    // Explicit check for empty strings or 0/NaN values
+    if (!grade || grade === '0' || !classNum || classNum === '0' || !number || !name.trim()) {
       setAddError('학년, 반, 번호, 이름을 모두 입력해주세요.')
       return
     }
 
     setAdding(true)
     try {
+      const g = parseInt(grade)
+      const c = parseInt(classNum)
+      const n = parseInt(number)
+
+      if (isNaN(g) || isNaN(c) || isNaN(n) || g < 1 || c < 1 || n < 1) {
+        setAddError('학년, 반, 번호는 1 이상의 숫자여야 합니다.')
+        setAdding(false)
+        return
+      }
+
       const res = await apiFetch('/api/core/users/add-student', {
         method: 'POST',
         body: JSON.stringify({
-          grade: parseInt(grade),
-          class_num: parseInt(classNum),
-          number: parseInt(number),
+          grade: g,
+          class_num: c,
+          number: n,
           name: name.trim()
         })
       })
@@ -278,7 +290,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
     if (student) openEditModal(student)
   }
 
-  const isProfileSet = !!(user.grade && user.classNum)
+  const isProfileSet = !!(user.grade && user.grade > 0 && user.classNum && user.classNum > 0)
   const allSelected = students.length > 0 && selectedIds.size === students.length
   const someSelected = selectedIds.size > 0 && selectedIds.size < students.length
 

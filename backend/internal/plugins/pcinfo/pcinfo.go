@@ -21,8 +21,14 @@ type PCRecord struct {
 	CPU        string    `json:"cpu" gorm:"type:varchar(200)"`
 	RAM        string    `json:"ram" gorm:"type:varchar(50)"`
 	Disk       string    `json:"disk" gorm:"type:varchar(100)"`
-	Location   string    `json:"location" gorm:"type:varchar(100)"` // e.g. "3학년 1반"
-	Label      string    `json:"label" gorm:"type:varchar(100)"`    // sticker label
+	Grade      int       `json:"grade" gorm:"column:grade;default:0"`
+	ClassNum   int       `json:"class_num" gorm:"column:class_num;default:0"`
+	Department string    `json:"department" gorm:"type:varchar(100)"`
+	UserName   string    `json:"user_name" gorm:"type:varchar(100)"`
+	Location   string    `json:"location" gorm:"type:varchar(100)"`
+	Label      string    `json:"label" gorm:"type:varchar(100)"`
+	Printers   string    `json:"printers" gorm:"type:text"`
+	Monitors   string    `json:"monitors" gorm:"type:text"`
 	LastSeen   time.Time `json:"last_seen" gorm:"autoUpdateTime"`
 	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
@@ -48,25 +54,74 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Get("/", p.list)
 	r.Get("/:id", p.getOne)
 	r.Put("/:id/label", p.setLabel)
+	r.Delete("/:id", p.delete)
 }
 
 func (p *Plugin) report(c *fiber.Ctx) error {
 	userID, _ := c.Locals("userID").(uuid.UUID)
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
-	var rec PCRecord
-	if err := c.BodyParser(&rec); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	var data map[string]interface{}
+	if err := c.BodyParser(&data); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
 	}
-	rec.UserID = userID
-	rec.SchoolID = schoolID
 
-	// Upsert based on MAC address
-	var existing PCRecord
-	if p.db.Where("school_id = ? AND mac_address = ?", schoolID, rec.MACAddress).First(&existing).Error == nil {
-		rec.ID = existing.ID
+	macAddr, _ := data["mac_address"].(string)
+	userName, _ := data["user_name"].(string)
+	label, _ := data["label"].(string)
+
+	if macAddr == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "MAC address required"})
+	}
+
+	var rec PCRecord
+	// 식별 기준을 MAC 주소 + 사용자 성함 + 라벨로 강화하여 덮어쓰기 방지
+	// 만약 성함이나 라벨이 다르면 동일 PC라도 별개 자산으로 등록 가능
+	query := p.db.Where("school_id = ? AND mac_address = ?", schoolID, macAddr)
+	if userName != "" {
+		query = query.Where("user_name = ?", userName)
+	}
+	if label != "" {
+		query = query.Where("label = ?", label)
+	}
+	
+	err := query.First(&rec).Error
+
+	rec.SchoolID = schoolID
+	rec.UserID = userID
+	
+	// 필드 업데이트
+	if v, ok := data["hostname"].(string); ok { rec.Hostname = v }
+	if v, ok := data["ip_address"].(string); ok { rec.IPAddress = v }
+	if v, ok := data["mac_address"].(string); ok { rec.MACAddress = v }
+	if v, ok := data["os"].(string); ok { rec.OS = v }
+	if v, ok := data["cpu"].(string); ok { rec.CPU = v }
+	if v, ok := data["ram"].(string); ok { rec.RAM = v }
+	if v, ok := data["location"].(string); ok { rec.Location = v }
+	if v, ok := data["label"].(string); ok { rec.Label = v }
+	if v, ok := data["department"].(string); ok { rec.Department = v }
+	if v, ok := data["user_name"].(string); ok { rec.UserName = v }
+	if v, ok := data["printers"].(string); ok { rec.Printers = v }
+	if v, ok := data["monitors"].(string); ok { rec.Monitors = v }
+	
+	if v, ok := data["grade"]; ok {
+		switch val := v.(type) {
+		case float64: rec.Grade = int(val)
+		case int: rec.Grade = val
+		}
+	}
+	if v, ok := data["class_num"]; ok {
+		switch val := v.(type) {
+		case float64: rec.ClassNum = int(val)
+		case int: rec.ClassNum = val
+		}
+	}
+
+	// 저장 (기존 정보가 완벽히 일치할 때만 Save, 아니면 새 ID로 Create)
+	if err == nil {
 		p.db.Save(&rec)
 	} else {
+		rec.ID = uuid.New() // 명시적으로 새 ID 부여
 		p.db.Create(&rec)
 	}
 
@@ -74,23 +129,23 @@ func (p *Plugin) report(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) list(c *fiber.Ctx) error {
-	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
-	location := c.Query("location", "")
-
-	query := p.db.Where("school_id = ?", schoolID)
-	if location != "" {
-		query = query.Where("location = ?", location)
+	val := c.Locals("schoolID")
+	if val == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
 	}
+	schoolID := val.(uuid.UUID)
 
 	var records []PCRecord
-	query.Order("location ASC, label ASC").Find(&records)
+	p.db.Where("school_id = ?", schoolID).Order("grade ASC, class_num ASC, user_name ASC, location ASC").Find(&records)
 	return c.JSON(records)
 }
 
 func (p *Plugin) getOne(c *fiber.Ctx) error {
 	id, _ := uuid.Parse(c.Params("id"))
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	
 	var rec PCRecord
-	if p.db.First(&rec, "id = ?", id).Error != nil {
+	if p.db.Where("id = ? AND school_id = ?", id, schoolID).First(&rec).Error != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "not found"})
 	}
 	return c.JSON(rec)
@@ -98,13 +153,38 @@ func (p *Plugin) getOne(c *fiber.Ctx) error {
 
 func (p *Plugin) setLabel(c *fiber.Ctx) error {
 	id, _ := uuid.Parse(c.Params("id"))
-	var req struct {
-		Label    string `json:"label"`
-		Location string `json:"location"`
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	
+	var data map[string]interface{}
+	c.BodyParser(&data)
+	
+	updates := make(map[string]interface{})
+	stringFields := []string{"label", "location", "department", "user_name", "hostname", "ip_address", "os", "cpu", "ram", "printers", "monitors"}
+	for _, f := range stringFields {
+		if v, ok := data[f].(string); ok { updates[f] = v }
 	}
-	c.BodyParser(&req)
-	p.db.Model(&PCRecord{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"label": req.Label, "location": req.Location,
-	})
+	
+	if v, ok := data["grade"]; ok {
+		switch val := v.(type) {
+		case float64: updates["grade"] = int(val)
+		case int: updates["grade"] = val
+		}
+	}
+	if v, ok := data["class_num"]; ok {
+		switch val := v.(type) {
+		case float64: updates["class_num"] = int(val)
+		case int: updates["class_num"] = val
+		}
+	}
+	
+	p.db.Model(&PCRecord{}).Where("id = ? AND school_id = ?", id, schoolID).Updates(updates)
 	return c.JSON(fiber.Map{"message": "updated"})
+}
+
+func (p *Plugin) delete(c *fiber.Ctx) error {
+	id, _ := uuid.Parse(c.Params("id"))
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	
+	p.db.Where("id = ? AND school_id = ?", id, schoolID).Delete(&PCRecord{})
+	return c.JSON(fiber.Map{"message": "deleted"})
 }

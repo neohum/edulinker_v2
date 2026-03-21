@@ -57,28 +57,21 @@ func (p *Plugin) generateAndLogAnalysis(c *fiber.Ctx) error {
 	schoolID := c.Locals("schoolID").(uuid.UUID)
 
 	var req struct {
-		PromptType      string `json:"prompt_type"` // student_evaluation, budget
-		InputData       string `json:"input_data"`
-		TargetStudentID string `json:"target_student_id,omitempty"`
+		PromptType       string `json:"prompt_type"`
+		InputData        string `json:"input_data"`
+		GeneratedContent string `json:"generated_content"`
+		TargetStudentID  string `json:"target_student_id,omitempty"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 	}
-
-	// This connects to the AIGateway or Ollama proxy internally
-	// For MVP, we save a record simulating a response. The frontend can hit POST /api/core/ai/autocomplete first,
-	// and then just save it here, or we can pipe the request in the background. To keep plugins independent,
-	// we assume the frontend sends both or we generate a placeholder here if needed.
-	// For now, this route is for "saving" the final AI output as a record of evaluation.
-
-	generatedMock := req.InputData + "\n[Ollama/AI 분석 결과 저장됨]"
 
 	alog := models.AIAnalysisLog{
 		SchoolID:         schoolID,
 		TeacherID:        teacherID,
 		PromptType:       req.PromptType,
 		InputData:        req.InputData,
-		GeneratedContent: generatedMock,
+		GeneratedContent: req.GeneratedContent,
 	}
 
 	if req.TargetStudentID != "" {

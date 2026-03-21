@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,8 +21,9 @@ import (
 type StorageType string
 
 const (
-	StorageLocal StorageType = "minio"  // MinIO — 교내 교사 파일
-	StorageCloud StorageType = "wasabi" // Wasabi S3 — 웹·앱 파일
+	StorageLocal    StorageType = "minio"  // MinIO — 교내 교사 파일
+	StorageCloud    StorageType = "wasabi" // Wasabi S3 — 웹·앱 파일
+	StorageDiskFS   StorageType = "disk"   // Local filesystem fallback
 )
 
 // FileRecord tracks uploaded files in the database.
@@ -54,21 +56,29 @@ type GatewayConfig struct {
 	WasabiRegion    string
 }
 
-// Gateway provides a unified file upload/download interface across MinIO and Wasabi.
+// Gateway provides a unified file upload/download interface across MinIO, Wasabi, and local disk.
 type Gateway struct {
 	db           *gorm.DB
 	minioClient  *minio.Client
 	wasabiClient *minio.Client
 	minioBucket  string
 	wasabiBucket string
+	localDir     string // fallback local filesystem directory
 }
 
 // NewGateway creates a new file gateway with MinIO and optionally Wasabi connections.
+// Falls back to local filesystem if MinIO is unavailable.
 func NewGateway(db *gorm.DB, cfg GatewayConfig) (*Gateway, error) {
 	gw := &Gateway{
 		db:           db,
 		minioBucket:  cfg.MinIOBucket,
 		wasabiBucket: cfg.WasabiBucket,
+	}
+
+	// Prepare local fallback directory
+	gw.localDir = filepath.Join(".", "uploads")
+	if err := os.MkdirAll(gw.localDir, 0755); err != nil {
+		log.Printf("⚠️ Failed to create local uploads dir: %v", err)
 	}
 
 	// Connect to MinIO
@@ -77,20 +87,23 @@ func NewGateway(db *gorm.DB, cfg GatewayConfig) (*Gateway, error) {
 		Secure: cfg.MinIOUseSSL,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MinIO: %w", err)
-	}
-	gw.minioClient = minioClient
-
-	// Ensure MinIO bucket exists
-	ctx := context.Background()
-	exists, err := minioClient.BucketExists(ctx, cfg.MinIOBucket)
-	if err != nil {
-		log.Printf("⚠️ MinIO bucket check failed: %v", err)
-	} else if !exists {
-		if err := minioClient.MakeBucket(ctx, cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {
-			log.Printf("⚠️ Failed to create MinIO bucket: %v", err)
+		log.Printf("⚠️ MinIO client creation failed (will use local disk): %v", err)
+	} else {
+		// Verify MinIO is actually reachable
+		ctx := context.Background()
+		exists, err := minioClient.BucketExists(ctx, cfg.MinIOBucket)
+		if err != nil {
+			log.Printf("⚠️ MinIO unreachable (will use local disk): %v", err)
 		} else {
-			log.Printf("✅ MinIO bucket '%s' created", cfg.MinIOBucket)
+			gw.minioClient = minioClient
+			if !exists {
+				if err := minioClient.MakeBucket(ctx, cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {
+					log.Printf("⚠️ Failed to create MinIO bucket: %v", err)
+				} else {
+					log.Printf("✅ MinIO bucket '%s' created", cfg.MinIOBucket)
+				}
+			}
+			log.Println("✅ Connected to MinIO")
 		}
 	}
 
@@ -109,7 +122,11 @@ func NewGateway(db *gorm.DB, cfg GatewayConfig) (*Gateway, error) {
 		}
 	}
 
-	log.Println("✅ File Gateway initialized")
+	if gw.minioClient == nil && gw.wasabiClient == nil {
+		log.Println("📁 File Gateway initialized (local disk fallback mode)")
+	} else {
+		log.Println("✅ File Gateway initialized")
+	}
 	return gw, nil
 }
 
@@ -122,11 +139,6 @@ func (gw *Gateway) Upload(
 	pluginID string,
 	storageHint string,
 ) (*FileRecord, error) {
-	ctx := context.Background()
-
-	// Determine storage target
-	storage, client, bucket := gw.resolveStorage(storageHint, header.Filename)
-
 	// Generate unique object key
 	ext := filepath.Ext(header.Filename)
 	objectKey := fmt.Sprintf("%s/%s/%s/%s%s",
@@ -137,12 +149,45 @@ func (gw *Gateway) Upload(
 		ext,
 	)
 
-	// Upload to storage
-	_, err := client.PutObject(ctx, bucket, objectKey, file, header.Size, minio.PutObjectOptions{
-		ContentType: header.Header.Get("Content-Type"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload file: %w", err)
+	// Determine storage target
+	storage, client, bucket := gw.resolveStorage(storageHint, header.Filename)
+	contentType := header.Header.Get("Content-Type")
+
+	uploaded := false
+
+	// Try S3-compatible storage first — stream directly without reading all into memory
+	if client != nil {
+		ctx := context.Background()
+		_, err := client.PutObject(ctx, bucket, objectKey, file, header.Size, minio.PutObjectOptions{
+			ContentType: contentType,
+		})
+		if err != nil {
+			log.Printf("⚠️ S3 upload failed, falling back to disk: %v", err)
+			// Reset file position for disk fallback
+			if seeker, ok := file.(io.Seeker); ok {
+				seeker.Seek(0, io.SeekStart)
+			}
+		} else {
+			uploaded = true
+		}
+	}
+
+	// Fallback to local disk
+	if !uploaded {
+		storage = StorageDiskFS
+		bucket = "uploads"
+		diskPath := filepath.Join(gw.localDir, objectKey)
+		if err := os.MkdirAll(filepath.Dir(diskPath), 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+		dst, err := os.Create(diskPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file: %w", err)
+		}
+		defer dst.Close()
+		if _, err := io.Copy(dst, file); err != nil {
+			return nil, fmt.Errorf("failed to write file to disk: %w", err)
+		}
 	}
 
 	// Save record to DB
@@ -154,7 +199,7 @@ func (gw *Gateway) Upload(
 		Bucket:      bucket,
 		ObjectKey:   objectKey,
 		FileName:    header.Filename,
-		ContentType: header.Header.Get("Content-Type"),
+		ContentType: contentType,
 		Size:        header.Size,
 	}
 	if err := gw.db.Create(record).Error; err != nil {
@@ -170,6 +215,16 @@ func (gw *Gateway) Download(fileID uuid.UUID) (*FileRecord, io.ReadCloser, error
 	var record FileRecord
 	if err := gw.db.First(&record, "id = ?", fileID).Error; err != nil {
 		return nil, nil, fmt.Errorf("file not found")
+	}
+
+	// Handle local disk storage
+	if record.Storage == StorageDiskFS {
+		diskPath := filepath.Join(gw.localDir, record.ObjectKey)
+		f, err := os.Open(diskPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open file: %w", err)
+		}
+		return &record, f, nil
 	}
 
 	client := gw.getClient(record.Storage)
@@ -193,10 +248,15 @@ func (gw *Gateway) Delete(fileID uuid.UUID) error {
 		return fmt.Errorf("file not found")
 	}
 
-	client := gw.getClient(record.Storage)
-	if client != nil {
-		ctx := context.Background()
-		_ = client.RemoveObject(ctx, record.Bucket, record.ObjectKey, minio.RemoveObjectOptions{})
+	if record.Storage == StorageDiskFS {
+		diskPath := filepath.Join(gw.localDir, record.ObjectKey)
+		_ = os.Remove(diskPath)
+	} else {
+		client := gw.getClient(record.Storage)
+		if client != nil {
+			ctx := context.Background()
+			_ = client.RemoveObject(ctx, record.Bucket, record.ObjectKey, minio.RemoveObjectOptions{})
+		}
 	}
 
 	return gw.db.Delete(&record).Error
@@ -224,17 +284,26 @@ func (gw *Gateway) resolveStorage(hint, filename string) (StorageType, *minio.Cl
 		if gw.wasabiClient != nil {
 			return StorageCloud, gw.wasabiClient, gw.wasabiBucket
 		}
-		return StorageLocal, gw.minioClient, gw.minioBucket
+		if gw.minioClient != nil {
+			return StorageLocal, gw.minioClient, gw.minioBucket
+		}
+		return StorageDiskFS, nil, "uploads"
 	case "local":
-		return StorageLocal, gw.minioClient, gw.minioBucket
+		if gw.minioClient != nil {
+			return StorageLocal, gw.minioClient, gw.minioBucket
+		}
+		return StorageDiskFS, nil, "uploads"
 	default:
-		// Auto: images → Wasabi, documents → MinIO
+		// Auto: images → Wasabi, documents → MinIO, fallback → disk
 		ext := strings.ToLower(filepath.Ext(filename))
 		imageExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true}
 		if imageExts[ext] && gw.wasabiClient != nil {
 			return StorageCloud, gw.wasabiClient, gw.wasabiBucket
 		}
-		return StorageLocal, gw.minioClient, gw.minioBucket
+		if gw.minioClient != nil {
+			return StorageLocal, gw.minioClient, gw.minioBucket
+		}
+		return StorageDiskFS, nil, "uploads"
 	}
 }
 

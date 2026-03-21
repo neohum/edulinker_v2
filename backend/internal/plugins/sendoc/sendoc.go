@@ -58,6 +58,8 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 	var req struct {
 		Title             string      `json:"title"`
 		Content           string      `json:"content"`
+		BackgroundURL     string      `json:"background_url"`
+		FieldsJSON        string      `json:"fields_json"`
 		RequiresSignature bool        `json:"requires_signature"`
 		TargetUserIDs     []uuid.UUID `json:"target_user_ids"`
 	}
@@ -71,6 +73,8 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 		AuthorID:          userID,
 		Title:             req.Title,
 		Content:           req.Content,
+		BackgroundURL:     req.BackgroundURL,
+		FieldsJSON:        req.FieldsJSON,
 		RequiresSignature: req.RequiresSignature,
 		Status:            "sent",
 	}
@@ -92,10 +96,11 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listDocuments(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(uuid.UUID)
 	schoolID := c.Locals("schoolID").(uuid.UUID)
 
 	var docs []models.Sendoc
-	if err := p.db.Where("school_id = ?", schoolID).Order("created_at desc").Find(&docs).Error; err != nil {
+	if err := p.db.Preload("Author").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch documents"})
 	}
 
@@ -117,11 +122,49 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(uuid.UUID)
 
 	var recipients []models.SendocRecipient
-	if err := p.db.Preload("User").Joins("JOIN sendocs ON sendocs.id = sendoc_recipients.sendoc_id").Where("sendoc_recipients.user_id = ?", userID).Order("sendocs.created_at desc").Find(&recipients).Error; err != nil {
+	if err := p.db.Preload("User").Preload("Sendoc").Preload("Sendoc.Author").
+		Joins("JOIN sendocs ON sendocs.id = sendoc_recipients.sendoc_id").
+		Where("sendoc_recipients.user_id = ?", userID).
+		Order("sendocs.created_at desc").Find(&recipients).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch your documents"})
 	}
 
-	return c.JSON(recipients)
+	// Map to flat structure for frontend compatibility
+	type PendingDoc struct {
+		ID            uuid.UUID  `json:"id"`
+		Title         string     `json:"title"`
+		Status        string     `json:"status"`
+		BackgroundURL string     `json:"background_url"`
+		FieldsJSON    string     `json:"fields_json"`
+		CreatedAt     time.Time  `json:"created_at"`
+		IsSigned      bool       `json:"is_signed"`
+		SignedAt      *time.Time `json:"signed_at,omitempty"`
+		Author        *struct {
+			Name string `json:"name"`
+		} `json:"author,omitempty"`
+	}
+
+	var result []PendingDoc
+	for _, r := range recipients {
+		doc := PendingDoc{
+			ID:            r.Sendoc.ID,
+			Title:         r.Sendoc.Title,
+			Status:        r.Sendoc.Status,
+			BackgroundURL: r.Sendoc.BackgroundURL,
+			FieldsJSON:    r.Sendoc.FieldsJSON,
+			CreatedAt:     r.Sendoc.CreatedAt,
+			IsSigned:      r.IsSigned,
+			SignedAt:      r.SignedAt,
+		}
+		if r.Sendoc.Author.Name != "" {
+			doc.Author = &struct {
+				Name string `json:"name"`
+			}{Name: r.Sendoc.Author.Name}
+		}
+		result = append(result, doc)
+	}
+
+	return c.JSON(result)
 }
 
 func (p *Plugin) submitSignature(c *fiber.Ctx) error {

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { UserInfo } from '../App'
+import { apiFetch } from '../api'
 import Sidebar from '../components/Sidebar'
 import GatongPage from './GatongPage'
 import SendocPage from './SendocPage'
@@ -16,24 +17,51 @@ import LinkerPage from './LinkerPage'
 import PcInfoPage from './PcInfoPage'
 import SettingsPage from './SettingsPage'
 import ProfilePage from './ProfilePage'
+import HwpConverterPage from './HwpConverterPage'
+import XlsxConverterPage from './XlsxConverterPage'
+import PptxConverterPage from './PptxConverterPage'
 
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'settings' | 'profile'
+type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
+  const [pendingDocCount, setPendingDocCount] = useState(0)
+
+  useEffect(() => {
+    fetchPendingDocCount()
+    const interval = setInterval(fetchPendingDocCount, 30000) // Poll every 30s
+    return () => clearInterval(interval)
+  }, [])
+
+  const fetchPendingDocCount = async () => {
+    try {
+      const res = await apiFetch('/api/plugins/sendoc/sign')
+      if (res.ok) {
+        const data = await res.json()
+        // Filter those not yet signed
+        const pending = data.filter((d: any) => !d.is_signed)
+        setPendingDocCount(pending.length)
+      }
+    } catch (e) {
+      console.error('Failed to fetch pending docs:', e)
+    }
+  }
 
   return (
     <div className="app-container">
       <Sidebar
         user={user}
         currentPage={currentPage}
-        badges={{ messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined }}
+        badges={{ 
+          messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined,
+          sendoc: pendingDocCount > 0 ? pendingDocCount : undefined
+        }}
         onNavigate={(page) => setCurrentPage(page as PageView)}
         onLogout={onLogout}
       />
@@ -46,7 +74,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         <div className="main-body">
           {currentPage === 'dashboard' && <DashboardView user={user} />}
           {currentPage === 'gatong' && <GatongPage />}
-          {currentPage === 'sendoc' && <SendocPage />}
+          {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage />}
           {currentPage === 'aianalysis' && <AIAnalysisPage />}
@@ -61,7 +89,10 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'attendance' && <AttendancePage />}
           {currentPage === 'student-alert' && <StudentAlertPage />}
           {currentPage === 'linker' && <LinkerPage />}
-          {currentPage === 'pcinfo' && <PcInfoPage />}
+          {currentPage === 'pcinfo' && <PcInfoPage user={user} />}
+          {currentPage === 'hwp-converter' && <HwpConverterPage />}
+          {currentPage === 'xlsx-converter' && <XlsxConverterPage />}
+          {currentPage === 'pptx-converter' && <PptxConverterPage />}
           {currentPage === 'settings' && <SettingsPage />}
           {currentPage === 'profile' && <ProfilePage user={user} />}
 
@@ -91,25 +122,7 @@ function DashboardView({ user }: { user: UserInfo }) {
         <StatCard icon="fi fi-rr-bell" label="알림" value="—" color="purple" />
       </div>
 
-      <div style={{ marginTop: 32 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>활성화된 플러그인</h3>
-        <div className="plugin-grid">
-          <PluginCard name="교사 메신저" desc="교내 채팅 서비스" icon="fi fi-rr-comment" group="A" enabled />
-          <PluginCard name="공문전달" desc="공문 분류 및 확인" icon="fi fi-rr-document" group="A" enabled />
-          <PluginCard name="투두리스트" desc="개인·학교 할 일 관리" icon="fi fi-rr-checkbox" group="A" enabled />
-          <PluginCard name="학생 알림" desc="학생에게 알림 전송" icon="fi fi-rr-bell" group="A" enabled />
-          <PluginCard name="지각·결석" desc="원터치 출결 관리" icon="fi fi-rr-alarm-clock" group="A" enabled />
-          <PluginCard name="가정통신문(가통)" desc="통신문, 설문조사 발송" icon="fi fi-rr-envelope-open" group="A" enabled />
-          <PluginCard name="전자문서·서명" desc="결재 기안 및 서명 진행" icon="fi fi-rr-edit" group="B" enabled />
-          <PluginCard name="학생 상담·관리" desc="학생 개인별 상담 일지" icon="fi fi-rr-graduation-cap" group="D" enabled />
-          <PluginCard name="주간학습·평가" desc="주간학습안내 및 단원평가 배열" icon="fi fi-rr-book" group="E" enabled />
-          <PluginCard name="AI 세특·종특 도우미" desc="학생 평가문 초안 자동생성" icon="fi fi-rr-magic-wand" group="G" enabled />
-          <PluginCard name="학교행사·투표" desc="찬반/선택 투표 개설" icon="fi fi-rr-calendar-check" group="H" enabled />
-          <PluginCard name="linker" desc="즐겨찾기 대시보드" icon="fi fi-rr-link" group="I" enabled />
-          <PluginCard name="pc-info" desc="PC 정보 수집·관리" icon="fi fi-rr-computer" group="I" enabled />
-          <PluginCard name="교사화면 설정" desc="학생 화면 서비스 선택" icon="fi fi-rr-settings" group="I" enabled />
-        </div>
-      </div>
+
     </>
   )
 }
@@ -128,25 +141,6 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
   )
 }
 
-function PluginCard({ name, desc, icon, group, enabled }: { name: string; desc: string; icon: string; group: string; enabled?: boolean }) {
-  return (
-    <div className="plugin-card">
-      <div className="plugin-card-header">
-        <div className="plugin-card-icon" style={{ background: 'rgba(59,130,246,0.15)' }}>
-          <i className={icon} />
-        </div>
-        <div>
-          <div className="plugin-card-name">{name}</div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>그룹 {group}</span>
-        </div>
-      </div>
-      <div className="plugin-card-desc">{desc}</div>
-      <div className={`plugin-card-badge ${enabled ? 'enabled' : 'disabled'}`}>
-        {enabled ? '● 활성' : '○ 비활성'}
-      </div>
-    </div>
-  )
-}
 
 function PluginPlaceholder({ name }: { name: string }) {
   return (
@@ -174,6 +168,9 @@ function getPageTitle(page: string): string {
     schoolevents: '학교행사·투표',
     linker: 'linker',
     pcinfo: 'pc-info',
+    'hwp-converter': 'HWP 문서 변환',
+    'xlsx-converter': 'Excel to PDF 변환',
+    'pptx-converter': 'PPT to PDF 변환',
     settings: '설정',
     profile: '내 프로필',
   }

@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/edulinker/backend/internal/core/filegateway"
 	"github.com/edulinker/backend/internal/core/notify"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
@@ -48,7 +49,16 @@ type Message struct {
 	FileID      *uuid.UUID `json:"file_id,omitempty" gorm:"type:uuid"`
 	IsUrgent    bool       `json:"is_urgent" gorm:"default:false"`
 	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	ReadCount   int64      `json:"read_count" gorm:"-"` // computed, not stored
+	ReadCount   int64      `json:"read_count" gorm:"-"`    // computed, not stored
+	FileInfo    *FileInfo  `json:"file_info,omitempty" gorm:"-"` // computed, not stored
+}
+
+// FileInfo is a lightweight file metadata struct returned with messages.
+type FileInfo struct {
+	ID          uuid.UUID `json:"id"`
+	FileName    string    `json:"file_name"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
 }
 
 type MessageReadReceipt struct {
@@ -401,9 +411,33 @@ func (p *Plugin) getMessages(c *fiber.Ctx) error {
 			nameMap[s.ID] = s.Name
 		}
 
+		// File info for messages with file attachments
+		var fileIDs []uuid.UUID
+		for _, m := range messages {
+			if m.FileID != nil {
+				fileIDs = append(fileIDs, *m.FileID)
+			}
+		}
+		fileMap := make(map[uuid.UUID]*FileInfo)
+		if len(fileIDs) > 0 {
+			var files []filegateway.FileRecord
+			p.db.Where("id IN ?", fileIDs).Find(&files)
+			for _, f := range files {
+				fileMap[f.ID] = &FileInfo{
+					ID:          f.ID,
+					FileName:    f.FileName,
+					ContentType: f.ContentType,
+					Size:        f.Size,
+				}
+			}
+		}
+
 		for i := range messages {
 			messages[i].ReadCount = countMap[messages[i].ID]
 			messages[i].SenderName = nameMap[messages[i].SenderID]
+			if messages[i].FileID != nil {
+				messages[i].FileInfo = fileMap[*messages[i].FileID]
+			}
 		}
 	}
 
@@ -411,9 +445,10 @@ func (p *Plugin) getMessages(c *fiber.Ctx) error {
 }
 
 type SendMessageRequest struct {
-	Content     string `json:"content"`
-	MessageType string `json:"message_type"`
-	IsUrgent    bool   `json:"is_urgent"`
+	Content     string      `json:"content"`
+	MessageType string      `json:"message_type"`
+	FileIDs     []uuid.UUID `json:"file_ids,omitempty"`
+	IsUrgent    bool        `json:"is_urgent"`
 }
 
 func (p *Plugin) sendMessage(c *fiber.Ctx) error {
@@ -432,14 +467,48 @@ func (p *Plugin) sendMessage(c *fiber.Ctx) error {
 		req.MessageType = "text"
 	}
 
-	msg := Message{
-		ChatID:      chatID,
-		SenderID:    userID,
-		Content:     req.Content,
-		MessageType: req.MessageType,
-		IsUrgent:    req.IsUrgent,
+	// Create one message per file, or a single text message
+	var sentMessages []Message
+
+	if len(req.FileIDs) > 0 {
+		// Look up file names so each message gets its own file name as content
+		fileNameMap := make(map[uuid.UUID]string)
+		var fileRecords []filegateway.FileRecord
+		p.db.Where("id IN ?", req.FileIDs).Find(&fileRecords)
+		for _, f := range fileRecords {
+			fileNameMap[f.ID] = f.FileName
+		}
+
+		for _, fid := range req.FileIDs {
+			fidCopy := fid
+			content := req.Content
+			if content == "" {
+				if name, ok := fileNameMap[fid]; ok {
+					content = name
+				}
+			}
+			msg := Message{
+				ChatID:      chatID,
+				SenderID:    userID,
+				Content:     content,
+				MessageType: req.MessageType,
+				FileID:      &fidCopy,
+				IsUrgent:    req.IsUrgent,
+			}
+			p.db.Create(&msg)
+			sentMessages = append(sentMessages, msg)
+		}
+	} else {
+		msg := Message{
+			ChatID:      chatID,
+			SenderID:    userID,
+			Content:     req.Content,
+			MessageType: req.MessageType,
+			IsUrgent:    req.IsUrgent,
+		}
+		p.db.Create(&msg)
+		sentMessages = append(sentMessages, msg)
 	}
-	p.db.Create(&msg)
 
 	// Update chat timestamp
 	p.db.Model(&Chat{}).Where("id = ?", chatID).Update("updated_at", time.Now())
@@ -453,8 +522,29 @@ func (p *Plugin) sendMessage(c *fiber.Ctx) error {
 		p.db.Model(&ChatMember{}).Where("chat_id = ? AND user_id = ?", chatID, userID).Update("is_deleted", false)
 	}
 
+	// Look up file info for response and broadcast
+	var sentFileIDs []uuid.UUID
+	for _, msg := range sentMessages {
+		if msg.FileID != nil {
+			sentFileIDs = append(sentFileIDs, *msg.FileID)
+		}
+	}
+	fileInfoMap := make(map[uuid.UUID]*FileInfo)
+	if len(sentFileIDs) > 0 {
+		var files []filegateway.FileRecord
+		p.db.Where("id IN ?", sentFileIDs).Find(&files)
+		for _, f := range files {
+			fileInfoMap[f.ID] = &FileInfo{
+				ID:          f.ID,
+				FileName:    f.FileName,
+				ContentType: f.ContentType,
+				Size:        f.Size,
+			}
+		}
+	}
+
 	// Broadcast via WebSocket to chat members
-	log.Printf("📤 [Messenger] sendMessage: hub=%v, chatID=%s, senderID=%s", p.hub != nil, chatID, userID)
+	log.Printf("📤 [Messenger] sendMessage: hub=%v, chatID=%s, senderID=%s, files=%d", p.hub != nil, chatID, userID, len(req.FileIDs))
 	if p.hub != nil {
 		var members []ChatMember
 		p.db.Where("chat_id = ? AND user_id != ?", chatID, userID).Find(&members)
@@ -469,12 +559,8 @@ func (p *Plugin) sendMessage(c *fiber.Ctx) error {
 		var sender models.User
 		p.db.Where("id = ?", userID).First(&sender)
 
-		p.hub.Broadcast(&notify.WSMessage{
-			Type:     notify.MsgTypeChat,
-			PluginID: "messenger",
-			From:     userID,
-			To:       recipientIDs,
-			Payload: map[string]interface{}{
+		for _, msg := range sentMessages {
+			payload := map[string]interface{}{
 				"action":       "new_message",
 				"chat_id":      chatID,
 				"message_id":   msg.ID,
@@ -484,11 +570,38 @@ func (p *Plugin) sendMessage(c *fiber.Ctx) error {
 				"message_type": msg.MessageType,
 				"is_urgent":    msg.IsUrgent,
 				"created_at":   msg.CreatedAt,
-			},
-		})
+			}
+			if msg.FileID != nil {
+				payload["file_id"] = msg.FileID
+				if fi, ok := fileInfoMap[*msg.FileID]; ok {
+					payload["file_info"] = fi
+				}
+			}
+
+			p.hub.Broadcast(&notify.WSMessage{
+				Type:     notify.MsgTypeChat,
+				PluginID: "messenger",
+				From:     userID,
+				To:       recipientIDs,
+				Payload:  payload,
+			})
+		}
 	}
 
-	return c.Status(201).JSON(msg)
+	// Enrich with file info for response
+	if len(fileInfoMap) > 0 {
+		for i := range sentMessages {
+			if sentMessages[i].FileID != nil {
+				sentMessages[i].FileInfo = fileInfoMap[*sentMessages[i].FileID]
+			}
+		}
+	}
+
+	// Return single message or array
+	if len(sentMessages) == 1 {
+		return c.Status(201).JSON(sentMessages[0])
+	}
+	return c.Status(201).JSON(sentMessages)
 }
 
 func (p *Plugin) addMember(c *fiber.Ctx) error {

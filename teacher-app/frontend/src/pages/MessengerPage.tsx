@@ -15,14 +15,33 @@ interface Chat {
   unread_count?: number
 }
 
+interface FileInfo {
+  id: string
+  file_name: string
+  content_type: string
+  size: number
+}
+
 interface Message {
   id: string
   sender_id: string
   sender_name?: string
   content: string
+  message_type?: string
+  file_id?: string
+  file_info?: FileInfo
   is_urgent: boolean
   created_at: string
   read_count: number
+}
+
+interface PendingFile {
+  file?: File           // from drag-drop or HTML file input
+  id: string            // temporary client-side id
+  uploaded?: FileInfo   // already uploaded via Wails native dialog
+  name: string          // display name
+  size: number          // display size
+  type: string          // mime type
 }
 
 interface UserEntry {
@@ -40,6 +59,10 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const selectedChatRef = useRef<Chat | null>(null)
   const isActiveRef = useRef(isActive)
@@ -118,6 +141,9 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
                   sender_id: payload.sender_id,
                   sender_name: payload.sender_name,
                   content: payload.content,
+                  message_type: payload.message_type,
+                  file_id: payload.file_id,
+                  file_info: payload.file_info,
                   is_urgent: payload.is_urgent,
                   created_at: payload.created_at,
                   read_count: 0,
@@ -336,37 +362,376 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
 
   const [isSending, setIsSending] = useState(false)
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        // Remove "data:...;base64," prefix
+        const base64 = dataUrl.split(',')[1] || ''
+        resolve(base64)
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const uploadFile = async (file: File): Promise<FileInfo | null> => {
+    // Try Wails Go binding first (bypasses WebView fetch restrictions)
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.UploadFileFromBytes) {
+        const base64Data = await fileToBase64(file)
+        const result = await wailsApp.UploadFileFromBytes(file.name, base64Data)
+        if (result.error) {
+          console.error('[Messenger] Wails upload error:', result.error)
+          toast.error(`파일 업로드 실패: ${file.name}`)
+          return null
+        }
+        return {
+          id: result.id,
+          file_name: result.file_name,
+          content_type: result.content_type,
+          size: result.size,
+        }
+      }
+    } catch (e) {
+      console.error('[Messenger] Wails upload fallback:', e)
+    }
+
+    // Fallback: fetch (for browser dev mode)
+    try {
+      const token = await getToken()
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('plugin_id', 'messenger')
+      formData.append('storage', 'auto')
+
+      const res = await fetch('http://localhost:5200/api/core/files/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      })
+      if (res.ok) {
+        const record = await res.json()
+        return {
+          id: record.id,
+          file_name: record.file_name,
+          content_type: record.content_type,
+          size: record.size,
+        }
+      }
+      const errBody = await res.text().catch(() => '')
+      console.error(`[Messenger] File upload failed (${res.status}): ${errBody}`)
+      toast.error(`파일 업로드 실패: ${file.name} (${res.status})`)
+      return null
+    } catch (e) {
+      console.error('[Messenger] File upload error:', e)
+      toast.error(`파일 업로드 오류: ${file.name}`)
+      return null
+    }
+  }
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedChat || !newMessage.trim() || isSending) return
+    if (!selectedChat || isSending) return
+    if (!newMessage.trim() && pendingFiles.length === 0) return
 
     const msgContent = newMessage
+    const filesToSend = [...pendingFiles]
     setNewMessage('')
+    setPendingFiles([])
     setIsSending(true)
 
     try {
       const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/messenger/chats/${selectedChat.id}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ content: msgContent, message_type: 'text', is_urgent: false })
-      })
-      if (res.ok) {
-        const sentMsg = await res.json()
-        setMessages(prev => {
-          if (prev.some(m => m.id === sentMsg.id)) return prev
-          return [...prev, { ...sentMsg, read_count: 0 }]
+
+      if (filesToSend.length > 0) {
+        // Upload files that aren't already uploaded
+        setIsUploading(true)
+        const uploadedFileInfos: FileInfo[] = []
+        for (const pf of filesToSend) {
+          if (pf.uploaded) {
+            // Already uploaded via Wails native dialog
+            uploadedFileInfos.push(pf.uploaded)
+          } else if (pf.file) {
+            // Need to upload (drag-drop or HTML input)
+            const info = await uploadFile(pf.file)
+            if (info) uploadedFileInfos.push(info)
+          }
+        }
+        setIsUploading(false)
+
+        if (uploadedFileInfos.length === 0) {
+          toast.error('파일 업로드에 실패했습니다.')
+          setNewMessage(msgContent)
+          setPendingFiles(filesToSend)
+          setIsSending(false)
+          return
+        }
+
+        // Determine message type based on files
+        const allImages = uploadedFileInfos.every(f => f.content_type.startsWith('image/'))
+        const messageType = allImages ? 'image' : 'file'
+
+        const msgBody = {
+          content: msgContent,
+          message_type: messageType,
+          file_ids: uploadedFileInfos.map(f => f.id),
+          is_urgent: false
+        }
+        console.log('[Messenger] Sending file message:', msgBody)
+
+        const res = await fetch(`http://localhost:5200/api/plugins/messenger/chats/${selectedChat.id}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(msgBody)
         })
+        if (res.ok) {
+          const sentData = await res.json()
+          console.log('[Messenger] File message sent:', sentData)
+          const sentMsgs: Message[] = Array.isArray(sentData) ? sentData : [sentData]
+          setMessages(prev => {
+            const newMsgs = sentMsgs.filter(sm => !prev.some(m => m.id === sm.id))
+            return [...prev, ...newMsgs.map(m => ({ ...m, read_count: 0 }))]
+          })
+        } else {
+          const errBody = await res.text().catch(() => '')
+          console.error(`[Messenger] Send message failed (${res.status}):`, errBody)
+          toast.error('메시지 전송에 실패했습니다.')
+        }
+      } else {
+        // Text-only message
+        const res = await fetch(`http://localhost:5200/api/plugins/messenger/chats/${selectedChat.id}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ content: msgContent, message_type: 'text', is_urgent: false })
+        })
+        if (res.ok) {
+          const sentMsg = await res.json()
+          setMessages(prev => {
+            if (prev.some(m => m.id === sentMsg.id)) return prev
+            return [...prev, { ...sentMsg, read_count: 0 }]
+          })
+        }
       }
     } catch (e) {
       console.error(e)
-      setNewMessage(msgContent) // restore on failure
+      setNewMessage(msgContent)
+      setPendingFiles(filesToSend)
     } finally {
       setIsSending(false)
+      setIsUploading(false)
     }
+  }
+
+  const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1GB
+
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const accepted: PendingFile[] = []
+    const rejected: string[] = []
+    for (const f of Array.from(files)) {
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(f.name)
+      } else {
+        accepted.push({
+          file: f,
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })
+      }
+    }
+    if (rejected.length > 0) {
+      toast.error(`허용 용량(1GB)을 초과한 파일: ${rejected.join(', ')}`)
+    }
+    if (accepted.length > 0) {
+      setPendingFiles(prev => [...prev, ...accepted])
+    }
+  }
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles(prev => prev.filter(f => f.id !== id))
+  }
+
+  const handleNativeFileSelect = async () => {
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.SelectAndUploadFiles) {
+        const results = await wailsApp.SelectAndUploadFiles()
+        if (!results || results.length === 0) return
+        const newFiles: PendingFile[] = results
+          .filter((r: any) => !r.error && r.id)
+          .map((r: any) => ({
+            id: r.id,
+            uploaded: { id: r.id, file_name: r.file_name, content_type: r.content_type, size: r.size },
+            name: r.file_name,
+            size: r.size,
+            type: r.content_type,
+          }))
+        if (newFiles.length > 0) {
+          setPendingFiles(prev => [...prev, ...newFiles])
+        }
+        const failed = results.filter((r: any) => r.error)
+        if (failed.length > 0) {
+          toast.error(`${failed.length}개 파일 업로드 실패`)
+        }
+        return
+      }
+    } catch (e) {
+      console.error('[Messenger] Native file select error:', e)
+    }
+    // Fallback to HTML file input
+    fileInputRef.current?.click()
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+    handleFileSelect(e.dataTransfer.files)
+  }
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const isImageType = (contentType: string): boolean => {
+    return contentType.startsWith('image/')
+  }
+
+  const getFileIcon = (contentType: string): string => {
+    if (contentType.startsWith('image/')) return 'fi-rr-picture'
+    if (contentType.includes('pdf')) return 'fi-rr-document'
+    if (contentType.includes('word') || contentType.includes('document')) return 'fi-rr-document'
+    if (contentType.includes('sheet') || contentType.includes('excel')) return 'fi-rr-document'
+    if (contentType.includes('presentation') || contentType.includes('powerpoint')) return 'fi-rr-document'
+    if (contentType.includes('zip') || contentType.includes('rar') || contentType.includes('tar')) return 'fi-rr-folder'
+    return 'fi-rr-file'
+  }
+
+  // Cache for authenticated file URLs (data URLs or object URLs)
+  const fileUrlCache = useRef<Map<string, string>>(new Map())
+
+  const getAuthenticatedFileUrl = useCallback(async (fileId: string): Promise<string> => {
+    const cached = fileUrlCache.current.get(fileId)
+    if (cached) return cached
+
+    // Try Wails Go binding first (returns data URL)
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.GetFileDataURL) {
+        const dataUrl = await wailsApp.GetFileDataURL(fileId)
+        if (dataUrl) {
+          fileUrlCache.current.set(fileId, dataUrl)
+          return dataUrl
+        }
+      }
+    } catch {}
+
+    // Fallback: fetch via JS
+    try {
+      const token = await getToken()
+      const res = await fetch(`http://localhost:5200/api/core/files/${fileId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        fileUrlCache.current.set(fileId, url)
+        return url
+      }
+    } catch {}
+    return ''
+  }, [])
+
+  const handleFileDownload = async (fileId: string, fileName: string) => {
+    try {
+      // Try Wails native file save dialog first
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.DownloadFile) {
+        const result = await wailsApp.DownloadFile(fileId, fileName)
+        if (result.success) {
+          toast.success(`파일이 저장되었습니다: ${result.file_path}`)
+          return
+        }
+        // User cancelled — no error
+        if (result.error === '') return
+        if (result.error) {
+          toast.error(result.error)
+          return
+        }
+      }
+
+      // Fallback: fetch and download via browser
+      const token = await getToken()
+      const res = await fetch(`http://localhost:5200/api/core/files/${fileId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        console.error(`[Messenger] Download failed (${res.status}):`, errText)
+        toast.error(`파일 다운로드 실패 (${res.status})`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (e) {
+      console.error('[Messenger] Download error:', e)
+      toast.error('파일 다운로드 중 오류가 발생했습니다.')
+    }
+  }
+
+  // Component for authenticated image loading
+  function AuthImage({ fileId, alt, style }: { fileId: string, alt: string, style: React.CSSProperties }) {
+    const [src, setSrc] = useState('')
+
+    useEffect(() => {
+      let cancelled = false
+      getAuthenticatedFileUrl(fileId).then(url => {
+        if (!cancelled && url) setSrc(url)
+      })
+      return () => { cancelled = true }
+    }, [fileId])
+
+    if (!src) {
+      return (
+        <div style={{ ...style, background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <i className="fi fi-rr-picture" style={{ fontSize: 24, color: 'var(--text-muted)' }} />
+        </div>
+      )
+    }
+
+    return <img src={src} alt={alt} style={style} />
   }
 
   const handleOpenCreateChat = () => {
@@ -596,7 +961,28 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
       </div>
 
       {/* Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+      <div
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc', position: 'relative' }}
+        onDragOver={selectedChat ? handleDragOver : undefined}
+        onDragLeave={selectedChat ? handleDragLeave : undefined}
+        onDrop={selectedChat ? handleDrop : undefined}
+      >
+        {/* Drag overlay */}
+        {isDragOver && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            background: 'rgba(59,130,246,0.1)', border: '3px dashed var(--accent-blue)',
+            borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none'
+          }}>
+            <div style={{ background: 'white', padding: '24px 40px', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.1)', textAlign: 'center' }}>
+              <i className="fi fi-rr-cloud-upload" style={{ fontSize: 36, color: 'var(--accent-blue)', display: 'block', marginBottom: 8 }} />
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>파일을 여기에 놓으세요</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>여러 파일을 동시에 첨부할 수 있습니다</div>
+            </div>
+          </div>
+        )}
+
         {selectedChat ? (
           <>
             <div style={{ padding: '14px 24px', background: 'white', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -611,6 +997,9 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
               ) : (
                 messages.map((msg, idx) => {
                   const isMine = String(msg.sender_id).toLowerCase() === String(user?.id).toLowerCase()
+                  const hasFile = msg.file_info || msg.file_id
+                  const isImage = msg.file_info && isImageType(msg.file_info.content_type)
+
                   return (
                     <div key={msg.id} style={{ alignSelf: isMine ? 'flex-end' : 'flex-start', maxWidth: '70%' }}>
                       {!isMine && msg.sender_name && (
@@ -621,12 +1010,66 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
                       <div style={{
                         background: isMine ? 'var(--accent-blue)' : 'white',
                         color: isMine ? 'white' : 'var(--text-primary)',
-                        padding: '10px 14px',
+                        padding: hasFile ? '8px' : '10px 14px',
                         borderRadius: isMine ? '12px 12px 0 12px' : '12px 12px 12px 0',
                         border: isMine ? 'none' : '1px solid var(--border-color)',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                        overflow: 'hidden'
                       }}>
-                        {msg.content}
+                        {/* Image preview */}
+                        {isImage && msg.file_info && (
+                          <div
+                            onClick={() => handleFileDownload(msg.file_info!.id, msg.file_info!.file_name)}
+                            style={{ display: 'block', marginBottom: msg.content && msg.message_type !== 'image' ? 8 : 0, cursor: 'pointer' }}
+                          >
+                            <AuthImage
+                              fileId={msg.file_info.id}
+                              alt={msg.file_info.file_name}
+                              style={{
+                                maxWidth: 280, maxHeight: 200, borderRadius: 8,
+                                display: 'block', objectFit: 'cover'
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* File attachment (non-image) */}
+                        {hasFile && msg.file_info && !isImage && (
+                          <div
+                            onClick={() => handleFileDownload(msg.file_info!.id, msg.file_info!.file_name)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              padding: '8px 10px', borderRadius: 8,
+                              background: isMine ? 'rgba(255,255,255,0.15)' : 'var(--bg-primary)',
+                              textDecoration: 'none', color: 'inherit',
+                              cursor: 'pointer', marginBottom: msg.content && msg.content !== msg.file_info.file_name ? 6 : 0,
+                              transition: 'background 150ms'
+                            }}
+                          >
+                            <div style={{
+                              width: 36, height: 36, borderRadius: 8,
+                              background: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(59,130,246,0.1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              <i className={`fi ${getFileIcon(msg.file_info.content_type)}`} style={{ fontSize: 16, color: isMine ? 'white' : 'var(--accent-blue)' }} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {msg.file_info.file_name}
+                              </div>
+                              <div style={{ fontSize: 11, opacity: 0.7 }}>
+                                {formatFileSize(msg.file_info.size)}
+                              </div>
+                            </div>
+                            <i className="fi fi-rr-download" style={{ fontSize: 14, opacity: 0.6, flexShrink: 0 }} />
+                          </div>
+                        )}
+
+                        {/* Text content (hide if it's just the filename) */}
+                        {msg.content && (!hasFile || msg.content !== msg.file_info?.file_name) && (
+                          <div style={{ padding: hasFile ? '4px 6px 2px' : 0 }}>{msg.content}</div>
+                        )}
                       </div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, textAlign: isMine ? 'right' : 'left', padding: '0 4px', display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', gap: 6, alignItems: 'center' }}>
                         <span>{new Date(msg.created_at).toLocaleTimeString()}</span>
@@ -642,17 +1085,109 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
               )}
               <div ref={messagesEndRef} />
             </div>
-            <div style={{ padding: 16, background: 'white', borderTop: '1px solid var(--border-color)' }}>
-              <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: 12 }}>
+
+            {/* Pending files preview */}
+            {pendingFiles.length > 0 && (
+              <div style={{
+                padding: '8px 16px', background: 'white', borderTop: '1px solid var(--border-color)',
+                display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'nowrap'
+              }}>
+                {pendingFiles.map(pf => {
+                  const isImg = pf.type.startsWith('image/')
+                  return (
+                    <div key={pf.id} style={{
+                      position: 'relative', flexShrink: 0,
+                      border: '1px solid var(--border-color)', borderRadius: 10,
+                      padding: 6, display: 'flex', alignItems: 'center', gap: 8,
+                      background: pf.uploaded ? 'rgba(34,197,94,0.06)' : 'var(--bg-primary)', maxWidth: 200
+                    }}>
+                      {isImg && pf.file ? (
+                        <img
+                          src={URL.createObjectURL(pf.file)}
+                          alt={pf.name}
+                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: 40, height: 40, borderRadius: 6,
+                          background: pf.uploaded ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <i className={`fi ${pf.uploaded ? 'fi-rr-check' : getFileIcon(pf.type)}`} style={{ fontSize: 16, color: pf.uploaded ? '#22c55e' : 'var(--accent-blue)' }} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {pf.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                          {formatFileSize(pf.size)}{pf.uploaded ? ' ✓' : ''}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removePendingFile(pf.id)}
+                        style={{
+                          position: 'absolute', top: -6, right: -6,
+                          width: 20, height: 20, borderRadius: '50%',
+                          background: '#ef4444', color: 'white', border: 'none',
+                          fontSize: 11, cursor: 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+                          padding: 0
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div style={{ padding: 16, background: 'white', borderTop: pendingFiles.length > 0 ? 'none' : '1px solid var(--border-color)' }}>
+              <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={e => { handleFileSelect(e.target.files); e.target.value = '' }}
+                />
+                {/* File attach button */}
+                <button
+                  type="button"
+                  onClick={handleNativeFileSelect}
+                  style={{
+                    background: 'transparent', border: '1px solid var(--border-color)',
+                    borderRadius: 24, width: 42, height: 42, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0, color: 'var(--text-muted)', fontSize: 16,
+                    transition: 'all 150ms'
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-blue)'; e.currentTarget.style.color = 'var(--accent-blue)' }}
+                  onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.color = 'var(--text-muted)' }}
+                  title="파일 첨부"
+                >
+                  <i className="fi fi-rr-clip" />
+                </button>
                 <input
                   type="text"
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
-                  placeholder="메시지를 입력하세요..."
+                  placeholder={pendingFiles.length > 0 ? '메시지를 추가하거나 바로 전송하세요...' : '메시지를 입력하세요...'}
                   style={{ flex: 1, padding: '12px 16px', borderRadius: 24, border: '1px solid var(--border-color)', outline: 'none', fontSize: 14, background: 'var(--bg-primary)' }}
                 />
-                <button type="submit" style={{ background: 'var(--accent-blue)', color: 'white', border: 'none', borderRadius: 24, padding: '0 24px', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
-                  전송
+                <button
+                  type="submit"
+                  disabled={isSending}
+                  style={{
+                    background: isSending ? 'var(--text-muted)' : 'var(--accent-blue)',
+                    color: 'white', border: 'none', borderRadius: 24,
+                    padding: '0 24px', height: 42, fontWeight: 600, cursor: isSending ? 'default' : 'pointer',
+                    fontSize: 14, flexShrink: 0, transition: 'all 150ms'
+                  }}
+                >
+                  {isUploading ? '업로드 중...' : isSending ? '전송 중...' : '전송'}
                 </button>
               </form>
             </div>

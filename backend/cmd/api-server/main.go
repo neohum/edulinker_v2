@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/edulinker/backend/internal/config"
 	"github.com/edulinker/backend/internal/core/aigateway"
@@ -142,6 +143,10 @@ func main() {
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:      "edulinker API v1.0.0",
+		BodyLimit:    1024 * 1024 * 1024, // 1GB
+		ReadTimeout:  10 * time.Minute,
+		WriteTimeout: 10 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
 		ErrorHandler: customErrorHandler,
 	})
 
@@ -206,9 +211,6 @@ func main() {
 	schoolHandler := handlers.NewSchoolHandler(db)
 	api := app.Group("/api")
 
-	// Mount AI Gateway
-	aiSvc.RegisterRoutes(api.Group("/core"))
-
 	authRoutes := api.Group("/auth")
 	authRoutes.Post("/login", authHandler.Login)
 	authRoutes.Post("/student-login", authHandler.StudentLogin)
@@ -219,6 +221,9 @@ func main() {
 	// --- Protected routes (require auth) ---
 	protected := api.Group("", middleware.AuthMiddleware(authSvc))
 	protected.Get("/auth/me", authHandler.Me)
+
+	// Mount AI Gateway under protected group
+	aiSvc.RegisterRoutes(protected.Group("/core"))
 
 	// --- Core plugin management ---
 	pluginHandler := handlers.NewPluginHandler(db)

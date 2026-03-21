@@ -56,6 +56,9 @@ const pluginGroupH: NavItem[] = [
 const pluginGroupI: NavItem[] = [
   { id: 'linker', label: 'linker', icon: 'fi fi-rr-link' },
   { id: 'pcinfo', label: 'pc-info', icon: 'fi fi-rr-computer' },
+  { id: 'hwp-converter', label: 'HWP 변환', icon: 'fi fi-rr-file-pdf' },
+  { id: 'xlsx-converter', label: 'Excel 변환', icon: 'fi fi-rr-file-excel' },
+  { id: 'pptx-converter', label: 'PPT 변환', icon: 'fi fi-rr-file-powerpoint' },
 ]
 
 const systemItems: NavItem[] = [
@@ -64,12 +67,67 @@ const systemItems: NavItem[] = [
 
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    groupA: true,
+    groupB: true,
+    groupD: true,
+    groupE: true,
+    groupG: true,
+    groupH: true,
+    groupI: true,
+    system: true,
+  })
+
+  const toggleGroup = (groupId: string) => {
+    setOpenGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
+  }
 
   const roleLabel: Record<string, string> = {
     teacher: '교사',
     admin: '관리자',
     parent: '학부모',
     student: '학생',
+  }
+
+  const renderGroupTitle = (id: string, label: string) => {
+    if (isCollapsed) return <div className="sidebar-section-divider" />
+    
+    const isOpen = openGroups[id]
+    return (
+      <div 
+        onClick={() => toggleGroup(id)}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          padding: '12px 16px 8px',
+          cursor: 'pointer',
+          userSelect: 'none'
+        }}
+        className="sidebar-section-title-container"
+      >
+        <div className="sidebar-section-title" style={{ padding: 0, margin: 0 }}>{label}</div>
+        <i className={`fi ${isOpen ? 'fi-rr-angle-small-up' : 'fi-rr-angle-small-down'}`} style={{ fontSize: 12, color: 'var(--text-muted)' }} />
+      </div>
+    )
+  }
+
+  const renderItems = (items: NavItem[], groupId: string) => {
+    if (!isCollapsed && !openGroups[groupId]) return null
+    return items.map((item) => (
+      <button
+        key={item.id}
+        className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
+        onClick={() => onNavigate(item.id)}
+        title={isCollapsed ? item.label : undefined}
+      >
+        <span className="sidebar-item-icon"><i className={item.icon} /></span>
+        {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
+        {((badges && badges[item.id]) || item.badge) ? (
+          <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
+        ) : null}
+      </button>
+    ))
   }
 
   return (
@@ -96,7 +154,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
 
       {/* Navigation */}
       <nav className="sidebar-nav">
-        {/* Core */}
+        {/* Core (Always visible) */}
         {coreItems.map((item) => (
           <button
             key={item.id}
@@ -106,135 +164,42 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
             {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-            {((badges && badges[item.id]) || item.badge) ? (
-              <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
-            ) : null}
           </button>
         ))}
 
         {/* Group A */}
-        {!isCollapsed && <div className="sidebar-section-title">A · 핵심 소통</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupA.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-            {((badges && badges[item.id]) || item.badge) ? (
-              <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
-            ) : null}
-          </button>
-        ))}
+        {renderGroupTitle('groupA', 'A · 핵심 소통')}
+        {renderItems(pluginGroupA, 'groupA')}
 
         {/* Group B */}
-        {!isCollapsed && <div className="sidebar-section-title">B · 문서·결재</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupB.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupB', 'B · 문서·결재')}
+        {renderItems(pluginGroupB, 'groupB')}
 
         {/* Group D */}
-        {!isCollapsed && <div className="sidebar-section-title">D · 학생관리</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupD.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupD', 'D · 학생관리')}
+        {renderItems(pluginGroupD, 'groupD')}
 
         {/* Group E */}
-        {!isCollapsed && <div className="sidebar-section-title">E · 수업·평가</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupE.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupE', 'E · 수업·평가')}
+        {renderItems(pluginGroupE, 'groupE')}
 
         {/* Group G */}
-        {!isCollapsed && <div className="sidebar-section-title">G · AI 생기부 분석</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupG.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupG', 'G · AI 생기부 분석')}
+        {renderItems(pluginGroupG, 'groupG')}
 
         {/* Group H */}
-        {!isCollapsed && <div className="sidebar-section-title">H · 학교행사·투표</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupH.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupH', 'H · 학교행사·투표')}
+        {renderItems(pluginGroupH, 'groupH')}
 
         {/* Group I */}
-        {!isCollapsed && <div className="sidebar-section-title">I · 인프라·도구</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {pluginGroupI.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('groupI', 'I · 인프라·도구')}
+        {renderItems(pluginGroupI, 'groupI')}
 
         {/* System */}
-        {!isCollapsed && <div className="sidebar-section-title">시스템</div>}
-        {isCollapsed && <div className="sidebar-section-divider" />}
-        {systemItems.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {renderGroupTitle('system', '시스템')}
+        {renderItems(systemItems, 'system')}
       </nav>
+
 
       {/* User Footer */}
       <div className="sidebar-footer">
