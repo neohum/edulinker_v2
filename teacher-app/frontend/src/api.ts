@@ -1,24 +1,22 @@
 const API_BASE = 'http://localhost:5200'
 
 /**
- * Gets the JWT token from either localStorage or Wails Go backend.
+ * Gets the JWT token from Wails Go backend (per-instance) or localStorage (browser dev).
+ * Wails token takes priority to prevent cross-instance token sharing via localStorage.
  */
 export async function getToken(): Promise<string> {
-  // 1. Check localStorage first
-  const stored = localStorage.getItem('token')
-  if (stored) return stored
-
-  // 2. Try getting from Wails Go backend
+  // 1. Try getting from Wails Go backend first (per-instance, no sharing)
   try {
     const wailsApp = (window as any).go?.main?.App
     if (wailsApp?.GetToken) {
       const token = await wailsApp.GetToken()
-      if (token) {
-        localStorage.setItem('token', token)
-        return token
-      }
+      if (token) return token
     }
   } catch { }
+
+  // 2. Fallback to localStorage (browser dev mode only)
+  const stored = localStorage.getItem('token')
+  if (stored) return stored
 
   return ''
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Voting {
   id: string
@@ -25,7 +26,7 @@ export default function SchoolEventsPage() {
 
   const fetchVotings = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/schoolevents/votings', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -45,7 +46,7 @@ export default function SchoolEventsPage() {
     if (!votingOptions.trim()) { toast.warning('선택지를 입력하세요'); return }
 
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       let ends = new Date()
       ends.setDate(ends.getDate() + 3)
 

@@ -2,17 +2,19 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -25,6 +27,7 @@ type App struct {
 	isRunning  bool
 	isStarting bool
 	startTime  time.Time
+	backendDir string // cached on startup
 }
 
 // NewApp creates a new App application struct
@@ -35,12 +38,77 @@ func NewApp() *App {
 	}
 }
 
-// startup is called when the app starts.
+// startup is called when the app starts. Must return quickly.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// 대시보드 시작 시 혹시 모를 기존 고아 프로세스 즉시 종료 (5200 포트 점유 해제)
-	killCmd := exec.Command("powershell", "-NoProfile", "-Command", "Get-NetTCPConnection -LocalPort 5200 -State Listen -ErrorAction SilentlyContinue | Select-Object -Unique -ExpandProperty OwningProcess | ForEach-Object { taskkill /F /T /PID $_ }")
-	killCmd.Start()
+
+	// Cache backend directory path
+	a.backendDir = findBackendDir()
+
+	// Kill orphan processes asynchronously so we don't block app startup
+	go func() {
+		killPort5200()
+	}()
+}
+
+// killPort5200 kills any process occupying port 5200 concurrently
+func killPort5200() {
+	if runtime.GOOS == "windows" {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			exec.Command("taskkill", "/F", "/IM", "api-server.exe").Run()
+		}()
+		go func() {
+			defer wg.Done()
+			// Find and kill by port using native Go parsing to avoid cmd quote issues
+			out, err := exec.Command("netstat", "-ano", "-p", "tcp").Output()
+			if err == nil {
+				scanner := bufio.NewScanner(bytes.NewReader(out))
+				for scanner.Scan() {
+					line := scanner.Text()
+					if strings.Contains(line, ":5200") && strings.Contains(line, "LISTENING") {
+						fields := strings.Fields(line)
+						if len(fields) >= 5 {
+							pid := fields[len(fields)-1]
+							exec.Command("taskkill", "/F", "/PID", pid).Run()
+						}
+					}
+				}
+			}
+		}()
+		wg.Wait()
+	}
+}
+
+// waitForPortCleared actively checks if port 5200 is free, returning instantly when free.
+func waitForPortCleared() {
+	for i := 0; i < 20; i++ { // max 1 second
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:5200", 20*time.Millisecond)
+		if err != nil {
+			// Port is free (connection refused)
+			return
+		}
+		if conn != nil {
+			conn.Close()
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// emitLog appends to internal log buffer and pushes to frontend
+func (a *App) emitLog(msg string) {
+	a.serverLock.Lock()
+	a.logs = append(a.logs, msg)
+	if len(a.logs) > a.logLimit {
+		a.logs = a.logs[1:]
+	}
+	a.serverLock.Unlock()
+
+	if a.ctx != nil {
+		wailsRuntime.EventsEmit(a.ctx, "server-log", msg)
+	}
 }
 
 // ServerStatus represents the current state of the backend
@@ -67,7 +135,29 @@ func (a *App) GetStatus() ServerStatus {
 	return status
 }
 
-// StartServer starts the edulinker API server
+// findBackendDir searches upward from cwd to locate the backend/ directory.
+func findBackendDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	for i := 0; i < 4; i++ {
+		tryPath := filepath.Join(dir, "backend")
+		if stat, err := os.Stat(tryPath); err == nil && stat.IsDir() {
+			return tryPath
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// StartServer builds and starts the edulinker API server.
+// The build + start happens in a goroutine so the Wails IPC call returns immediately.
 func (a *App) StartServer() error {
 	a.serverLock.Lock()
 	if a.isRunning {
@@ -76,138 +166,111 @@ func (a *App) StartServer() error {
 	}
 	if a.isStarting {
 		a.serverLock.Unlock()
-		return nil // 중복 클릭 시 무시 (프론트에 에러 띄우지 않음)
+		return nil
 	}
 	a.isStarting = true
 	a.serverLock.Unlock()
 
+	if a.backendDir == "" {
+		a.serverLock.Lock()
+		a.isStarting = false
+		a.serverLock.Unlock()
+		return fmt.Errorf("backend directory not found")
+	}
+
+	// Reset logs
+	a.serverLock.Lock()
+	a.logs = []string{}
+	a.serverLock.Unlock()
+
+	// Run entire build+start flow in background so IPC doesn't block
+	go a.buildAndStart()
+
+	return nil
+}
+
+func (a *App) buildAndStart() {
 	defer func() {
 		a.serverLock.Lock()
 		a.isStarting = false
 		a.serverLock.Unlock()
 	}()
 
-	// Make sure any detached process on port 5200 is killed before starting
-	killCmd := exec.Command("powershell", "-NoProfile", "-Command", "Get-NetTCPConnection -LocalPort 5200 -State Listen -ErrorAction SilentlyContinue | Select-Object -Unique -ExpandProperty OwningProcess | ForEach-Object { taskkill /F /T /PID $_ }")
-	killCmd.Run()
-	time.Sleep(500 * time.Millisecond)
+	// Step 0: Kill anything on port 5200
+	a.emitLog("🧹 [DASHBOARD] 기존 프로세스 정리 중...")
+	killPort5200()
+	waitForPortCleared()
 
-	a.serverLock.Lock()
-	defer a.serverLock.Unlock()
+	// Step 1: Build
+	a.emitLog("🔨 [DASHBOARD] 백엔드 빌드 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
 
-	// Find backend directory by searching upwards
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get working dir: %w", err)
+	exePath := filepath.Join(a.backendDir, "api-server.exe")
+	buildCmd := exec.Command("go", "build", "-o", exePath, "./cmd/api-server/")
+	buildCmd.Dir = a.backendDir
+	hiddenProcAttr(buildCmd)
+
+	buildOut, buildErr := buildCmd.CombinedOutput()
+	if buildErr != nil {
+		a.emitLog(fmt.Sprintf("❌ [DASHBOARD] 빌드 실패: %v\n%s", buildErr, string(buildOut)))
+		return
 	}
+	a.emitLog("✅ [DASHBOARD] 빌드 성공. 서버를 시작합니다...")
 
-	backendDir := ""
-	for i := 0; i < 4; i++ {
-		tryPath := filepath.Join(dir, "backend")
-		if stat, err := os.Stat(tryPath); err == nil && stat.IsDir() {
-			backendDir = tryPath
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	if backendDir == "" {
-		return fmt.Errorf("backend directory not found")
-	}
-
-	cmd := exec.Command("go", "run", "./cmd/api-server/")
-	cmd.Dir = backendDir
-	// CREATE_NO_WINDOW = 0x08000000
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000, HideWindow: true}
+	// Step 2: Run
+	cmd := exec.Command(exePath)
+	cmd.Dir = a.backendDir
+	hiddenProcAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		a.emitLog(fmt.Sprintf("❌ [DASHBOARD] stdout 파이프 실패: %v", err))
+		return
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return err
+		a.emitLog(fmt.Sprintf("❌ [DASHBOARD] stderr 파이프 실패: %v", err))
+		return
 	}
 
 	if err := cmd.Start(); err != nil {
-		return err
+		a.emitLog(fmt.Sprintf("❌ [DASHBOARD] 서버 실행 실패: %v", err))
+		return
 	}
 
+	a.serverLock.Lock()
 	a.serverCmd = cmd
 	a.isRunning = true
 	a.startTime = time.Now()
+	a.serverLock.Unlock()
 
-	startupMsg := "🚀 [DASHBOARD] 서버 구동 프로세스가 시작되었습니다. 로그를 대기합니다..."
-	a.logs = []string{startupMsg} // Reset logs
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "server-log", startupMsg)
-	}
+	a.emitLog("🚀 [DASHBOARD] 서버 프로세스가 시작되었습니다 (PID: " + fmt.Sprintf("%d", cmd.Process.Pid) + ")")
 
-	// Read stdout asynchronously
+	// Stream stdout
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			text := scanner.Text()
-
-			a.serverLock.Lock()
-			a.logs = append(a.logs, text)
-			if len(a.logs) > a.logLimit {
-				a.logs = a.logs[1:]
-			}
-			a.serverLock.Unlock()
-
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, "server-log", text)
-			}
+			a.emitLog(scanner.Text())
 		}
 	}()
 
-	// Read stderr asynchronously
+	// Stream stderr
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			text := scanner.Text()
-
-			a.serverLock.Lock()
-			a.logs = append(a.logs, "[STDERR] "+text)
-			if len(a.logs) > a.logLimit {
-				a.logs = a.logs[1:]
-			}
-			a.serverLock.Unlock()
-
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, "server-log", "[STDERR] "+text)
-			}
+			a.emitLog("[STDERR] " + scanner.Text())
 		}
 	}()
 
-	// Wait routine
+	// Wait for process exit
 	go func() {
 		processErr := cmd.Wait()
 		if processErr != nil {
-			msg := fmt.Sprintf("❌ [DASHBOARD] 서버 프로세스가 종료되었습니다: %v", processErr)
-			a.serverLock.Lock()
-			a.logs = append(a.logs, msg)
-			a.serverLock.Unlock()
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, "server-log", msg)
-			}
+			a.emitLog(fmt.Sprintf("❌ [DASHBOARD] 서버 프로세스가 종료되었습니다: %v", processErr))
 		} else {
-			msg := "🛑 [DASHBOARD] 서버 프로세스가 정상 종료되었습니다."
-			a.serverLock.Lock()
-			a.logs = append(a.logs, msg)
-			a.serverLock.Unlock()
-			if a.ctx != nil {
-				runtime.EventsEmit(a.ctx, "server-log", msg)
-			}
+			a.emitLog("🛑 [DASHBOARD] 서버 프로세스가 정상 종료되었습니다.")
 		}
 
 		a.serverLock.Lock()
-		// Only set false if this process is still the active serverCmd
 		if a.serverCmd == cmd {
 			a.isRunning = false
 			a.serverCmd = nil
@@ -215,34 +278,34 @@ func (a *App) StartServer() error {
 		a.serverLock.Unlock()
 
 		if a.ctx != nil {
-			runtime.EventsEmit(a.ctx, "server-stopped")
+			wailsRuntime.EventsEmit(a.ctx, "server-stopped")
 		}
 	}()
-
-	return nil
 }
 
 // StopServer kills the API server
 func (a *App) StopServer() error {
 	a.serverLock.Lock()
-	defer a.serverLock.Unlock()
+	cmd := a.serverCmd
+	a.serverLock.Unlock()
 
-	if !a.isRunning || a.serverCmd == nil || a.serverCmd.Process == nil {
-		return fmt.Errorf("server is not running")
+	// Try killing by PID first if we have a process handle
+	if cmd != nil && cmd.Process != nil {
+		pid := cmd.Process.Pid
+		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid)).Run()
 	}
 
-	// Terminate the process tree
-	pid := a.serverCmd.Process.Pid
-	killCmd := exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid))
-	err := killCmd.Run()
-	if err != nil {
-		// Fallback to process.Kill()
-		a.serverCmd.Process.Kill()
-	}
+	// Also kill by name and port as fallback
+	killPort5200()
 
+	time.Sleep(300 * time.Millisecond)
+
+	a.serverLock.Lock()
 	a.isRunning = false
 	a.serverCmd = nil
+	a.serverLock.Unlock()
 
+	a.emitLog("🛑 [DASHBOARD] 서버를 중지했습니다.")
 	return nil
 }
 
@@ -251,7 +314,6 @@ func (a *App) GetLogs() []string {
 	a.serverLock.Lock()
 	defer a.serverLock.Unlock()
 
-	// Return a copy to avoid data races
 	logsCopy := make([]string, len(a.logs))
 	copy(logsCopy, a.logs)
 	return logsCopy
@@ -287,7 +349,7 @@ func checkPort(port string) bool {
 		return false
 	}
 	if conn != nil {
-		defer conn.Close()
+		conn.Close()
 		return true
 	}
 	return false
@@ -372,7 +434,6 @@ if (!(Test-Path $minioData)) { New-Item -ItemType Directory -Force -Path $minioD
 if (!(Get-Process minio -ErrorAction SilentlyContinue)) {
     Write-Host "🚀 [INFO] MinIO 백그라운드 실행 중..."
     Start-Process "$minioExe" -ArgumentList "server", $minioData -WindowStyle Hidden
-	# 기본 패스워드 환경변수가 현재 쉘에 없으므로 기본 minioadmin/minioadmin 으로 열림
 } else {
     Write-Host "🚀 [INFO] MinIO가 이미 실행 중입니다."
 }
@@ -380,7 +441,6 @@ if (!(Get-Process minio -ErrorAction SilentlyContinue)) {
 Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!"
 `
 	tmpFile := filepath.Join(os.TempDir(), "setup_edulinker_infra.ps1")
-	// Save the powershell script with a UTF-8 BOM so Windows PowerShell doesn't break Korean chars
 	scriptBytes := append([]byte{0xEF, 0xBB, 0xBF}, []byte(script)...)
 	err := os.WriteFile(tmpFile, scriptBytes, 0755)
 	if err != nil {
@@ -389,6 +449,7 @@ Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!
 	defer os.Remove(tmpFile)
 
 	cmd := exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile)
+	hiddenProcAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -401,18 +462,7 @@ Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		text := scanner.Text()
-
-		a.serverLock.Lock()
-		a.logs = append(a.logs, text)
-		if len(a.logs) > a.logLimit {
-			a.logs = a.logs[1:]
-		}
-		a.serverLock.Unlock()
-
-		if a.ctx != nil {
-			runtime.EventsEmit(a.ctx, "server-log", text)
-		}
+		a.emitLog(scanner.Text())
 	}
 
 	if err := cmd.Wait(); err != nil {

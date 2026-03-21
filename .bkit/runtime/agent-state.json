@@ -1,14 +1,25 @@
 {
   "version": "1.0",
-  "enabled": false,
+  "enabled": true,
   "teamName": "",
   "feature": "frontend",
   "pdcaPhase": "do",
   "orchestrationPattern": "leader",
   "ctoAgent": "opus",
-  "startedAt": "2026-03-20T22:42:14.305Z",
-  "lastUpdated": "2026-03-20T22:43:23.074Z",
-  "teammates": [],
+  "startedAt": "2026-03-21T02:06:54.813Z",
+  "lastUpdated": "2026-03-21T02:06:54.828Z",
+  "teammates": [
+    {
+      "name": "af374148242389976",
+      "role": "Explore",
+      "model": "sonnet",
+      "status": "spawning",
+      "currentTask": null,
+      "taskId": null,
+      "startedAt": "2026-03-21T02:06:54.827Z",
+      "lastActivityAt": "2026-03-21T02:06:54.827Z"
+    }
+  ],
   "progress": {
     "totalTasks": 0,
     "completedTasks": 0,
@@ -17,5 +28,5 @@
     "pendingTasks": 0
   },
   "recentMessages": [],
-  "sessionId": "94b4acbc-d59a-4f72-a83f-254cb39a57a3"
+  "sessionId": "510b486b-577b-40d5-b160-b68bd445df11"
 }

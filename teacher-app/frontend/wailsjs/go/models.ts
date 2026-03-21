@@ -4,9 +4,15 @@ export namespace main {
 	    success: boolean;
 	    token: string;
 	    refresh_token: string;
+	    user_id: string;
 	    user_name: string;
 	    user_role: string;
 	    school_name: string;
+	    department: string;
+	    task_name: string;
+	    class_phone: string;
+	    grade: number;
+	    class_num: number;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -18,9 +24,15 @@ export namespace main {
 	        this.success = source["success"];
 	        this.token = source["token"];
 	        this.refresh_token = source["refresh_token"];
+	        this.user_id = source["user_id"];
 	        this.user_name = source["user_name"];
 	        this.user_role = source["user_role"];
 	        this.school_name = source["school_name"];
+	        this.department = source["department"];
+	        this.task_name = source["task_name"];
+	        this.class_phone = source["class_phone"];
+	        this.grade = source["grade"];
+	        this.class_num = source["class_num"];
 	        this.error = source["error"];
 	    }
 	}

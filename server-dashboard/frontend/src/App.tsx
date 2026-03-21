@@ -8,6 +8,7 @@ function App() {
   const [uptime, setUptime] = useState("0s");
   const [logs, setLogs] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'status' | 'settings'>('status');
+  const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn'>('all');
   const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false });
   const [isStartingInfra, setIsStartingInfra] = useState(false);
   const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') === 'true');
@@ -25,25 +26,29 @@ function App() {
   // Boot sequence and event subscriptions
   useEffect(() => {
     const bootSequence = async () => {
-      // 1. Check & start infrastructure if needed
-      let currentDeps = await CheckDependencies();
-      setDependencies(currentDeps);
-      const needsInfra = !currentDeps.postgres || !currentDeps.redis || !currentDeps.minio;
-
-      if (autoInfra && needsInfra) {
-        await handleStartInfraCore();
-        // Re-check after infra start
-        currentDeps = await CheckDependencies();
+      try {
+        // 1. Check & start infrastructure if needed
+        let currentDeps = await CheckDependencies();
         setDependencies(currentDeps);
-      }
+        const needsInfra = !currentDeps.postgres || !currentDeps.redis || !currentDeps.minio;
 
-      // 2. Check & start backend server if needed
-      const statusResult = await GetStatus();
-      setIsRunning(statusResult.isRunning);
-      setUptime(statusResult.uptime);
+        if (autoInfra && needsInfra) {
+          await handleStartInfraCore();
+          currentDeps = await CheckDependencies();
+          setDependencies(currentDeps);
+        }
 
-      if (autoStart && !statusResult.isRunning) {
-        await handleStartCore();
+        // 2. Check & start backend server if needed
+        const statusResult = await GetStatus();
+        setIsRunning(statusResult.isRunning);
+        setUptime(statusResult.uptime);
+
+        if (autoStart && !statusResult.isRunning) {
+          await handleStartCore();
+        }
+      } catch (err) {
+        console.error("Boot sequence error:", err);
+        toast.error("시작 중 오류 발생: " + err);
       }
     };
 
@@ -113,9 +118,10 @@ function App() {
 
   const handleStartCore = async () => {
     try {
-      setLogs([]);
       await StartServer();
-      setIsRunning(true);
+      // Don't set isRunning here — the 2s polling will detect it
+      // once the server actually starts (build + launch takes time)
+      toast.info("서버를 시작하는 중입니다... 로그를 확인하세요.");
     } catch (err: any) {
       console.error(err);
       toast.error("서버 시작 실패: " + err);
@@ -260,9 +266,16 @@ function App() {
             {/* Log Viewer */}
             <div className="flex-1 min-h-0 bg-slate-950 rounded-2xl border border-slate-800 flex flex-col overflow-hidden shadow-inner">
               <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex justify-between items-center text-slate-400">
-                <div className="flex items-center gap-2">
-                  <i className="fi fi-rr-terminal" style={{ fontSize: 16 }} />
-                  <span className="text-xs font-mono tracking-wider font-semibold">STDOUT / STDERR</span>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <i className="fi fi-rr-terminal" style={{ fontSize: 16 }} />
+                    <span className="text-xs font-mono tracking-wider font-semibold">STDOUT / STDERR</span>
+                  </div>
+                  <div className="flex bg-slate-950 rounded-lg p-0.5 border border-slate-800">
+                    <button onClick={() => setLogFilter('all')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${logFilter === 'all' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>전체</button>
+                    <button onClick={() => setLogFilter('error')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${logFilter === 'error' ? 'bg-rose-500/20 text-rose-400 shadow-sm' : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800/50'}`}>에러</button>
+                    <button onClick={() => setLogFilter('warn')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${logFilter === 'warn' ? 'bg-orange-500/20 text-orange-400 shadow-sm' : 'text-slate-400 hover:text-orange-400 hover:bg-slate-800/50'}`}>경고</button>
+                  </div>
                 </div>
                 <button
                   onClick={handleClearLogs}
@@ -278,10 +291,16 @@ function App() {
                     표시할 로그가 없습니다. 서버를 시작해주세요.
                   </div>
                 ) : (
-                  logs.map((log, i) => (
+                  logs.filter(log => {
+                    if (logFilter === 'all') return true;
+                    if (logFilter === 'error') return log.includes('ERR');
+                    if (logFilter === 'warn') return log.includes('WARN');
+                    return true;
+                  }).map((log, i) => (
                     <div key={i} className="whitespace-pre-wrap break-words border-b border-slate-800/50 pb-1 mb-1 last:border-0 hover:bg-slate-800/30 px-1 rounded-sm">
                       {log.includes('INFO') && <span className="text-blue-400 font-bold mr-2">[INFO]</span>}
-                      {log.includes('ERR') && <span className="text-rose-400 font-bold mr-2">[WARN]</span>}
+                      {log.includes('ERR') && <span className="text-rose-400 font-bold mr-2">[ERR]</span>}
+                      {log.includes('WARN') && <span className="text-orange-400 font-bold mr-2">[WARN]</span>}
                       {log.includes('🚀') && <span className="text-emerald-400 font-bold mr-2">🚀</span>}
                       {log.replace(/\[(INFO|ERR|WARN)\]|🚀/g, '')}
                     </div>

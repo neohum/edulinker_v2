@@ -35,10 +35,15 @@ type CreateUserRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Name     string `json:"name,omitempty"`
-	Phone    string `json:"phone,omitempty"`
-	Email    string `json:"email,omitempty"`
-	IsActive *bool  `json:"is_active,omitempty"`
+	Name       string  `json:"name,omitempty"`
+	Phone      string  `json:"phone,omitempty"`
+	ClassPhone string  `json:"class_phone,omitempty"`
+	Email      string  `json:"email,omitempty"`
+	IsActive   *bool   `json:"is_active,omitempty"`
+	Grade      *int    `json:"grade,omitempty"`
+	ClassNum   *int    `json:"class_num,omitempty"`
+	Department *string `json:"department,omitempty"`
+	TaskName   *string `json:"task_name,omitempty"`
 }
 
 type UserListResponse struct {
@@ -49,10 +54,10 @@ type UserListResponse struct {
 }
 
 type ImportStudentResult struct {
-	Total    int      `json:"total"`
-	Created  int      `json:"created"`
-	Skipped  int      `json:"skipped"`
-	Errors   []string `json:"errors,omitempty"`
+	Total   int      `json:"total"`
+	Created int      `json:"created"`
+	Skipped int      `json:"skipped"`
+	Errors  []string `json:"errors,omitempty"`
 }
 
 type AddStudentRequest struct {
@@ -136,6 +141,8 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 	page := c.QueryInt("page", 1)
 	pageSize := c.QueryInt("page_size", 20)
 	roleFilter := c.Query("role", "")
+	gradeFilter := c.QueryInt("grade", 0)
+	classFilter := c.QueryInt("class_num", 0)
 
 	if page < 1 {
 		page = 1
@@ -147,6 +154,12 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 	query := h.db.Where("school_id = ?", schoolID)
 	if roleFilter != "" {
 		query = query.Where("role = ?", roleFilter)
+	}
+	if gradeFilter > 0 {
+		query = query.Where("grade = ?", gradeFilter)
+	}
+	if classFilter > 0 {
+		query = query.Where("class_num = ?", classFilter)
 	}
 
 	var total int64
@@ -211,11 +224,26 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	if req.Phone != "" {
 		user.Phone = req.Phone
 	}
+	if req.ClassPhone != "" {
+		user.ClassPhone = req.ClassPhone
+	}
 	if req.Email != "" {
 		user.Email = req.Email
 	}
 	if req.IsActive != nil && currentRole == models.RoleAdmin {
 		user.IsActive = *req.IsActive
+	}
+	if req.Grade != nil {
+		user.Grade = *req.Grade
+	}
+	if req.ClassNum != nil {
+		user.Class = *req.ClassNum
+	}
+	if req.Department != nil {
+		user.Department = *req.Department
+	}
+	if req.TaskName != nil {
+		user.TaskName = *req.TaskName
 	}
 
 	h.db.Save(&user)
@@ -415,6 +443,29 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(result)
+}
+
+// DeleteStudentsBatch deletes multiple students by their IDs.
+func (h *UserHandler) DeleteStudentsBatch(c *fiber.Ctx) error {
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "school context not found"})
+	}
+
+	var req struct {
+		IDs []uuid.UUID `json:"ids"`
+	}
+	if err := c.BodyParser(&req); err != nil || len(req.IDs) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "삭제할 학생 ID를 지정해주세요"})
+	}
+
+	result := h.db.Where("school_id = ? AND role = ? AND id IN ?",
+		schoolID, models.RoleStudent, req.IDs).Delete(&models.User{})
+
+	return c.JSON(fiber.Map{
+		"message": fmt.Sprintf("학생 %d명이 삭제되었습니다", result.RowsAffected),
+		"deleted": result.RowsAffected,
+	})
 }
 
 // DeleteStudentsByClass deletes all students in a specific grade/class.

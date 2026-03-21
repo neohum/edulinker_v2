@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Sendoc {
   id: string
@@ -20,7 +21,7 @@ export default function SendocPage() {
 
   const fetchDocs = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/sendoc', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -37,7 +38,7 @@ export default function SendocPage() {
 
   const handleDownloadPDF = async (id: string) => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/sendoc/${id}/pdf`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Gatong {
   id: string
@@ -27,7 +28,7 @@ export default function GatongPage() {
 
   const fetchGatongs = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/gatong', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -47,7 +48,7 @@ export default function GatongPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/gatong', {
         method: 'POST',
         headers: {

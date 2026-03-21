@@ -58,9 +58,10 @@ func (m *Manager) All() map[string]Plugin {
 	return m.plugins
 }
 
-// MountRoutes creates a route group for each plugin under /api/plugins/{id}.
-func (m *Manager) MountRoutes(app *fiber.App) {
-	pluginsGroup := app.Group("/api/plugins")
+// MountRoutes creates a route group for each plugin under /plugins/{id}.
+// The router should already be scoped (e.g., to /api with auth middleware).
+func (m *Manager) MountRoutes(router fiber.Router) {
+	pluginsGroup := router.Group("/plugins")
 	for id, p := range m.plugins {
 		group := pluginsGroup.Group("/" + id)
 		p.RegisterRoutes(group)

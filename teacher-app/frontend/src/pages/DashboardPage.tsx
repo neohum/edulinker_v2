@@ -15,22 +15,25 @@ import StudentAlertPage from './StudentAlertPage'
 import LinkerPage from './LinkerPage'
 import PcInfoPage from './PcInfoPage'
 import SettingsPage from './SettingsPage'
+import ProfilePage from './ProfilePage'
 
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'settings'
+type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'settings' | 'profile'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0)
 
   return (
     <div className="app-container">
       <Sidebar
         user={user}
         currentPage={currentPage}
+        badges={{ messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined }}
         onNavigate={(page) => setCurrentPage(page as PageView)}
         onLogout={onLogout}
       />
@@ -44,11 +47,15 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'dashboard' && <DashboardView user={user} />}
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage />}
-          {currentPage === 'studentmgmt' && <StudentMgmtPage />}
+          {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage />}
           {currentPage === 'aianalysis' && <AIAnalysisPage />}
           {currentPage === 'schoolevents' && <SchoolEventsPage />}
-          {currentPage === 'messenger' && <MessengerPage user={user} />}
+
+          <div style={{ display: currentPage === 'messenger' ? 'block' : 'none', height: '100%' }}>
+            <MessengerPage user={user} isActive={currentPage === 'messenger'} onUnreadChange={setUnreadMsgCount} />
+          </div>
+
           {currentPage === 'announcement' && <AnnouncementPage />}
           {currentPage === 'todo' && <TodoPage />}
           {currentPage === 'attendance' && <AttendancePage />}
@@ -56,8 +63,9 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'linker' && <LinkerPage />}
           {currentPage === 'pcinfo' && <PcInfoPage />}
           {currentPage === 'settings' && <SettingsPage />}
+          {currentPage === 'profile' && <ProfilePage user={user} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
+          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
         </div>
       </div>
     </div>
@@ -167,6 +175,7 @@ function getPageTitle(page: string): string {
     linker: 'linker',
     pcinfo: 'pc-info',
     settings: '설정',
+    profile: '내 프로필',
   }
   return titles[page] || page
 }

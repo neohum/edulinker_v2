@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Bookmark {
   id: string
@@ -27,7 +28,7 @@ export default function LinkerPage() {
   const fetchBookmarks = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/linker`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -47,7 +48,7 @@ export default function LinkerPage() {
     if (!addUrl.trim()) { toast.warning('URL을 입력하세요'); return }
 
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/linker', {
         method: 'POST',
         headers: {
@@ -80,7 +81,7 @@ export default function LinkerPage() {
         label: '삭제',
         onClick: async () => {
           try {
-            const token = localStorage.getItem('token')
+            const token = await getToken()
             const res = await fetch(`http://localhost:5200/api/plugins/linker/${id}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}` }

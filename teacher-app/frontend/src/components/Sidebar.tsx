@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import type { UserInfo } from '../App'
 
 interface SidebarProps {
   user: UserInfo
   currentPage: string
+  badges?: Record<string, number | undefined>
   onNavigate: (page: string) => void
   onLogout: () => void
 }
@@ -60,7 +62,9 @@ const systemItems: NavItem[] = [
   { id: 'settings', label: '설정', icon: 'fi fi-rr-settings' },
 ]
 
-function Sidebar({ user, currentPage, onNavigate, onLogout }: SidebarProps) {
+function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
+
   const roleLabel: Record<string, string> = {
     teacher: '교사',
     admin: '관리자',
@@ -69,16 +73,25 @@ function Sidebar({ user, currentPage, onNavigate, onLogout }: SidebarProps) {
   }
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       {/* Logo */}
-      <div className="sidebar-header">
+      <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">E</div>
-          <div>
-            <div className="sidebar-logo-text">edulinker</div>
-            <div className="sidebar-logo-version">v1.0.0 · Phase 1</div>
-          </div>
+          <div className="sidebar-logo-icon" title={isCollapsed ? "edulinker" : undefined} onClick={() => isCollapsed && setIsCollapsed(false)} style={{ cursor: isCollapsed ? 'pointer' : 'default' }}>E</div>
+          {!isCollapsed && (
+            <div>
+              <div className="sidebar-logo-text">edulinker</div>
+              <div className="sidebar-logo-version">v1.0.0 · Phase 1</div>
+            </div>
+          )}
         </div>
+        <button
+          className="sidebar-toggle-btn"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          title={isCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
+        >
+          <i className={`fi ${isCollapsed ? 'fi-rr-angle-right' : 'fi-rr-angle-left'}`} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -89,130 +102,159 @@ function Sidebar({ user, currentPage, onNavigate, onLogout }: SidebarProps) {
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
-            {item.badge && <span className="sidebar-item-badge">{item.badge}</span>}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
+            {((badges && badges[item.id]) || item.badge) ? (
+              <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
+            ) : null}
           </button>
         ))}
 
         {/* Group A */}
-        <div className="sidebar-section-title">A · 핵심 소통</div>
+        {!isCollapsed && <div className="sidebar-section-title">A · 핵심 소통</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupA.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
+            {((badges && badges[item.id]) || item.badge) ? (
+              <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
+            ) : null}
           </button>
         ))}
 
         {/* Group B */}
-        <div className="sidebar-section-title">B · 문서·결재</div>
+        {!isCollapsed && <div className="sidebar-section-title">B · 문서·결재</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupB.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* Group D */}
-        <div className="sidebar-section-title">D · 학생관리</div>
+        {!isCollapsed && <div className="sidebar-section-title">D · 학생관리</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupD.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* Group E */}
-        <div className="sidebar-section-title">E · 수업·평가</div>
+        {!isCollapsed && <div className="sidebar-section-title">E · 수업·평가</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupE.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* Group G */}
-        <div className="sidebar-section-title">G · AI 생기부 분석</div>
+        {!isCollapsed && <div className="sidebar-section-title">G · AI 생기부 분석</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupG.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* Group H */}
-        <div className="sidebar-section-title">H · 학교행사·투표</div>
+        {!isCollapsed && <div className="sidebar-section-title">H · 학교행사·투표</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupH.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* Group I */}
-        <div className="sidebar-section-title">I · 인프라·도구</div>
+        {!isCollapsed && <div className="sidebar-section-title">I · 인프라·도구</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {pluginGroupI.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
 
         {/* System */}
-        <div className="sidebar-section-title">시스템</div>
+        {!isCollapsed && <div className="sidebar-section-title">시스템</div>}
+        {isCollapsed && <div className="sidebar-section-divider" />}
         {systemItems.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
+            title={isCollapsed ? item.label : undefined}
           >
             <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {item.label}
+            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
           </button>
         ))}
       </nav>
 
       {/* User Footer */}
       <div className="sidebar-footer">
-        <div className="sidebar-user" onClick={onLogout} title="로그아웃">
+        <div className={`sidebar-user ${isCollapsed ? 'collapsed' : ''}`} onClick={() => isCollapsed ? setIsCollapsed(false) : onNavigate('profile')} title={isCollapsed ? "프로필 보기" : undefined}>
           <div className="sidebar-user-avatar">
             {user.name.charAt(0)}
           </div>
-          <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{user.name}</div>
-            <div className="sidebar-user-role">
-              {user.school} · {roleLabel[user.role] || user.role}
-            </div>
-          </div>
+          {!isCollapsed && (
+            <>
+              <div className="sidebar-user-info">
+                <div className="sidebar-user-name">{user.name}</div>
+                <div className="sidebar-user-role">
+                  {user.school} {user.department ? `· ${user.department}` : ''} · {roleLabel[user.role] || user.role}
+                </div>
+              </div>
+              <button className="sidebar-logout-btn" onClick={(e) => { e.stopPropagation(); onLogout(); }} title="로그아웃" aria-label="로그아웃">
+                <i className="fi fi-rr-sign-out-alt" />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </aside>

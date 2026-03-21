@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface AILog {
   id: string
@@ -23,7 +24,7 @@ export default function AIAnalysisPage() {
 
   const fetchLogs = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/aianalysis/logs', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -43,7 +44,7 @@ export default function AIAnalysisPage() {
     setGenerating(true)
     setGeneratedDraft('')
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
 
       // Phase 1: Call Ollama proxy directly from the frontend to preview,
       // and log the final version to the backend db if the user chooses to save.
@@ -80,7 +81,7 @@ export default function AIAnalysisPage() {
   const handleSaveToDB = async () => {
     if (!generatedDraft) return
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/aianalysis/generate', {
         method: 'POST',
         headers: {

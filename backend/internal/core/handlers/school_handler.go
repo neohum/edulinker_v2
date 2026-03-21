@@ -30,7 +30,8 @@ type SetupSchoolRequest struct {
 	SchoolName    string `json:"school_name"`
 	SchoolCode    string `json:"school_code"`
 	AdminName     string `json:"admin_name"`
-	AdminPhone    string `json:"admin_phone"`
+	AdminLoginID  string `json:"admin_login_id"`
+	AdminEmail    string `json:"admin_email"` // Optional
 	AdminPassword string `json:"admin_password"`
 }
 
@@ -47,7 +48,7 @@ func (h *SchoolHandler) SetupSchool(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	if req.SchoolName == "" || req.SchoolCode == "" || req.AdminName == "" || req.AdminPhone == "" || req.AdminPassword == "" {
+	if req.SchoolName == "" || req.SchoolCode == "" || req.AdminName == "" || req.AdminLoginID == "" || req.AdminPassword == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "all fields are required"})
 	}
 
@@ -77,7 +78,8 @@ func (h *SchoolHandler) SetupSchool(c *fiber.Ctx) error {
 	admin := models.User{
 		SchoolID:     school.ID,
 		Name:         req.AdminName,
-		Phone:        req.AdminPhone,
+		LoginID:      req.AdminLoginID,
+		Email:        req.AdminEmail,
 		Role:         models.RoleAdmin,
 		PasswordHash: string(hash),
 		IsActive:     true,

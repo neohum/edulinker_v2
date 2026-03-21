@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface PCRecord {
   id: string
@@ -31,7 +32,7 @@ export default function PcInfoPage() {
   const fetchRecords = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/pcinfo`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -55,7 +56,7 @@ export default function PcInfoPage() {
 
   const handleUpdateLabel = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/pcinfo/${editId}/label`, {
         method: 'PUT',
         headers: {

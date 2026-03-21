@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { getToken } from '../api'
 
 interface AttendanceRecord {
   id: string
@@ -19,7 +20,7 @@ export default function AttendancePage() {
 
   const fetchToday = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/attendance/today`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -36,7 +37,7 @@ export default function AttendancePage() {
 
   const handleConfirm = async (id: string) => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/attendance/${id}/confirm`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` }

@@ -1,7 +1,8 @@
 import { useState, FormEvent, useEffect } from 'react'
+import { UserInfo } from '../App'
 
 interface LoginPageProps {
-  onLogin: (user: { name: string; role: string; school: string }) => void
+  onLogin: (user: UserInfo) => void
 }
 
 function LoginPage({ onLogin }: LoginPageProps) {
@@ -22,6 +23,11 @@ function LoginPage({ onLogin }: LoginPageProps) {
 
   const [name, setName] = useState('')
   const [role, setRole] = useState('teacher')
+  const [grade, setGrade] = useState('')
+  const [classNum, setClassNum] = useState('')
+  const [taskName, setTaskName] = useState('')
+  const [department, setDepartment] = useState('')
+  const [classPhone, setClassPhone] = useState('')
 
   // Auto login & Remember me
   const [rememberMe, setRememberMe] = useState(false)
@@ -58,12 +64,18 @@ function LoginPage({ onLogin }: LoginPageProps) {
       if (wailsApp?.Login) {
         const result = await wailsApp.Login(p, pw)
         if (result.success) {
-          const jwt = result.token || result.Token || ''
-          if (jwt) localStorage.setItem('token', jwt)
+          // Token is stored in Go memory (per-instance), not localStorage
+          // This prevents cross-instance token sharing when running multiple Wails apps
           onLogin({
+            id: result.user_id,
             name: result.user_name,
             role: result.user_role,
             school: result.school_name,
+            department: result.department,
+            grade: result.grade,
+            classNum: result.class_num,
+            taskName: result.task_name,
+            classPhone: result.class_phone
           })
         } else {
           setError(result.error || '로그인에 실패했습니다')
@@ -82,9 +94,15 @@ function LoginPage({ onLogin }: LoginPageProps) {
           const user = data.user || {}
           const school = user.school || {}
           onLogin({
+            id: user.id || '',
             name: user.name || '교사',
             role: user.role || 'teacher',
-            school: school.name || ''
+            school: school.name || '',
+            department: user.department,
+            grade: user.grade,
+            classNum: user.class_num,
+            taskName: user.task_name,
+            classPhone: user.class_phone
           })
         } else {
           setError(data.error || '로그인에 실패했습니다')
@@ -143,14 +161,19 @@ function LoginPage({ onLogin }: LoginPageProps) {
         }
 
         if (wailsApp?.Register) {
-          const result = await wailsApp.Register(schoolCode, selectedSchoolName, name, phone, password, role)
+          const result = await wailsApp.Register(schoolCode, selectedSchoolName, name, phone, password, role, classPhone)
           if (result.success) {
-            const jwt = result.token || result.Token || ''
-            if (jwt) localStorage.setItem('token', jwt)
+            // Token is stored in Go memory (per-instance), not localStorage
             onLogin({
+              id: result.user_id,
               name: result.user_name,
               role: result.user_role,
               school: result.school_name,
+              department: result.department,
+              grade: result.grade,
+              classNum: result.class_num,
+              taskName: result.task_name,
+              classPhone: result.class_phone
             })
           } else {
             setError(result.error || '회원가입에 실패했습니다')
@@ -160,14 +183,31 @@ function LoginPage({ onLogin }: LoginPageProps) {
           const resp = await fetch('http://localhost:5200/api/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ school_code: schoolCode, school_name: selectedSchoolName, name, phone, password, role })
+            body: JSON.stringify({
+              school_code: schoolCode, school_name: selectedSchoolName, name, phone, password, role,
+              grade: grade ? parseInt(grade) : undefined,
+              class_num: classNum ? parseInt(classNum) : undefined,
+              task_name: taskName || undefined,
+              department: department || undefined,
+              class_phone: classPhone || undefined
+            })
           })
           const data = await resp.json()
           if (resp.ok && data.token) {
             localStorage.setItem('token', data.token)
             const user = data.user || {}
             const school = user.school || {}
-            onLogin({ name: user.name || name, role: user.role || role, school: school.name || selectedSchoolName })
+            onLogin({
+              id: user.id || '',
+              name: user.name || name,
+              role: user.role || role,
+              school: school.name || selectedSchoolName,
+              department: user.department || department,
+              grade: user.grade || (grade ? parseInt(grade) : undefined),
+              classNum: user.class_num || (classNum ? parseInt(classNum) : undefined),
+              taskName: user.task_name || taskName,
+              classPhone: user.class_phone
+            })
           } else {
             setError(data.error || '회원가입에 실패했습니다')
           }
@@ -209,6 +249,11 @@ function LoginPage({ onLogin }: LoginPageProps) {
     setSelectedSchoolName('')
     setSchoolSearchTerm('')
     setSearchResults([])
+    setGrade('')
+    setClassNum('')
+    setTaskName('')
+    setDepartment('')
+    setClassPhone('')
   }
 
   return (
@@ -222,7 +267,13 @@ function LoginPage({ onLogin }: LoginPageProps) {
           <h2>자동 로그인 중입니다...</h2>
         </div>
       ) : (
-        <div className="login-card" style={{ maxWidth: isRegister ? '450px' : '400px' }}>
+        <div className="login-card" style={{
+          width: '100%',
+          maxWidth: isRegister ? '680px' : '400px',
+          maxHeight: isRegister ? '85vh' : 'none',
+          overflowY: isRegister ? 'auto' : 'visible',
+          overflowX: 'hidden'
+        }}>
           <div className="login-logo">
             <div className="login-logo-icon">E</div>
             <h1>edulinker</h1>
@@ -297,6 +348,65 @@ function LoginPage({ onLogin }: LoginPageProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">소속 (선택)</label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder="예: 1학년부, 과학과 등"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">담당 업무 (선택)</label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder="예: 정보부장, 스포츠클럽 등"
+                      value={taskName}
+                      onChange={(e) => setTaskName(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">담당 학년 (선택)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      placeholder="예: 3"
+                      value={grade}
+                      onChange={(e) => setGrade(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">담당 반 (선택)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      placeholder="예: 1"
+                      value={classNum}
+                      onChange={(e) => setClassNum(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">교실(내선) 전화번호 (선택)</label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder="예: 02-123-4567"
+                      value={classPhone}
+                      onChange={(e) => setClassPhone(e.target.value)}
+                    />
+                  </div>
                 </div>
               </>
             )}

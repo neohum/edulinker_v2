@@ -5,9 +5,15 @@ import DashboardPage from './pages/DashboardPage'
 
 // User info stored after login
 export interface UserInfo {
+  id: string
   name: string
   role: string
   school: string
+  department?: string
+  grade?: number
+  classNum?: number
+  taskName?: string
+  classPhone?: string
 }
 
 function App() {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Announcement {
   id: string
@@ -28,7 +29,7 @@ export default function AnnouncementPage() {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const url = filterType ? `http://localhost:5200/api/plugins/announcement?type=${filterType}` : `http://localhost:5200/api/plugins/announcement`
       const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
       if (res.ok) {
@@ -45,7 +46,7 @@ export default function AnnouncementPage() {
   const handleCreate = async () => {
     if (!formTitle.trim()) { toast.warning('제목을 입력하세요'); return }
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/announcement', {
         method: 'POST',
         headers: {

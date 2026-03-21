@@ -6,7 +6,17 @@
       "Bash(go get:*)",
       "Bash(go build:*)",
       "Bash(npm install:*)",
-      "Bash(go mod:*)"
+      "Bash(go mod:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(where wails:*)",
+      "Bash(timeout 20 wails dev:*)",
+      "Bash(powershell:*)",
+      "Bash(netstat:*)",
+      "Bash(ls -la *.tsx)",
+      "Bash(find E:worksprojectedulinkerbackendinternalcorefilegateway -type f -name *.go)",
+      "Bash(find E:worksprojectedulinker -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\) -path */frontend/* ! -path */node_modules/*)",
+      "Bash(find E:worksprojectedulinkerteacher-appfrontendsrc -name *.ts -o -name *.tsx)"
     ]
   }
 }

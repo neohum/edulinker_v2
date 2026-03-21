@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface WeeklyPlan {
   id: string
@@ -37,7 +38,7 @@ export default function CurriculumPage() {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const endpoint = activeTab === 'plans' ? 'weekly-plans' : 'evaluations'
       const res = await fetch(`http://localhost:5200/api/plugins/curriculum/${endpoint}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -55,7 +56,7 @@ export default function CurriculumPage() {
   const handleAddPlan = async () => {
     if (!planTitle.trim()) { toast.warning('제목을 입력하세요'); return }
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch('http://localhost:5200/api/plugins/curriculum/weekly-plans', {
         method: 'POST',
         headers: {

@@ -14,7 +14,7 @@ export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
 export function Logout():Promise<void>;
 
-export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<main.LoginResult>;
+export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string):Promise<main.LoginResult>;
 
 export function SearchSchool(arg1:string):Promise<Array<main.SchoolResult>>;
 

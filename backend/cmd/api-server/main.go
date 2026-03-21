@@ -129,7 +129,11 @@ func main() {
 	pluginMgr.Register(screenPlugin)
 
 	// Initialize SyncAgent (Bridge to Cloud)
-	agent := syncagent.New(db, "http://localhost:8080/api/sync")
+	syncURL := os.Getenv("SYNC_SERVER_URL")
+	if syncURL == "" {
+		syncURL = "https://edulinker-sync-server-production.up.railway.app/api/sync"
+	}
+	agent := syncagent.New(db, syncURL)
 	syncagent.RegisterProvider("announcement", annPlugin)
 	syncagent.RegisterProvider("schoolevents", eventsPlugin)
 	syncagent.RegisterProvider("curriculum", curriculumPlugin)
@@ -234,6 +238,7 @@ func main() {
 	userRoutes.Post("/add-student", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.AddStudent)
 	userRoutes.Post("/import-students", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.ImportStudentsExcel)
 	userRoutes.Delete("/students-by-class", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DeleteStudentsByClass)
+	userRoutes.Post("/delete-students-batch", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DeleteStudentsBatch)
 	userRoutes.Get("/", userHandler.ListUsers)
 	userRoutes.Get("/:id", userHandler.GetUser)
 	userRoutes.Put("/:id", userHandler.UpdateUser)
@@ -257,8 +262,8 @@ func main() {
 		fileRoutes.Delete("/:id", fileHandler.Delete)
 	}
 
-	// --- Mount plugin routes ---
-	pluginMgr.MountRoutes(app)
+	// --- Mount plugin routes (under auth-protected group) ---
+	pluginMgr.MountRoutes(protected)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)

@@ -179,12 +179,17 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 	if len(msg.To) > 0 {
 		// Targeted message — send only to specified users
 		h.mu.RLock()
+		log.Printf("📨 WS routing to %d recipients, connected clients: %d", len(msg.To), len(h.clients))
 		for _, targetID := range msg.To {
 			if client, ok := h.clients[targetID]; ok {
 				select {
 				case client.Send <- data:
+					log.Printf("✅ WS delivered to %s", targetID)
 				default:
+					log.Printf("⚠️ WS buffer full for %s", targetID)
 				}
+			} else {
+				log.Printf("❌ WS client not found: %s", targetID)
 			}
 		}
 		h.mu.RUnlock()

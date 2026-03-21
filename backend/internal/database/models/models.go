@@ -51,12 +51,16 @@ type User struct {
 	ID           uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	SchoolID     uuid.UUID `json:"school_id" gorm:"type:uuid;index"`
 	Name         string    `json:"name" gorm:"type:varchar(50);not null"`
+	LoginID      string    `json:"login_id" gorm:"type:varchar(50);uniqueIndex"`
 	Phone        string    `json:"phone,omitempty" gorm:"type:varchar(20);index"`
 	Email        string    `json:"email,omitempty" gorm:"type:varchar(100)"`
 	Role         Role      `json:"role" gorm:"type:varchar(20);not null"`
 	Grade        int       `json:"grade,omitempty" gorm:"type:int;default:0"`
 	Class        int       `json:"class_num,omitempty" gorm:"type:int;default:0;column:class_num"`
 	Number       int       `json:"number,omitempty" gorm:"type:int;default:0"`
+	Department   string    `json:"department,omitempty" gorm:"type:varchar(50)"`
+	TaskName     string    `json:"task_name,omitempty" gorm:"type:varchar(50)"`
+	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`
 	PasswordHash string    `json:"-" gorm:"type:varchar(255)"`
 	IsActive     bool      `json:"is_active" gorm:"default:true"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`

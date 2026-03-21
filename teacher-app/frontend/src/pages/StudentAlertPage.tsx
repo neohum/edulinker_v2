@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import { getToken } from '../api'
 
 interface Alert {
   id: string
@@ -28,7 +29,7 @@ export default function StudentAlertPage() {
   const fetchAlerts = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/studentalert`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -47,7 +48,7 @@ export default function StudentAlertPage() {
     if (!alertTitle.trim()) { toast.warning('제목을 입력하세요'); return }
 
     try {
-      const token = localStorage.getItem('token')
+      const token = await getToken()
       let expires = new Date()
       expires.setDate(expires.getDate() + 1)
 
@@ -83,7 +84,7 @@ export default function StudentAlertPage() {
         label: '삭제',
         onClick: async () => {
           try {
-            const token = localStorage.getItem('token')
+            const token = await getToken()
             const res = await fetch(`http://localhost:5200/api/plugins/studentalert/${id}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}` }

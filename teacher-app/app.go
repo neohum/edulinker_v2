@@ -53,15 +53,21 @@ type LoginResult struct {
 	Success      bool   `json:"success"`
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	UserID       string `json:"user_id"`
 	UserName     string `json:"user_name"`
 	UserRole     string `json:"user_role"`
 	SchoolName   string `json:"school_name"`
+	Department   string `json:"department"`
+	TaskName     string `json:"task_name"`
+	ClassPhone   string `json:"class_phone"`
+	Grade        int    `json:"grade"`
+	ClassNum     int    `json:"class_num"`
 	Error        string `json:"error,omitempty"`
 }
 
 // Register registers a new user with the API server and signs them in.
-func (a *App) Register(schoolCode, schoolName, name, phone, password, role string) LoginResult {
-	body := fmt.Sprintf(`{"school_code":"%s","school_name":"%s","name":"%s","phone":"%s","password":"%s","role":"%s"}`, schoolCode, schoolName, name, phone, password, role)
+func (a *App) Register(schoolCode, schoolName, name, phone, password, role, classPhone string) LoginResult {
+	body := fmt.Sprintf(`{"school_code":"%s","school_name":"%s","name":"%s","phone":"%s","password":"%s","role":"%s","class_phone":"%s"}`, schoolCode, schoolName, name, phone, password, role, classPhone)
 	resp, err := http.Post(a.apiBase+"/api/auth/register", "application/json", strings.NewReader(body))
 	if err != nil {
 		return LoginResult{Success: false, Error: "서버에 연결할 수 없습니다"}
@@ -87,13 +93,31 @@ func (a *App) Register(schoolCode, schoolName, name, phone, password, role strin
 	user := result["user"].(map[string]interface{})
 	school := user["school"].(map[string]interface{})
 
+	uid, _ := user["id"].(string)
+	dept, _ := user["department"].(string)
+	task, _ := user["task_name"].(string)
+	cp, _ := user["class_phone"].(string)
+	var g, c int
+	if gVal, ok := user["grade"].(float64); ok {
+		g = int(gVal)
+	}
+	if cVal, ok := user["class_num"].(float64); ok {
+		c = int(cVal)
+	}
+
 	return LoginResult{
 		Success:      true,
 		Token:        a.authToken,
 		RefreshToken: result["refresh_token"].(string),
+		UserID:       uid,
 		UserName:     user["name"].(string),
 		UserRole:     user["role"].(string),
 		SchoolName:   school["name"].(string),
+		Department:   dept,
+		TaskName:     task,
+		ClassPhone:   cp,
+		Grade:        g,
+		ClassNum:     c,
 	}
 }
 
@@ -122,13 +146,31 @@ func (a *App) Login(phone, password string) LoginResult {
 	user := result["user"].(map[string]interface{})
 	school := user["school"].(map[string]interface{})
 
+	uid, _ := user["id"].(string)
+	dept, _ := user["department"].(string)
+	task, _ := user["task_name"].(string)
+	cp, _ := user["class_phone"].(string)
+	var g, c int
+	if gVal, ok := user["grade"].(float64); ok {
+		g = int(gVal)
+	}
+	if cVal, ok := user["class_num"].(float64); ok {
+		c = int(cVal)
+	}
+
 	return LoginResult{
 		Success:      true,
 		Token:        a.authToken,
 		RefreshToken: result["refresh_token"].(string),
+		UserID:       uid,
 		UserName:     user["name"].(string),
 		UserRole:     user["role"].(string),
 		SchoolName:   school["name"].(string),
+		Department:   dept,
+		TaskName:     task,
+		ClassPhone:   cp,
+		Grade:        g,
+		ClassNum:     c,
 	}
 }
 

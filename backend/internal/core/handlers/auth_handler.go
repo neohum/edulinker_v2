@@ -22,6 +22,7 @@ func NewAuthHandler(db *gorm.DB, authSvc *auth.Service) *AuthHandler {
 }
 
 type LoginRequest struct {
+	LoginID  string `json:"login_id"`
 	Phone    string `json:"phone"`
 	Password string `json:"password"`
 }
@@ -43,6 +44,11 @@ type RegisterRequest struct {
 	Phone      string      `json:"phone"`
 	Password   string      `json:"password"`
 	Role       models.Role `json:"role"` // teacher, parent, student
+	Grade      int         `json:"grade"`
+	ClassNum   int         `json:"class_num"`
+	TaskName   string      `json:"task_name"`
+	Department string      `json:"department"`
+	ClassPhone string      `json:"class_phone"`
 }
 
 type LoginResponse struct {
@@ -58,12 +64,19 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	if req.Phone == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "전화번호를 입력해주세요"})
+	if req.LoginID == "" && req.Phone == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "아이디 또는 전화번호를 입력해주세요"})
+	}
+
+	query := h.db.Preload("School")
+	if req.LoginID != "" {
+		query = query.Where("login_id = ?", req.LoginID)
+	} else {
+		query = query.Where("phone = ? AND phone != ''", req.Phone)
 	}
 
 	var user models.User
-	result := h.db.Preload("School").Where("phone = ? AND phone != ''", req.Phone).First(&user)
+	result := query.First(&user)
 	if result.Error != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid credentials"})
 	}
@@ -246,6 +259,11 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		Role:         req.Role,
 		PasswordHash: string(hash),
 		IsActive:     true,
+		Grade:        req.Grade,
+		Class:        req.ClassNum,
+		TaskName:     req.TaskName,
+		Department:   req.Department,
+		ClassPhone:   req.ClassPhone,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
 		log.Printf("failed to create user: %v", err)
