@@ -10,6 +10,18 @@ export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
 
+export function DeleteDBUser(arg1) {
+  return window['go']['main']['App']['DeleteDBUser'](arg1);
+}
+
+export function GetDBUsers() {
+  return window['go']['main']['App']['GetDBUsers']();
+}
+
+export function GetLocalIP() {
+  return window['go']['main']['App']['GetLocalIP']();
+}
+
 export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
 }
@@ -22,10 +34,18 @@ export function InstallAndStartWithScoop() {
   return window['go']['main']['App']['InstallAndStartWithScoop']();
 }
 
+export function ResetDBUserPassword(arg1, arg2) {
+  return window['go']['main']['App']['ResetDBUserPassword'](arg1, arg2);
+}
+
 export function StartServer() {
   return window['go']['main']['App']['StartServer']();
 }
 
 export function StopServer() {
   return window['go']['main']['App']['StopServer']();
+}
+
+export function UpdateDBUserRole(arg1, arg2) {
+  return window['go']['main']['App']['UpdateDBUserRole'](arg1, arg2);
 }

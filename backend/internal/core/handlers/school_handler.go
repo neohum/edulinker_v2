@@ -78,7 +78,7 @@ func (h *SchoolHandler) SetupSchool(c *fiber.Ctx) error {
 	admin := models.User{
 		SchoolID:     school.ID,
 		Name:         req.AdminName,
-		LoginID:      req.AdminLoginID,
+		LoginID:      &req.AdminLoginID,
 		Email:        req.AdminEmail,
 		Role:         models.RoleAdmin,
 		PasswordHash: string(hash),

@@ -36,8 +36,8 @@ type SendocRecipient struct {
 	UserID            uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
 	ReadAt            *time.Time `json:"read_at,omitempty"`
 	IsSigned          bool       `gorm:"default:false" json:"is_signed"`
-	SignatureImageURL string     `gorm:"type:varchar(255)" json:"signature_image_url,omitempty"` // MinIO path
-	FormDataJSON      string     `gorm:"type:jsonb;default:'{}'" json:"form_data_json"`          // Values entered in fields
+	SignatureImageURL string     `gorm:"type:text" json:"signature_image_url,omitempty"` // Base64 or MinIO path
+	FormDataJSON      string     `gorm:"type:jsonb;default:'{}'" json:"form_data_json"`  // Values entered in fields
 	SignedAt          *time.Time `json:"signed_at,omitempty"`
 
 	// Relationships

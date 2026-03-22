@@ -1,16 +1,35 @@
 import { useState, FormEvent, useEffect } from 'react'
+import { toast } from 'sonner'
 import { UserInfo } from '../App'
+import logoUrl from '../assets/images/logo-universal.png'
 
 interface LoginPageProps {
   onLogin: (user: UserInfo) => void
+}
+
+const formatPhoneNumber = (value: string) => {
+  const nums = value.replace(/[^\d]/g, '')
+  if (!nums) return ''
+  if (nums.startsWith('02')) {
+    if (nums.length <= 2) return nums
+    if (nums.length <= 5) return `${nums.slice(0, 2)}-${nums.slice(2)}`
+    if (nums.length <= 9) return `${nums.slice(0, 2)}-${nums.slice(2, 5)}-${nums.slice(5)}`
+    return `${nums.slice(0, 2)}-${nums.slice(2, 6)}-${nums.slice(6, 10)}`
+  }
+  if (nums.length <= 3) return nums
+  if (nums.length <= 7) return `${nums.slice(0, 3)}-${nums.slice(3)}`
+  return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7, 11)}`
 }
 
 function LoginPage({ onLogin }: LoginPageProps) {
   const [isRegister, setIsRegister] = useState(false)
 
   // Shared
+  const [serverIP, setServerIP] = useState(() => localStorage.getItem('serverIP') || '')
+  const [serverStatus, setServerStatus] = useState<'idle' | 'checking' | 'connected' | 'error'>('idle')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -34,11 +53,41 @@ function LoginPage({ onLogin }: LoginPageProps) {
   const [autoLogin, setAutoLogin] = useState(false)
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false)
 
+  // Check connection status when serverIP changes
+  useEffect(() => {
+    let ip = serverIP || 'localhost'
+    ip = ip.split(':')[0].replace(/https?:\/\//, '')
+    setServerStatus('checking')
+
+    const checkConn = async () => {
+      try {
+        await fetch(`http://${ip}:5200/api/core/plugins`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+        })
+        setServerStatus('connected')
+      } catch (err) {
+        setServerStatus('error')
+      }
+    }
+
+    const timer = setTimeout(checkConn, 500)
+    return () => clearTimeout(timer)
+  }, [serverIP])
+
   useEffect(() => {
     const savedPhone = localStorage.getItem('loginPhone') || ''
     const savedPassword = localStorage.getItem('loginPassword') || ''
     const savedRemember = localStorage.getItem('rememberMe') === 'true'
     const savedAuto = localStorage.getItem('autoLogin') === 'true'
+    let savedIP = localStorage.getItem('serverIP') || 'localhost'
+    savedIP = savedIP.split(':')[0].replace(/https?:\/\//, '')
+
+    // Apply saved IP to Go Backend immediately
+    const wailsApp = (window as any).go?.main?.App
+    if (wailsApp?.SetAPIBase) {
+      wailsApp.SetAPIBase(`http://${savedIP}:5200`)
+    }
 
     if (savedRemember) {
       setPhone(savedPhone)
@@ -56,7 +105,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
   }, [])
 
   const performLogin = async (p: string, pw: string, isAuto = false) => {
-    setError('')
+
     setLoading(true)
 
     try {
@@ -78,7 +127,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
             classPhone: result.class_phone
           })
         } else {
-          setError(result.error || '로그인에 실패했습니다')
+          toast.error(result.error || '로그인에 실패했습니다')
           if (isAuto) setIsAutoLoggingIn(false)
         }
       } else {
@@ -105,12 +154,12 @@ function LoginPage({ onLogin }: LoginPageProps) {
             classPhone: user.class_phone
           })
         } else {
-          setError(data.error || '로그인에 실패했습니다')
+          toast.error(data.error || '로그인에 실패했습니다')
           if (isAuto) setIsAutoLoggingIn(false)
         }
       }
     } catch (err) {
-      setError('서버에 연결할 수 없습니다')
+      toast.error('서버에 연결할 수 없습니다')
       if (isAuto) setIsAutoLoggingIn(false)
     } finally {
       setLoading(false)
@@ -120,7 +169,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
   const handleSearchSchool = async () => {
     if (!schoolSearchTerm) return
     setIsSearching(true)
-    setError('')
+
 
     try {
       const wailsApp = (window as any).go?.main?.App
@@ -128,11 +177,11 @@ function LoginPage({ onLogin }: LoginPageProps) {
         const results = await wailsApp.SearchSchool(schoolSearchTerm)
         setSearchResults(results || [])
         if (!results || results.length === 0) {
-          setError('검색된 학교가 없습니다')
+          toast.warning('검색된 학교가 없습니다')
         }
       }
     } catch (err) {
-      setError('학교 검색 중 오류가 발생했습니다')
+      toast.error('학교 검색 중 오류가 발생했습니다')
     } finally {
       setIsSearching(false)
     }
@@ -147,21 +196,30 @@ function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    setError('')
+
     setLoading(true)
 
     try {
       const wailsApp = (window as any).go?.main?.App
 
       if (isRegister) {
-        if (!schoolCode || !name || !phone || !password || !role) {
-          setError('모든 항목을 입력해주세요 (학교 포함)')
+        if (!schoolCode || !name || !phone || !password || !passwordConfirm || !role) {
+          toast.warning('모든 항목을 입력해주세요 (학교 포함)')
+          setLoading(false)
+          return
+        }
+
+        if (password !== passwordConfirm) {
+          toast.warning('비밀번호가 일치하지 않습니다')
           setLoading(false)
           return
         }
 
         if (wailsApp?.Register) {
-          const result = await wailsApp.Register(schoolCode, selectedSchoolName, name, phone, password, role, classPhone)
+          const result = await wailsApp.Register(
+            schoolCode, selectedSchoolName, name, phone, password, role, classPhone,
+            department, taskName, grade ? parseInt(grade) : 0, classNum ? parseInt(classNum) : 0
+          )
           if (result.success) {
             // Token is stored in Go memory (per-instance), not localStorage
             onLogin({
@@ -176,7 +234,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
               classPhone: result.class_phone
             })
           } else {
-            setError(result.error || '회원가입에 실패했습니다')
+            toast.error(result.error || '회원가입에 실패했습니다')
           }
         } else {
           // Fallback: direct HTTP register for browser dev mode
@@ -209,12 +267,12 @@ function LoginPage({ onLogin }: LoginPageProps) {
               classPhone: user.class_phone
             })
           } else {
-            setError(data.error || '회원가입에 실패했습니다')
+            toast.error(data.error || '회원가입에 실패했습니다')
           }
         }
       } else {
         if (!phone || !password) {
-          setError('전화번호와 비밀번호를 입력해주세요')
+          toast.warning('전화번호와 비밀번호를 입력해주세요')
           setLoading(false)
           return
         }
@@ -234,7 +292,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
         await performLogin(phone, password)
       }
     } catch (err) {
-      setError('서버에 연결할 수 없습니다')
+      toast.error('서버에 연결할 수 없습니다')
     } finally {
       setLoading(false)
     }
@@ -242,7 +300,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
 
   const switchMode = () => {
     setIsRegister(!isRegister)
-    setError('')
+
     setPhone('')
     setPassword('')
     setSchoolCode('')
@@ -275,21 +333,46 @@ function LoginPage({ onLogin }: LoginPageProps) {
           overflowX: 'hidden'
         }}>
           <div className="login-logo">
-            <div className="login-logo-icon">E</div>
+            <img src={logoUrl} alt="edulinker logo" style={{ width: 60, height: 60, marginBottom: '1rem', filter: 'drop-shadow(0 4px 12px rgba(79, 70, 229, 0.3))' }} />
             <h1>edulinker</h1>
             <p>{isRegister ? '새로운 계정 만들기' : '플러그인 기반 학교 서비스 플랫폼'}</p>
           </div>
 
           <form className="login-form" onSubmit={handleSubmit}>
+            <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+              <label className="form-label" style={{ color: '#4f46e5', fontWeight: 600, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'space-between' }}>
+                <span>서버 접속 주소 (IP)</span>
+                {serverStatus === 'checking' && <span style={{ color: '#f59e0b', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}><i className="fi fi-rr-spinner animate-spin" style={{ display: 'inline-block' }} />확인 중...</span>}
+                {serverStatus === 'connected' && <span style={{ color: '#10b981', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 6px rgba(16, 185, 129, 0.4)' }} />연결됨</span>}
+                {serverStatus === 'error' && <span style={{ color: '#ef4444', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444', boxShadow: '0 0 6px rgba(239, 68, 68, 0.4)' }} />연결 실패</span>}
+              </label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="예: 192.168.0.10 (빈칸 시 localhost 기본값)"
+                value={serverIP}
+                onChange={(e) => {
+                  setServerIP(e.target.value)
+                  localStorage.setItem('serverIP', e.target.value)
+                  let ip = e.target.value || 'localhost'
+                  ip = ip.split(':')[0].replace(/https?:\/\//, '')
+                  const wailsApp = (window as any).go?.main?.App
+                  if (wailsApp?.SetAPIBase) {
+                    wailsApp.SetAPIBase(`http://${ip}:5200`)
+                  }
+                }}
+              />
+            </div>
+
             {isRegister && (
               <>
                 <div className="form-group">
                   <label className="form-label">소속 학교</label>
                   {schoolCode ? (
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <div style={{ flex: 1, padding: '0.75rem', background: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ flex: 1, padding: '0.75rem', background: '#1e293b', borderRadius: '0.5rem', border: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>{selectedSchoolName}</span>
-                        <span style={{ color: '#94a3b8', fontSize: '0.75rem', marginTop: '0.25rem' }}>학교 코드: {schoolCode}</span>
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem', borderLeft: '1px solid #334155', paddingLeft: '0.75rem' }}>학교 코드: {schoolCode}</span>
                       </div>
                       <button
                         type="button"
@@ -404,7 +487,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
                       type="text"
                       placeholder="예: 02-123-4567"
                       value={classPhone}
-                      onChange={(e) => setClassPhone(e.target.value)}
+                      onChange={(e) => setClassPhone(formatPhoneNumber(e.target.value))}
                     />
                   </div>
                 </div>
@@ -418,7 +501,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
                 type="tel"
                 placeholder="010-0000-0000"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
                 autoFocus={!isRegister}
               />
             </div>
@@ -434,6 +517,19 @@ function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
 
+            {isRegister && (
+              <div className="form-group">
+                <label className="form-label">비밀번호 확인</label>
+                <input
+                  className="form-input"
+                  type="password"
+                  placeholder="비밀번호를 다시 한번 입력하세요"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                />
+              </div>
+            )}
+
             {!isRegister && (
               <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', marginBottom: '1rem', color: '#94a3b8', fontSize: '0.875rem' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
@@ -447,7 +543,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
               </div>
             )}
 
-            {error && <div className="login-error">{error}</div>}
+
 
             <button
               className="btn-primary"

@@ -30,14 +30,15 @@ var httpClient = &http.Client{
 
 // App struct holds the application state and context.
 type App struct {
-	ctx            context.Context
-	apiBase        string
-	authToken      string
-	hwpMutex       sync.Mutex
-	hwpObject      *ole.IDispatch
-	hwpTaskChan    chan hwpTask
-	hwpWorkerOnce  sync.Once
-	hancomStatus   map[string]interface{} // cached on startup
+	ctx           context.Context
+	apiBase       string
+	authToken     string
+	hwpMutex      sync.Mutex
+	hwpObject     *ole.IDispatch
+	hwpTaskChan   chan hwpTask
+	hwpWorkerOnce sync.Once
+	hancomStatus  map[string]interface{} // cached on startup
+	aiCancel      context.CancelFunc     // cancel func for ongoing AI generation
 }
 
 type hwpTask struct {
@@ -102,9 +103,22 @@ type LoginResult struct {
 }
 
 // Register registers a new user with the API server and signs them in.
-func (a *App) Register(schoolCode, schoolName, name, phone, password, role, classPhone string) LoginResult {
-	body := fmt.Sprintf(`{"school_code":"%s","school_name":"%s","name":"%s","phone":"%s","password":"%s","role":"%s","class_phone":"%s"}`, schoolCode, schoolName, name, phone, password, role, classPhone)
-	resp, err := http.Post(a.apiBase+"/api/auth/register", "application/json", strings.NewReader(body))
+func (a *App) Register(schoolCode, schoolName, name, phone, password, role, classPhone, department, taskName string, grade, classNum int) LoginResult {
+	reqData := map[string]interface{}{
+		"school_code": schoolCode,
+		"school_name": schoolName,
+		"name":        name,
+		"phone":       phone,
+		"password":    password,
+		"role":        role,
+		"class_phone": classPhone,
+		"department":  department,
+		"task_name":   taskName,
+		"grade":       grade,
+		"class_num":   classNum,
+	}
+	bodyBytes, _ := json.Marshal(reqData)
+	resp, err := http.Post(a.apiBase+"/api/auth/register", "application/json", bytes.NewReader(bodyBytes))
 	if err != nil {
 		return LoginResult{Success: false, Error: "서버에 연결할 수 없습니다"}
 	}
@@ -344,16 +358,16 @@ func (a *App) GetSystemInfo() SystemInfo {
 // AIBenchmark contains hardware info and AI readiness score.
 type AIBenchmark struct {
 	// Hardware info
-	IPAddress  string `json:"ip_address"`
-	CPUName    string `json:"cpu_name"`
-	CPUCores   int    `json:"cpu_cores"`
-	CPUThreads int    `json:"cpu_threads"`
-	RAMTotalGB float64 `json:"ram_total_gb"`
-	RAMFreeGB  float64 `json:"ram_free_gb"`
-	GPUName    string `json:"gpu_name"`
-	GPUMemoryMB int   `json:"gpu_memory_mb"`
-	DiskFreeGB float64 `json:"disk_free_gb"`
-	MACAddress string  `json:"mac_address"`
+	IPAddress   string  `json:"ip_address"`
+	CPUName     string  `json:"cpu_name"`
+	CPUCores    int     `json:"cpu_cores"`
+	CPUThreads  int     `json:"cpu_threads"`
+	RAMTotalGB  float64 `json:"ram_total_gb"`
+	RAMFreeGB   float64 `json:"ram_free_gb"`
+	GPUName     string  `json:"gpu_name"`
+	GPUMemoryMB int     `json:"gpu_memory_mb"`
+	DiskFreeGB  float64 `json:"disk_free_gb"`
+	MACAddress  string  `json:"mac_address"`
 
 	// Scores (0-100)
 	CPUScore  int `json:"cpu_score"`
@@ -362,7 +376,7 @@ type AIBenchmark struct {
 	DiskScore int `json:"disk_score"`
 
 	// Overall: 1~6 grade
-	Grade       int    `json:"grade"`       // 1=최상 ~ 6=부적합
+	Grade       int    `json:"grade"` // 1=최상 ~ 6=부적합
 	GradeLabel  string `json:"grade_label"`
 	GradeDesc   string `json:"grade_desc"`
 	RecommModel string `json:"recomm_model"`
@@ -531,7 +545,7 @@ func getMonitorInfo() []string {
 		return nil
 	}
 	list := cleanOutput(out)
-	
+
 	if len(list) == 0 {
 		// Fallback to basic monitor name if size calculation fails
 		psCmdRes := `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance Win32_DesktopMonitor | Select-Object -ExpandProperty Name`
@@ -926,12 +940,12 @@ func (a *App) SelectAndUploadDoc() UploadFileResult {
 	// 2. If it's HWP, convert to PDF first
 	if ext == ".hwp" || ext == ".hwpx" {
 		tmpDir, _ := os.MkdirTemp("", "sendoc_upload_")
-		// We don't defer remove here because uploadFileToServer needs to read it. 
+		// We don't defer remove here because uploadFileToServer needs to read it.
 		// We can clean up after upload.
-		
+
 		pdfName := strings.TrimSuffix(originalFileName, ext) + ".pdf"
 		outPath := filepath.Join(tmpDir, pdfName)
-		
+
 		respChan := make(chan error, 1)
 		a.hwpTaskChan <- hwpTask{
 			inputPath:  filePath,
@@ -958,13 +972,13 @@ func (a *App) SelectAndUploadDoc() UploadFileResult {
 	// 3. Upload the final file (original PDF or converted PDF) to the server
 	// This calls the internal uploadFileToServer which sends it to :5200/api/core/files/upload
 	result := a.uploadFileToServer(finalUploadPath)
-	
+
 	// Ensure the returned filename matches what we actually uploaded
 	if result.Error == "" {
 		// Log success for debugging
 		fmt.Printf("[Sendoc] Successfully uploaded %s to server\n", uploadFileName)
 	}
-	
+
 	return result
 }
 
@@ -1066,6 +1080,109 @@ func (a *App) StartOllama() OllamaStatus {
 		}
 	}
 	return OllamaStatus{Installed: true, Running: false, Error: "Ollama가 시작되었지만 응답하지 않습니다"}
+}
+
+// StopOllama stops the running Ollama server process.
+func (a *App) StopOllama() OllamaStatus {
+	exec.Command("taskkill", "/F", "/IM", "ollama.exe", "/T").Run()
+	// Give it a moment then verify
+	time.Sleep(500 * time.Millisecond)
+	client := &http.Client{Timeout: 2 * time.Second}
+	if _, err := client.Get("http://localhost:11434/api/tags"); err != nil {
+		return OllamaStatus{Installed: true, Running: false}
+	}
+	return OllamaStatus{Installed: true, Running: true, Error: "Ollama 중지에 실패했습니다"}
+}
+
+// GenerateAIStream starts an AI generation from Ollama and emits chunks via Wails events:
+//   - "ai:chunk"  — content string fragment
+//   - "ai:done"   — generation finished (empty string)
+//   - "ai:error"  — error message string
+//
+// The request body is the standard Ollama /api/chat JSON payload.
+func (a *App) GenerateAIStream(model, systemPrompt, userMsg string) {
+	// Cancel any in-progress generation
+	if a.aiCancel != nil {
+		a.aiCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	a.aiCancel = cancel
+
+	go func() {
+		defer func() {
+			cancel()
+			a.aiCancel = nil
+		}()
+
+		reqBody := map[string]interface{}{
+			"model": model,
+			"messages": []map[string]string{
+				{"role": "system", "content": systemPrompt},
+				{"role": "user", "content": userMsg},
+			},
+			"stream": true,
+			"options": map[string]interface{}{
+				"num_ctx":     1024,
+				"num_predict": 512,
+				"temperature": 0.6,
+				"top_k":       20,
+				"top_p":       0.5,
+			},
+		}
+		bodyBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", "요청 직렬화 실패: "+err.Error())
+			return
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:11434/api/chat", bytes.NewReader(bodyBytes))
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", "요청 생성 실패: "+err.Error())
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // cancelled by user
+			}
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", "Ollama 서버에 연결할 수 없습니다 (localhost:11434). Ollama가 실행 중인지 확인해주세요.")
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", fmt.Sprintf("Ollama 오류 (%d): %s", resp.StatusCode, string(body)))
+			return
+		}
+
+		decoder := json.NewDecoder(resp.Body)
+		for {
+			if ctx.Err() != nil {
+				return // cancelled
+			}
+			var chunk map[string]interface{}
+			if err := decoder.Decode(&chunk); err != nil {
+				break
+			}
+			if msg, ok := chunk["message"].(map[string]interface{}); ok {
+				if content, ok := msg["content"].(string); ok && content != "" {
+					wailsRuntime.EventsEmit(a.ctx, "ai:chunk", content)
+				}
+			}
+		}
+		wailsRuntime.EventsEmit(a.ctx, "ai:done", "")
+	}()
+}
+
+// CancelAIGenerate cancels the current AI generation stream.
+func (a *App) CancelAIGenerate() {
+	if a.aiCancel != nil {
+		a.aiCancel()
+		a.aiCancel = nil
+	}
 }
 
 // PullModelResult is the result of a model pull operation.

@@ -138,6 +138,14 @@ func main() {
 	syncagent.RegisterProvider("announcement", annPlugin)
 	syncagent.RegisterProvider("schoolevents", eventsPlugin)
 	syncagent.RegisterProvider("curriculum", curriculumPlugin)
+
+	// Register parent student sync provider
+	localAPIBase := os.Getenv("LOCAL_API_BASE")
+	if localAPIBase == "" {
+		localAPIBase = "http://localhost:5200/api"
+	}
+	parentSyncProvider := syncagent.NewParentSyncProvider(db, localAPIBase)
+	syncagent.RegisterProvider("parent_link", parentSyncProvider)
 	agent.Start()
 
 	// Create Fiber app
@@ -218,9 +226,16 @@ func main() {
 	authRoutes.Post("/register", authHandler.Register)
 	api.Post("/setup", schoolHandler.SetupSchool)
 
+	// --- Public parent routes (no auth) ---
+	parentHandler := handlers.NewParentHandler(db)
+	parentRoutes := api.Group("/parent")
+	parentRoutes.Get("/students/search", parentHandler.SearchStudents)
+	parentRoutes.Post("/link", parentHandler.LinkParent)
+
 	// --- Protected routes (require auth) ---
 	protected := api.Group("", middleware.AuthMiddleware(authSvc))
 	protected.Get("/auth/me", authHandler.Me)
+	protected.Get("/parent/my-students", parentHandler.GetLinkedStudents)
 
 	// Mount AI Gateway under protected group
 	aiSvc.RegisterRoutes(protected.Group("/core"))

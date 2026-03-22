@@ -50,6 +50,7 @@ export default function SettingsPage() {
   const [installing, setInstalling] = useState(false)
   const [starting, setStarting] = useState(false)
   const [pulling, setPulling] = useState<string | null>(null)
+  const [stopping, setStopping] = useState(false)
 
   // Benchmark
   const [benchmark, setBenchmark] = useState<AIBenchmark | null>(null)
@@ -185,6 +186,28 @@ export default function SettingsPage() {
     }
   }
 
+  const handleStopOllama = async () => {
+    setStopping(true)
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.StopOllama) {
+        toast.info('Ollama 중지 중...')
+        const result = await wailsApp.StopOllama()
+        setOllamaStatus(result)
+        if (!result.running) {
+          toast.success('Ollama가 중지되었습니다.')
+          setModels([])
+        } else {
+          toast.error(result.error || 'Ollama 중지에 실패했습니다.')
+        }
+      }
+    } catch (e) {
+      toast.error('Ollama 중지 중 오류가 발생했습니다.')
+    } finally {
+      setStopping(false)
+    }
+  }
+
   const handlePullModel = async (modelName: string) => {
     setPulling(modelName)
     try {
@@ -289,9 +312,9 @@ export default function SettingsPage() {
     const baseName = modelName.split(':')[0].toLowerCase()
     return models.some(m => {
       const installedName = m.name.toLowerCase()
-      return installedName === modelName.toLowerCase() || 
-             installedName === baseName || 
-             installedName.startsWith(baseName + ':')
+      return installedName === modelName.toLowerCase() ||
+        installedName === baseName ||
+        installedName.startsWith(baseName + ':')
     })
   }
 
@@ -442,13 +465,34 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div style={{
-                  flex: 1, padding: 16, borderRadius: 12,
+                  flex: 1, padding: '12px 16px', borderRadius: 12,
                   background: ollamaStatus?.running ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)',
                   border: `1px solid ${ollamaStatus?.running ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`
                 }}>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>서버 상태</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: ollamaStatus?.running ? '#22c55e' : '#ef4444' }}>
-                    {ollamaStatus?.running ? '실행 중' : '중지됨'}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: ollamaStatus?.running ? '#22c55e' : '#ef4444' }}>
+                      {ollamaStatus?.running ? '실행 중' : '중지됨'}
+                    </div>
+                    {ollamaStatus?.installed && (
+                      ollamaStatus?.running ? (
+                        <button
+                          onClick={handleStopOllama}
+                          disabled={stopping}
+                          style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, border: 'none', background: 'rgba(239,68,68,0.12)', color: '#ef4444', cursor: 'pointer' }}
+                        >
+                          {stopping ? '중지 중...' : '■ 중지'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleStartOllama}
+                          disabled={starting}
+                          style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, border: 'none', background: 'rgba(34,197,94,0.12)', color: '#22c55e', cursor: 'pointer' }}
+                        >
+                          {starting ? '시작 중...' : '▶ 시작'}
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
                 <div style={{
@@ -478,9 +522,9 @@ export default function SettingsPage() {
                 >
                   <i className="fi fi-rr-magic-wand" style={{ marginRight: 8 }} />
                   {installing ? 'Ollama 설치 중...' :
-                   starting ? 'Ollama 시작 중...' :
-                   pulling ? `${pulling} 다운로드 중...` :
-                   '자동 설정 (Ollama 설치 + Gemma 모델 다운로드)'}
+                    starting ? 'Ollama 시작 중...' :
+                      pulling ? `${pulling} 다운로드 중...` :
+                        '자동 설정 (Ollama 설치 + Gemma 모델 다운로드)'}
                 </button>
               )}
 
@@ -496,6 +540,12 @@ export default function SettingsPage() {
                   <button onClick={handleStartOllama} disabled={starting}
                     style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
                     {starting ? '시작 중...' : 'Ollama 시작'}
+                  </button>
+                )}
+                {ollamaStatus?.installed && ollamaStatus?.running && (
+                  <button onClick={handleStopOllama} disabled={stopping}
+                    style={{ flex: 1, padding: '10px 16px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', color: '#ef4444', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                    {stopping ? '중지 중...' : 'Ollama 중지'}
                   </button>
                 )}
                 <button onClick={checkOllamaStatus}
@@ -605,7 +655,7 @@ export default function SettingsPage() {
                     <i className="fi fi-rr-check-circle" style={{ marginRight: 6 }} />로컬 AI 준비 완료
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                    AI 생기부 분석, 문서 자동완성 등 AI 기능을 사용할 수 있습니다.
+                    AI 문서 생성, 문서 자동완성 등 AI 기능을 사용할 수 있습니다.
                   </div>
                 </div>
               )}

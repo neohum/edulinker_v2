@@ -143,6 +143,7 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 	roleFilter := c.Query("role", "")
 	gradeFilter := c.QueryInt("grade", 0)
 	classFilter := c.QueryInt("class_num", 0)
+	nameFilter := c.Query("name", "")
 
 	if page < 1 {
 		page = 1
@@ -151,7 +152,7 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 		pageSize = 20
 	}
 
-	query := h.db.Where("school_id = ?", schoolID)
+	query := h.db.Where("school_id = ? AND is_active = ?", schoolID, true)
 	if roleFilter != "" {
 		query = query.Where("role = ?", roleFilter)
 	}
@@ -160,6 +161,9 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 	}
 	if classFilter > 0 {
 		query = query.Where("class_num = ?", classFilter)
+	}
+	if nameFilter != "" {
+		query = query.Where("name LIKE ?", "%"+nameFilter+"%")
 	}
 
 	var total int64
@@ -259,7 +263,7 @@ func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
 	}
 
-	result := h.db.Delete(&models.User{}, "id = ?", userID)
+	result := h.db.Model(&models.User{}).Where("id = ?", userID).Update("is_active", false)
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
 	}
@@ -459,8 +463,8 @@ func (h *UserHandler) DeleteStudentsBatch(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "삭제할 학생 ID를 지정해주세요"})
 	}
 
-	result := h.db.Where("school_id = ? AND role = ? AND id IN ?",
-		schoolID, models.RoleStudent, req.IDs).Delete(&models.User{})
+	result := h.db.Model(&models.User{}).Where("school_id = ? AND role = ? AND id IN ?",
+		schoolID, models.RoleStudent, req.IDs).Update("is_active", false)
 
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("학생 %d명이 삭제되었습니다", result.RowsAffected),
@@ -482,8 +486,8 @@ func (h *UserHandler) DeleteStudentsByClass(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "학년과 반을 지정해주세요"})
 	}
 
-	result := h.db.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ?",
-		schoolID, models.RoleStudent, grade, classNum).Delete(&models.User{})
+	result := h.db.Model(&models.User{}).Where("school_id = ? AND role = ? AND grade = ? AND class_num = ?",
+		schoolID, models.RoleStudent, grade, classNum).Update("is_active", false)
 
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("%d학년 %d반 학생 %d명이 삭제되었습니다", grade, classNum, result.RowsAffected),

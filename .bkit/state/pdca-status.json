@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-03-21T02:03:05.395Z",
+  "lastUpdated": "2026-03-21T07:37:43.177Z",
   "activeFeatures": [
     "frontend",
     "student-web",
@@ -16,7 +16,10 @@
     "server-dashboard",
     "messenger",
     "registry",
-    "notify"
+    "notify",
+    "filegateway",
+    "aigateway",
+    "sendoc"
   ],
   "primaryFeature": "frontend",
   "features": {
@@ -29,9 +32,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-20T10:44:17.019Z",
-        "lastUpdated": "2026-03-21T02:03:05.394Z"
+        "lastUpdated": "2026-03-21T07:32:03.335Z"
       },
-      "lastFile": "E:/works/project/edulinker/teacher-app/frontend/src/pages/TodoPage.tsx"
+      "lastFile": "E:\\works\\project\\edulinker\\teacher-app\\frontend\\src\\pages\\SendocPage.tsx"
     },
     "student-web": {
       "phase": "do",
@@ -94,9 +97,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-20T10:59:54.370Z",
-        "lastUpdated": "2026-03-20T11:03:38.041Z"
+        "lastUpdated": "2026-03-21T06:42:39.749Z"
       },
-      "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\database\\database.go"
+      "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\database\\models\\sendoc.go"
     },
     "handlers": {
       "phase": "do",
@@ -107,9 +110,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-20T10:59:59.719Z",
-        "lastUpdated": "2026-03-21T00:31:30.262Z"
+        "lastUpdated": "2026-03-21T03:16:57.680Z"
       },
-      "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\core\\handlers\\user_handler.go"
+      "lastFile": "E:/works/project/edulinker/backend/internal/core/handlers/file_handler.go"
     },
     "api-server": {
       "phase": "do",
@@ -120,9 +123,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-20T11:01:05.130Z",
-        "lastUpdated": "2026-03-21T00:47:15.926Z"
+        "lastUpdated": "2026-03-21T03:38:41.288Z"
       },
-      "lastFile": "E:\\works\\project\\edulinker\\backend\\cmd\\api-server\\main.go"
+      "lastFile": "E:/works/project/edulinker/backend/cmd/api-server/main.go"
     },
     "login": {
       "phase": "do",
@@ -146,9 +149,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-20T11:10:57.336Z",
-        "lastUpdated": "2026-03-20T11:10:57.336Z"
+        "lastUpdated": "2026-03-21T07:37:43.176Z"
       },
-      "lastFile": "E:\\works\\project\\edulinker\\teacher-app\\app.go"
+      "lastFile": "E:\\works\\project\\edulinker\\teacher-app\\hwpconv.go"
     },
     "sync-server": {
       "phase": "do",
@@ -185,9 +188,9 @@
       "documents": {},
       "timestamps": {
         "started": "2026-03-21T00:16:01.675Z",
-        "lastUpdated": "2026-03-21T01:53:44.055Z"
+        "lastUpdated": "2026-03-21T03:07:42.084Z"
       },
-      "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\plugins\\messenger\\messenger.go"
+      "lastFile": "E:/works/project/edulinker/backend/internal/plugins/messenger/messenger.go"
     },
     "registry": {
       "phase": "do",
@@ -214,6 +217,45 @@
         "lastUpdated": "2026-03-21T01:22:36.424Z"
       },
       "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\core\\notify\\hub.go"
+    },
+    "filegateway": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-03-21T03:11:34.666Z",
+        "lastUpdated": "2026-03-21T03:39:07.794Z"
+      },
+      "lastFile": "E:/works/project/edulinker/backend/internal/core/filegateway/gateway.go"
+    },
+    "aigateway": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-03-21T03:49:19.032Z",
+        "lastUpdated": "2026-03-21T03:49:36.143Z"
+      },
+      "lastFile": "E:/works/project/edulinker/backend/internal/core/aigateway/aigateway.go"
+    },
+    "sendoc": {
+      "phase": "do",
+      "phaseNumber": 3,
+      "matchRate": null,
+      "iterationCount": 0,
+      "requirements": [],
+      "documents": {},
+      "timestamps": {
+        "started": "2026-03-21T06:42:20.307Z",
+        "lastUpdated": "2026-03-21T06:42:20.307Z"
+      },
+      "lastFile": "E:\\works\\project\\edulinker\\backend\\internal\\plugins\\sendoc\\sendoc.go"
     }
   },
   "pipeline": {
@@ -224,7 +266,7 @@
   "session": {
     "startedAt": "2026-03-20T10:35:36.856Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-03-21T02:03:05.395Z"
+    "lastActivity": "2026-03-21T07:37:43.177Z"
   },
   "history": [
     {
@@ -1496,6 +1538,852 @@
     {
       "timestamp": "2026-03-21T02:03:05.394Z",
       "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:54:25.368Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:58:28.755Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:58:35.764Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:58:46.034Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:58:53.208Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:02.778Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:08.402Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:23.309Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:27.887Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:44.869Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:50.270Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T02:59:56.406Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:00:21.267Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:01:22.262Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:02:07.676Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:02:27.308Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:07:42.084Z",
+      "feature": "messenger",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:07:46.776Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:07:53.148Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:10:14.457Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:10:19.956Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:10:29.551Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:11:34.666Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:11:41.647Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:11:46.981Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:12:04.509Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:12:21.973Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:12:30.252Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:12:38.206Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:12:48.173Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:16:25.148Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:16:50.087Z",
+      "feature": "handlers",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:16:57.680Z",
+      "feature": "handlers",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:17:31.149Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:17:42.992Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:18:31.080Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:18:37.252Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:18:44.068Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:18:53.920Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:26:40.692Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:26:59.598Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:27:18.237Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:27:43.584Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:27:49.292Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:27:57.814Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:28:01.624Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:28:10.648Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:28:38.176Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:32:37.212Z",
+      "feature": "api-server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:32:46.054Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:32:53.322Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:33:00.768Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:34:46.924Z",
+      "feature": "api-server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:34:50.692Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:34:55.141Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:35:01.159Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:35:05.428Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:38:31.248Z",
+      "feature": "api-server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:38:41.288Z",
+      "feature": "api-server",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:02.770Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:07.794Z",
+      "feature": "filegateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:12.991Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:16.874Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:22.378Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:39:34.558Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:49:19.032Z",
+      "feature": "aigateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:49:36.143Z",
+      "feature": "aigateway",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:49:48.917Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:52:46.275Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T03:54:19.429Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:00:06.817Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:00:27.848Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:00:36.889Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:01:06.301Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:02:39.988Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:02:43.346Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:02:55.588Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:03:13.234Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:05:59.604Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:26:53.845Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:28:03.049Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:32:21.936Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:34:03.677Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:34:08.768Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:39:55.000Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:52:42.110Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:53:48.420Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T04:54:36.312Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:01:53.020Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:02:03.399Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:02:40.416Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:02:53.961Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:03:13.601Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:08:33.550Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:08:42.469Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:09:02.479Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:09:35.042Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:10:00.151Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:12:40.552Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:12:49.445Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:13:15.766Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:15:14.362Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:21:59.321Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:22:13.150Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:22:17.729Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:22:35.784Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T05:22:54.771Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T06:42:20.307Z",
+      "feature": "sendoc",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T06:42:39.749Z",
+      "feature": "database",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T06:53:54.379Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:13:25.461Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:13:31.113Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:13:40.651Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:16:17.558Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:16:24.190Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:19:27.140Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:21:42.430Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:21:50.641Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:22:14.325Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:23:49.618Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:23:55.922Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:24:12.281Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:24:35.929Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:27:57.281Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:28:12.093Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:03.680Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:11.843Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:34.891Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:41.055Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:50.069Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:30:56.731Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:31:35.336Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:31:40.916Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:31:47.249Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:31:58.402Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:32:03.335Z",
+      "feature": "frontend",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:33:49.636Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:34:12.259Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:36:59.455Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:37:25.506Z",
+      "feature": "teacher-app",
+      "phase": "do",
+      "action": "updated"
+    },
+    {
+      "timestamp": "2026-03-21T07:37:43.176Z",
+      "feature": "teacher-app",
       "phase": "do",
       "action": "updated"
     }

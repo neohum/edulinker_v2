@@ -206,7 +206,7 @@ func (s *Service) pullModel(c *fiber.Ctx) error {
 	ollamaReq := map[string]interface{}{"name": req.Name, "stream": false}
 	jsonData, _ := json.Marshal(ollamaReq)
 
-	client := &http.Client{Timeout: 60 * time.Minute} 
+	client := &http.Client{Timeout: 60 * time.Minute}
 	resp, err := client.Post(s.ollamaURL+"/api/pull", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Ollama 연결 실패"})
@@ -285,6 +285,8 @@ func (s *Service) callOllama(model string, prompt string) (string, error) {
 }
 
 func min(a, b int) int {
-	if a < b { return a }
+	if a < b {
+		return a
+	}
 	return b
 }

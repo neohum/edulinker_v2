@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>에듀링커 학부모 앱 — 테스트</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap" />
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --radius: 16px;
+    }
+
+    body {
+      font-family: 'Pretendard', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 4px 24px rgba(99, 102, 241, 0.25);
+    }
+
+    .header-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      backdrop-filter: blur(8px);
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: white;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.75);
+      margin-top: 2px;
+    }
+
+    .badge {
+      margin-left: auto;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    /* Config Bar */
+    .config-bar {
+      background: #1e293b;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .config-bar label {
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .config-bar input,
+    .config-bar select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      outline: none;
+      flex: 1;
+    }
+
+    .config-bar input:focus,
+    .config-bar select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Step layout */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      padding: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 900px) {
+      .steps {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .step-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), #8b5cf6);
+      color: white;
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .step-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .step-header p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    .step-body {
+      padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Form elements */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background: var(--bg);
+    }
+
+    .input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), #8b5cf6);
+      color: white;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+      box-shadow: 0 4px 14px rgba(34, 197, 94, 0.3);
+    }
+
+    .btn-success:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: white;
+      color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+
+    .btn-outline:hover {
+      background: #eef2ff;
+    }
+
+    /* Result area */
+    .result-area {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      min-height: 80px;
+      padding: 14px;
+      font-size: 13px;
+      flex: 1;
+      overflow-y: auto;
+      max-height: 340px;
+    }
+
+    .result-area.empty {
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Student cards */
+    .student-card {
+      background: white;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .student-card:hover,
+    .student-card.selected {
+      border-color: var(--primary);
+      background: #eef2ff;
+    }
+
+    .student-card.selected {
+      background: #eef2ff;
+    }
+
+    .student-info-name {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .student-info-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .student-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #eef2ff;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      top: 80px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 9999;
+    }
+
+    .toast {
+      background: #1e293b;
+      color: white;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: toastIn 0.3s ease;
+      max-width: 340px;
+    }
+
+    .toast.success {
+      background: #14532d;
+      border-left: 4px solid var(--success);
+    }
+
+    .toast.error {
+      background: #450a0a;
+      border-left: 4px solid var(--danger);
+    }
+
+    .toast.info {
+      background: #1e1b4b;
+      border-left: 4px solid var(--primary);
+    }
+
+    @keyframes toastIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* Status dot */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot.green {
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+    }
+
+    .dot.red {
+      background: var(--danger);
+    }
+
+    .dot.yellow {
+      background: var(--warning);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    /* Loader */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Credential box */
+    .cred-box {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+
+    .cred-box .key {
+      color: #94a3b8;
+    }
+
+    .cred-box .val {
+      color: #a5f3fc;
+      font-weight: 700;
+    }
+
+    /* divider */
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    /* Info banner */
+    .info-banner {
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      color: white;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .info-banner strong {
+      color: #a5b4fc;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <div class="header-icon">👪</div>
+    <div>
+      <h1>에듀링커 학부모 연동 테스트</h1>
+      <p>학생 검색 → 학부모 연동 → 데이터 조회 플로우</p>
+    </div>
+    <span class="badge">🧪 DEV TEST</span>
+  </div>
+
+  <div class="config-bar">
+    <label>서버 선택</label>
+    <select id="serverMode" onchange="updateMode()">
+      <option value="local">🏠 로컬 API 서버 (직접)</option>
+      <option value="sync">☁️ Sync-Server (클라우드)</option>
+    </select>
+    <label>주소</label>
+    <input id="serverAddr" type="text" value="http://localhost:5200" placeholder="http://localhost:5200" />
+    <label style="color:#f59e0b;font-weight:700;">⚠️ 학교 코드 (sync필수)</label>
+    <input id="schoolCode" type="text" value="" placeholder="예: 7340088 (NEIS 코드)"
+      style="max-width:180px;border-color:#f59e0b;" />
+  </div>
+
+  <div class="info-banner">
+    <span>ℹ️</span>
+    <div>
+      <strong>로컬 모드</strong>: <code>GET /api/parent/students/search</code> · <code>POST /api/parent/link</code> 직접 호출
+      &nbsp;|&nbsp;
+      <strong>Sync 모드</strong>: <code>POST /api/sync/parent/search</code> · <code>POST /api/sync/parent/link</code> 클라우드
+      중개
+    </div>
+  </div>
+
+  <div class="steps">
+
+    <!-- STEP 1: Search -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div>
+          <h2>학생 검색</h2>
+          <p>학교명 / 학교코드 + 학생 이름으로 검색</p>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="field">
+          <label>학교명 또는 코드</label>
+          <input id="searchSchool" class="input" type="text" placeholder="예: 신연초등학교" />
+        </div>
+        <div class="field">
+          <label>학생 이름</label>
+          <input id="searchName" class="input" type="text" placeholder="예: 김민준" />
+        </div>
+        <button id="btnSearch" class="btn btn-primary" onclick="searchStudents()">
+          🔍 학생 검색
+        </button>
+        <div class="result-area" id="searchResults">
+          <span class="empty"
+            style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8">검색 결과가 여기에
+            표시됩니다</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: Link -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div>
+          <h2>학부모 연동 신청</h2>
+          <p>선택된 학생과 학부모 계정을 연결합니다</p>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="status-row" id="selectedStudentStatus">
+          <span class="dot red"></span>
+          <span>Step 1에서 학생을 선택하세요</span>
+        </div>
+        <div class="field">
+          <label>학부모 이름</label>
+          <input id="parentName" class="input" type="text" placeholder="예: 김부모" />
+        </div>
+        <div class="field">
+          <label>전화번호</label>
+          <input id="parentPhone" class="input" type="text" placeholder="예: 01012345678" />
+        </div>
+        <div
+          style="font-size:12px;color:#94a3b8;padding:6px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+          💡 임시 비밀번호는 전화번호 뒷 4자리로 자동 부여됩니다
+        </div>
+        <button id="btnLink" class="btn btn-success" onclick="linkParent()">
+          🔗 학부모 연동 신청
+        </button>
+        <div class="result-area" id="linkResult">
+          <span style="color:#94a3b8;display:flex;align-items:center;justify-content:center;height:100%;">연동 결과가 여기에
+            표시됩니다</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: Pull Data -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div>
+          <h2>데이터 조회</h2>
+          <p>연동된 학교의 공유 데이터를 가져옵니다</p>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="field">
+          <label>부모 ID (Step 2 완료 후 자동 입력)</label>
+          <input id="parentId" class="input" type="text" placeholder="parent_id (UUID)" />
+        </div>
+        <div class="field">
+          <label>학부모 전화번호 (연동 결과 조회용)</label>
+          <input id="pollPhone" class="input" type="text" placeholder="예: 01012345678" />
+        </div>
+        <button class="btn btn-primary" onclick="pollResult()">📋 연동 결과 확인 (폴링)</button>
+        <button class="btn btn-primary" onclick="pullData()">
+          📥 동기화 데이터 조회 (공지/가정통신문)
+        </button>
+        <div class="divider"></div>
+        <button class="btn btn-outline" onclick="testSearchLocal()">
+          🧪 로컬 직접 검색 테스트
+        </button>
+        <div class="result-area" id="pullResult">
+          <span style="color:#94a3b8;display:flex;align-items:center;justify-content:center;height:100%;">조회 결과가 여기에
+            표시됩니다</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    let selectedStudent = null;
+    const mode = () => document.getElementById('serverMode').value;
+    const addr = () => document.getElementById('serverAddr').value.replace(/\/$/, '');
+    const schoolCode = () => document.getElementById('schoolCode').value;
+
+    function updateMode() {
+      const m = mode();
+      if (m === 'sync') {
+        document.getElementById('serverAddr').value = 'https://edulinker-sync-server-production.up.railway.app';
+      } else {
+        document.getElementById('serverAddr').value = 'http://localhost:5200';
+      }
+    }
+
+    function toast(msg, type = 'info') {
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span> ${msg}`;
+      document.getElementById('toastContainer').appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    function setLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      if (loading) {
+        btn._orig = btn.innerHTML;
+        btn.innerHTML = `<div class="spinner"></div> 처리 중...`;
+        btn.disabled = true;
+      } else {
+        btn.innerHTML = btn._orig || btn.innerHTML;
+        btn.disabled = false;
+      }
+    }
+
+    async function searchStudents() {
+      const school = document.getElementById('searchSchool').value.trim();
+      const name = document.getElementById('searchName').value.trim();
+      if (!school || !name) { toast('학교명과 학생 이름을 모두 입력하세요.', 'error'); return; }
+
+      setLoading('btnSearch', true);
+      const resultsEl = document.getElementById('searchResults');
+      resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:#6366f1">🔍 검색 중...</div>';
+
+      try {
+        let res;
+        if (mode() === 'sync') {
+          const sc = schoolCode();
+          if (!sc) {
+            toast('⚠️ Sync 모드에서는 상단 바의 【학교 코드】를 먼저 입력하세요! (예: 7340088)', 'error');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:24px;color:#f59e0b;">⚠️ 상단 설정바에서 학교 코드를 입력해주세요.</div>';
+            return;
+          }
+          res = await fetch(`${addr()}/api/sync/parent/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ school_code: sc, student_name: name })
+          });
+        } else {
+          res = await fetch(`${addr()}/api/parent/students/search?school_name=${encodeURIComponent(school)}&name=${encodeURIComponent(name)}`);
+        }
+
+        if (res.status === 429) {
+          const btn = document.getElementById('btnSearch');
+          btn.disabled = true;
+          btn.innerHTML = '⏳ 잠시 대기 중...';
+          toast('요청이 너무 많습니다. 1분 후 다시 시도하세요.', 'error');
+          resultsEl.innerHTML = '<div style="text-align:center;padding:24px;color:#ef4444;">⏳ 너무 많은 요청 — 1분 후 재시도</div>';
+          setTimeout(() => { setLoading('btnSearch', false); }, 60000);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultsEl.innerHTML = `<div style="text-align:center;padding:24px;color:#ef4444;">❌ ${data.error || '오류 발생'}</div>`;
+          toast(data.error || '오류 발생', 'error');
+          return;
+        }
+
+        const students = data.students || [];
+
+        if (students.length === 0) {
+          resultsEl.innerHTML = '<div style="text-align:center;padding:24px;color:#94a3b8">😔 검색 결과가 없습니다. 학교에 학생 데이터가 동기화 되었는지 확인하세요.</div>';
+          toast('검색 결과가 없습니다.', 'error');
+          return;
+        }
+
+        resultsEl.innerHTML = '';
+        students.forEach(s => {
+          const card = document.createElement('div');
+          card.className = 'student-card';
+          card.dataset.id = s.id;
+          card.innerHTML = `
+          <div>
+            <div class="student-info-name">${s.name}</div>
+            <div class="student-info-meta">${s.school_name || school} · ${s.grade || '?'}학년 ${s.class_num || '?'}반 ${s.number || '?'}번</div>
+          </div>
+          <span class="student-badge">${s.grade || '?'}-${s.class_num || '?'}</span>
+        `;
+          card.onclick = () => selectStudent(s, card);
+          resultsEl.appendChild(card);
+        });
+
+        toast(`${students.length}명의 학생을 찾았습니다.`, 'success');
+      } catch (e) {
+        resultsEl.innerHTML = `<div style="text-align:center;padding:20px;color:#ef4444">❌ ${e.message}</div>`;
+        toast(`오류: ${e.message}`, 'error');
+      } finally {
+        setLoading('btnSearch', false);
+      }
+    }
+
+    function selectStudent(s, cardEl) {
+      selectedStudent = s;
+      document.querySelectorAll('.student-card').forEach(c => c.classList.remove('selected'));
+      cardEl.classList.add('selected');
+      document.getElementById('selectedStudentStatus').innerHTML = `
+      <span class="dot green"></span>
+      <strong>${s.name}</strong> (${s.grade}학년 ${s.class_num}반 ${s.number || '?'}번) 선택됨
+      ${s.link_token ? `<br><span style="font-size:12px;color:#64748b;">Link Token: ${s.link_token.substring(0, 8)}...</span>` : ''}
+    `;
+      toast(`${s.name} 학생이 선택되었습니다.`, 'success');
+    }
+
+    async function linkParent() {
+      if (!selectedStudent) { toast('Step 1에서 학생을 먼저 선택하세요.', 'error'); return; }
+      const pName = document.getElementById('parentName').value.trim();
+      const pPhone = document.getElementById('parentPhone').value.trim();
+      if (!pName || !pPhone) { toast('학부모 이름과 전화번호를 입력하세요.', 'error'); return; }
+
+      setLoading('btnLink', true);
+      const resultEl = document.getElementById('linkResult');
+      resultEl.innerHTML = '<div style="text-align:center;padding:20px;color:#6366f1">🔗 연동 처리 중...</div>';
+
+      try {
+        let res;
+        if (mode() === 'sync') {
+          res = await fetch(`${addr()}/api/sync/parent/link`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              school_code: schoolCode(),
+              link_token: selectedStudent.link_token, // ← HMAC token, not raw UUID
+              parent_name: pName,
+              parent_phone: pPhone
+            })
+          });
+        } else {
+          res = await fetch(`${addr()}/api/parent/link`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_id: selectedStudent.id, // local API uses raw UUIDs securely
+              parent_name: pName,
+              parent_phone: pPhone
+            })
+          });
+        }
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultEl.innerHTML = `<div style="color:#ef4444;padding:12px;background:#450a0a;border-radius:10px;">❌ ${data.error || '오류 발생'}</div>`;
+          toast(`오류: ${data.error}`, 'error');
+          return;
+        }
+
+        // Success
+        if (data.parent_id) {
+          document.getElementById('parentId').value = data.parent_id;
+        }
+
+        resultEl.innerHTML = `
+        <div class="cred-box">
+          <div><span class="key">상태: </span><span class="val">${data.status || data.message || 'ok'}</span></div>
+          ${data.parent_id ? `<div><span class="key">학부모 ID: </span><span class="val">${data.parent_id}</span></div>` : ''}
+          ${data.student_id ? `<div><span class="key">학생 ID: </span><span class="val">${data.student_id}</span></div>` : ''}
+          ${data.temp_password ? `<div><span class="key">임시 비밀번호: </span><span class="val">🔐 ${data.temp_password}</span></div>` : ''}
+          ${data.message ? `<div style="margin-top:8px;color:#86efac;font-size:12px;">${data.message}</div>` : ''}
+        </div>
+      `;
+        toast('학부모 연동 성공!', 'success');
+      } catch (e) {
+        resultEl.innerHTML = `<div style="color:#ef4444">❌ ${e.message}</div>`;
+        toast(`오류: ${e.message}`, 'error');
+      } finally {
+        setLoading('btnLink', false);
+      }
+    }
+
+    async function pullData() {
+      const pullEl = document.getElementById('pullResult');
+      const parentId = document.getElementById('parentId').value.trim();
+      const code = schoolCode();
+
+      pullEl.innerHTML = '<div style="text-align:center;padding:20px;color:#6366f1">📥 데이터 가져오는 중...</div>';
+      try {
+        let res;
+        if (mode() === 'sync') {
+          if (!code) { toast('Sync 모드에서는 학교 코드가 필요합니다.', 'error'); return; }
+          res = await fetch(`${addr()}/api/sync/parent/pull/${code}`);
+        } else {
+          // Local mode: use my-students endpoint if we have parent ID
+          if (!parentId) { toast('Step 2에서 먼저 연동을 완료하세요.', 'error'); return; }
+          res = await fetch(`${addr()}/api/parent/my-students`, {
+            headers: { 'Authorization': `Bearer __no_token_test__` }
+          });
+        }
+
+        const data = await res.json();
+        const pretty = JSON.stringify(data, null, 2);
+        const lines = pretty.split('\n').slice(0, 60).join('\n');
+        pullEl.innerHTML = `<pre style="font-size:11px;color:#334155;white-space:pre-wrap;word-break:break-all;">${lines}</pre>`;
+        toast('데이터 조회 성공!', 'success');
+      } catch (e) {
+        pullEl.innerHTML = `<div style="color:#ef4444">❌ ${e.message}</div>`;
+        toast(`오류: ${e.message}`, 'error');
+      }
+    }
+
+    async function testSearchLocal() {
+      const school = document.getElementById('searchSchool').value.trim() || '학교';
+      const name = document.getElementById('searchName').value.trim() || '학생';
+      const url = `${addr()}/api/parent/students/search?school_name=${encodeURIComponent(school)}&name=${encodeURIComponent(name)}`;
+      const pullEl = document.getElementById('pullResult');
+      pullEl.innerHTML = `<div style="color:#6366f1;padding:10px 0;font-size:12px;">GET ${url}</div>`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        pullEl.innerHTML = `<pre style="font-size:11px;color:#334155;white-space:pre-wrap;">${JSON.stringify(data, null, 2)}</pre>`;
+        toast('직접 API 테스트 완료', 'info');
+      } catch (e) {
+        pullEl.innerHTML = `<div style="color:#ef4444">❌ ${e.message}</div>`;
+        toast(`오류: ${e.message}`, 'error');
+      }
+    }
+
+    async function pollResult() {
+      const phone = document.getElementById('pollPhone').value.trim() ||
+        document.getElementById('parentPhone').value.trim();
+      if (!phone) { toast('전화번호를 입력하세요.', 'error'); return; }
+      if (mode() !== 'sync') { toast('결과 폴링은 ☁️ Sync-Server 모드에서만 동작합니다.', 'error'); return; }
+
+      const pullEl = document.getElementById('pullResult');
+      pullEl.innerHTML = '<div style="text-align:center;padding:20px;color:#6366f1">📋 조회 중...</div>';
+      try {
+        const res = await fetch(`${addr()}/api/sync/parent/result/${encodeURIComponent(phone)}`);
+        const data = await res.json();
+        const color = data.status === 'linked' ? '#22c55e' : data.status === 'error' ? '#ef4444' : '#f59e0b';
+        const icon = data.status === 'linked' ? '✅' : data.status === 'error' ? '❌' : '⏳';
+        pullEl.innerHTML = `
+          <div style="padding:16px;border-radius:12px;border:2px solid ${color};background:${color}11">
+            <div style="font-size:20px;margin-bottom:8px">${icon}</div>
+            <div style="font-weight:700;font-size:15px;color:${color}">${data.status || 'pending'}</div>
+            <div style="margin-top:6px;font-size:13px;color:#334155">${data.message || '처리 중...'}</div>
+            ${data.created_at ? `<div style="margin-top:8px;font-size:11px;color:#94a3b8">${data.created_at}</div>` : ''}
+          </div>`;
+        toast(data.status === 'linked' ? '연동 완료!' : (data.message || '처리 중'), data.status === 'linked' ? 'success' : 'info');
+      } catch (e) {
+        pullEl.innerHTML = `<div style="color:#ef4444">❌ ${e.message}</div>`;
+        toast(`오류: ${e.message}`, 'error');
+      }
+    }
+  </script>
+</body>
+
+</html>

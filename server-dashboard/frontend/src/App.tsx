@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
-import { GetStatus, StartServer, StopServer, GetLogs, ClearLogs, CheckDependencies, InstallAndStartWithScoop } from '../wailsjs/go/main/App';
+import { GetStatus, StartServer, StopServer, GetLogs, ClearLogs, CheckDependencies, InstallAndStartWithScoop, GetLocalIP } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import { Toaster, toast } from 'sonner';
+import logoUrl from './assets/images/logo-universal.png';
+import UserManagement from './components/UserManagement';
 
 function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [uptime, setUptime] = useState("0s");
   const [logs, setLogs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'status' | 'settings'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'settings' | 'users'>('status');
   const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn'>('all');
   const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false });
   const [isStartingInfra, setIsStartingInfra] = useState(false);
+  const [localIP, setLocalIP] = useState('');
   const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') === 'true');
   const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') === 'true');
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -23,19 +26,54 @@ function App() {
     localStorage.setItem('autoInfra', autoInfra.toString());
   }, [autoInfra]);
 
+  // Robust queued retry loop for infrastructure
+  const waitForInfraQueue = async () => {
+    setIsStartingInfra(true);
+    let ready = false;
+    let attempts = 0;
+    let currentDeps = { postgres: false, redis: false, minio: false };
+
+    while (!ready) {
+      currentDeps = await CheckDependencies();
+      if (currentDeps.postgres && currentDeps.redis && currentDeps.minio) {
+        ready = true;
+        setDependencies(currentDeps);
+        if (attempts > 0) toast.success("대기열 처리 완료: 필수 인프라가 모두 성공적으로 구동되었습니다!");
+        break;
+      }
+
+      try {
+        if (attempts === 0) {
+          toast.info("인프라 구동 스크립트를 백그라운드 큐에 등록했습니다...");
+        } else {
+          toast.warning(`인프라가 아직 실행되지 않았습니다. 백그라운드 확인 및 재명령 중... (${attempts}회)`);
+        }
+        await InstallAndStartWithScoop();
+      } catch (err: any) {
+        console.error("Queue iteration error:", err);
+      }
+
+      attempts++;
+      // Wait 5 seconds before next polling cycle
+      await new Promise(res => setTimeout(res, 5000));
+    }
+    setIsStartingInfra(false);
+    return currentDeps;
+  };
+
   // Boot sequence and event subscriptions
   useEffect(() => {
     const bootSequence = async () => {
       try {
+        GetLocalIP().then(setLocalIP).catch(console.error);
+
         // 1. Check & start infrastructure if needed
         let currentDeps = await CheckDependencies();
         setDependencies(currentDeps);
         const needsInfra = !currentDeps.postgres || !currentDeps.redis || !currentDeps.minio;
 
         if (autoInfra && needsInfra) {
-          await handleStartInfraCore();
-          currentDeps = await CheckDependencies();
-          setDependencies(currentDeps);
+          currentDeps = await waitForInfraQueue();
         }
 
         // 2. Check & start backend server if needed
@@ -44,11 +82,16 @@ function App() {
         setUptime(statusResult.uptime);
 
         if (autoStart && !statusResult.isRunning) {
-          await handleStartCore();
+          // Double check if infra is actually ready before we fire the server start
+          if (currentDeps.postgres && currentDeps.redis && currentDeps.minio) {
+            await handleStartCore();
+          } else {
+            toast.error("인프라가 완벽히 로딩되지 않아 서버 자동 구동을 보류했습니다.");
+          }
         }
       } catch (err) {
         console.error("Boot sequence error:", err);
-        toast.error("시작 중 오류 발생: " + err);
+        toast.error("시작 중 시스템 수준 오류 발생: " + err);
       }
     };
 
@@ -154,11 +197,15 @@ function App() {
       <Toaster richColors position="top-center" />
       {/* Sidebar */}
       <div className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center py-8">
-        <div className="bg-indigo-600 text-white p-3 rounded-xl mb-4 shadow-lg shadow-indigo-500/20">
-          <i className="fi fi-rr-server" style={{ fontSize: 32 }} />
+        <div className="flex flex-col items-center justify-center mb-4">
+          <img src={logoUrl} alt="EduLinker Logo" className="w-14 h-14 drop-shadow-xl" />
         </div>
         <h1 className="text-xl font-bold tracking-tight">edulinker</h1>
-        <p className="text-xs text-slate-500 mb-8 uppercase tracking-widest font-semibold mt-1">Server Dashboard</p>
+        <p className="text-xs text-slate-500 mb-4 uppercase tracking-widest font-semibold mt-1">Server Dashboard</p>
+
+        <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-md mb-6 w-full max-w-[180px] text-center whitespace-nowrap overflow-hidden text-ellipsis shadow-sm">
+          IP: {localIP}
+        </div>
 
         <nav className="w-full px-4 flex flex-col gap-2">
           <button
@@ -181,12 +228,22 @@ function App() {
             <i className="fi fi-rr-settings" style={{ fontSize: 18 }} />
             서버 설정
           </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-3 font-medium px-4 py-3 rounded-lg w-full text-sm transition-colors ${activeTab === 'users'
+              ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}
+          >
+            <i className="fi fi-rr-users" style={{ fontSize: 18 }} />
+            사용자 관리
+          </button>
         </nav>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden p-8 gap-6">
-        {activeTab === 'status' ? (
+        {activeTab === 'status' && (
           <>
             <header className="flex justify-between items-center">
               <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -310,7 +367,8 @@ function App() {
               </div>
             </div>
           </>
-        ) : (
+        )}
+        {activeTab === 'settings' && (
           /* Settings Content */
           <>
             <header className="flex justify-between items-center mb-2">
@@ -399,6 +457,9 @@ function App() {
               </div>
             </div>
           </>
+        )}
+        {activeTab === 'users' && (
+          <UserManagement />
         )}
       </div>
     </div>

@@ -20,13 +20,14 @@ import ProfilePage from './ProfilePage'
 import HwpConverterPage from './HwpConverterPage'
 import XlsxConverterPage from './XlsxConverterPage'
 import PptxConverterPage from './PptxConverterPage'
+import CounselingPage from './CounselingPage'
 
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile'
+type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
@@ -58,7 +59,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
       <Sidebar
         user={user}
         currentPage={currentPage}
-        badges={{ 
+        badges={{
           messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined,
           sendoc: pendingDocCount > 0 ? pendingDocCount : undefined
         }}
@@ -76,8 +77,9 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
+          {currentPage === 'counseling' && <CounselingPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage />}
-          {currentPage === 'aianalysis' && <AIAnalysisPage />}
+          {currentPage === 'aianalysis' && <AIAnalysisPage onNavigate={(p) => setCurrentPage(p as PageView)} />}
           {currentPage === 'schoolevents' && <SchoolEventsPage />}
 
           <div style={{ display: currentPage === 'messenger' ? 'block' : 'none', height: '100%' }}>
@@ -164,7 +166,7 @@ function getPageTitle(page: string): string {
     sendoc: '전자문서/서명',
     studentmgmt: '학생관리·상담',
     curriculum: '주간학습·평가',
-    aianalysis: 'AI 생기부 분석',
+    aianalysis: 'AI 문서 생성',
     schoolevents: '학교행사·투표',
     linker: 'linker',
     pcinfo: 'pc-info',

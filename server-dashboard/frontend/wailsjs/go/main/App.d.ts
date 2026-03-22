@@ -6,12 +6,22 @@ export function CheckDependencies():Promise<main.DependencyStatus>;
 
 export function ClearLogs():Promise<void>;
 
+export function DeleteDBUser(arg1:string):Promise<void>;
+
+export function GetDBUsers():Promise<Array<main.DBUser>>;
+
+export function GetLocalIP():Promise<string>;
+
 export function GetLogs():Promise<Array<string>>;
 
 export function GetStatus():Promise<main.ServerStatus>;
 
 export function InstallAndStartWithScoop():Promise<void>;
 
+export function ResetDBUserPassword(arg1:string,arg2:string):Promise<void>;
+
 export function StartServer():Promise<void>;
 
 export function StopServer():Promise<void>;
+
+export function UpdateDBUserRole(arg1:string,arg2:string):Promise<void>;

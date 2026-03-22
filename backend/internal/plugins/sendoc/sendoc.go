@@ -136,6 +136,7 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 		Status        string     `json:"status"`
 		BackgroundURL string     `json:"background_url"`
 		FieldsJSON    string     `json:"fields_json"`
+		FormDataJSON  string     `json:"form_data_json,omitempty"`
 		CreatedAt     time.Time  `json:"created_at"`
 		IsSigned      bool       `json:"is_signed"`
 		SignedAt      *time.Time `json:"signed_at,omitempty"`
@@ -152,6 +153,7 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 			Status:        r.Sendoc.Status,
 			BackgroundURL: r.Sendoc.BackgroundURL,
 			FieldsJSON:    r.Sendoc.FieldsJSON,
+			FormDataJSON:  r.FormDataJSON,
 			CreatedAt:     r.Sendoc.CreatedAt,
 			IsSigned:      r.IsSigned,
 			SignedAt:      r.SignedAt,
@@ -173,6 +175,7 @@ func (p *Plugin) submitSignature(c *fiber.Ctx) error {
 
 	var req struct {
 		SignatureImageURL string `json:"signature_image_url"`
+		FormDataJSON      string `json:"form_data_json"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -190,6 +193,7 @@ func (p *Plugin) submitSignature(c *fiber.Ctx) error {
 		Updates(map[string]interface{}{
 			"is_signed":           true,
 			"signature_image_url": req.SignatureImageURL,
+			"form_data_json":      req.FormDataJSON,
 			"signed_at":           &now,
 		})
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -133,6 +137,22 @@ func (a *App) GetStatus() ServerStatus {
 	}
 
 	return status
+}
+
+// GetLocalIP returns the non-loopback local IP of the host
+func (a *App) GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "알 수 없음"
+	}
+	for _, address := range addrs {
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return "알 수 없음"
 }
 
 // findBackendDir searches upward from cwd to locate the backend/ directory.
@@ -469,4 +489,97 @@ Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!
 		return fmt.Errorf("Scoop script failed: %v", err)
 	}
 	return nil
+}
+
+// DBUser represents a simplified user view for the dashboard
+type DBUser struct {
+	ID         string `json:"id"`
+	SchoolID   string `json:"school_id"`
+	SchoolName string `json:"school_name"`
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Role       string `json:"role"`
+	Grade      int    `json:"grade"`
+	ClassNum   int    `json:"class_num"`
+	IsActive   bool   `json:"is_active"`
+	CreatedAt  string `json:"created_at"`
+}
+
+func getDBConn() (*sql.DB, error) {
+	connStr := "user=edulinker password=edulinker dbname=edulinker sslmode=disable host=localhost port=5432"
+	return sql.Open("postgres", connStr)
+}
+
+func (a *App) GetDBUsers() ([]DBUser, error) {
+	db, err := getDBConn()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, u.grade, u.class_num, u.is_active, u.created_at
+		FROM users u
+		LEFT JOIN schools s ON u.school_id = s.id
+		WHERE u.is_active = true
+		ORDER BY u.role, u.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []DBUser
+	for rows.Next() {
+		var u DBUser
+		var created time.Time
+		var schoolID sql.NullString
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &u.IsActive, &created); err != nil {
+			return nil, err
+		}
+		if schoolID.Valid {
+			u.SchoolID = schoolID.String
+		}
+		u.CreatedAt = created.Format(time.RFC3339)
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+func (a *App) DeleteDBUser(id string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE users SET is_active = false WHERE id = $1", id)
+	return err
+}
+
+func (a *App) ResetDBUserPassword(id string, newPassword string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
+	return err
+}
+
+func (a *App) UpdateDBUserRole(id string, role string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE users SET role = $1 WHERE id = $2", role, id)
+	return err
 }

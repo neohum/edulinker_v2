@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { UserInfo } from '../App'
+import logoUrl from '../assets/images/logo-universal.png'
 
 interface SidebarProps {
   user: UserInfo
@@ -14,6 +15,7 @@ interface NavItem {
   label: string
   icon: string
   badge?: number
+  priceType?: 'free' | 'paid' | 'partial'
 }
 
 const coreItems: NavItem[] = [
@@ -26,7 +28,7 @@ const pluginGroupA: NavItem[] = [
   { id: 'todo', label: '투두리스트', icon: 'fi fi-rr-checkbox' },
   { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
   { id: 'attendance', label: '지각·결석', icon: 'fi fi-rr-alarm-clock' },
-  { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open' },
+  { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open', priceType: 'paid' },
 ]
 
 const pluginGroupB: NavItem[] = [
@@ -38,27 +40,25 @@ const pluginGroupC: NavItem[] = [
 ]
 
 const pluginGroupD: NavItem[] = [
-  { id: 'studentmgmt', label: '학생관리·상담', icon: 'fi fi-rr-graduation-cap' },
+  { id: 'studentmgmt', label: '학생관리', icon: 'fi fi-rr-graduation-cap' },
+  { id: 'counseling', label: '상담', icon: 'fi fi-rr-comments' },
 ]
 
 const pluginGroupE: NavItem[] = [
-  { id: 'curriculum', label: '주간학습·평가', icon: 'fi fi-rr-book' },
+  { id: 'curriculum', label: '수행평가', icon: 'fi fi-rr-book' },
 ]
 
 const pluginGroupG: NavItem[] = [
-  { id: 'aianalysis', label: 'AI 세특·종특 도우미', icon: 'fi fi-rr-magic-wand' },
+  { id: 'aianalysis', label: 'AI 문서 생성', icon: 'fi fi-rr-magic-wand', priceType: 'partial' },
 ]
 
 const pluginGroupH: NavItem[] = [
-  { id: 'schoolevents', label: '학급행사·투표', icon: 'fi fi-rr-calendar-check' },
+  { id: 'schoolevents', label: '투표', icon: 'fi fi-rr-vote-yea' },
 ]
 
 const pluginGroupI: NavItem[] = [
   { id: 'linker', label: 'linker', icon: 'fi fi-rr-link' },
   { id: 'pcinfo', label: 'pc-info', icon: 'fi fi-rr-computer' },
-  { id: 'hwp-converter', label: 'HWP 변환', icon: 'fi fi-rr-file-pdf' },
-  { id: 'xlsx-converter', label: 'Excel 변환', icon: 'fi fi-rr-file-excel' },
-  { id: 'pptx-converter', label: 'PPT 변환', icon: 'fi fi-rr-file-powerpoint' },
 ]
 
 const systemItems: NavItem[] = [
@@ -91,14 +91,14 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
 
   const renderGroupTitle = (id: string, label: string) => {
     if (isCollapsed) return <div className="sidebar-section-divider" />
-    
+
     const isOpen = openGroups[id]
     return (
-      <div 
+      <div
         onClick={() => toggleGroup(id)}
-        style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        style={{
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 16px 8px',
           cursor: 'pointer',
@@ -122,7 +122,12 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
         title={isCollapsed ? item.label : undefined}
       >
         <span className="sidebar-item-icon"><i className={item.icon} /></span>
-        {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
+        {!isCollapsed && <span className="sidebar-item-label" style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
+        {!isCollapsed && (
+          <span className={`sidebar-price-badge ${item.priceType || 'free'}`}>
+            {item.priceType === 'paid' ? '유료' : item.priceType === 'partial' ? '부분 유료' : '무료'}
+          </span>
+        )}
         {((badges && badges[item.id]) || item.badge) ? (
           <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
         ) : null}
@@ -135,7 +140,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
       {/* Logo */}
       <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon" title={isCollapsed ? "edulinker" : undefined} onClick={() => isCollapsed && setIsCollapsed(false)} style={{ cursor: isCollapsed ? 'pointer' : 'default' }}>E</div>
+          <img src={logoUrl} className="sidebar-logo-icon" alt="EduLinker Logo" title={isCollapsed ? "edulinker" : undefined} onClick={() => isCollapsed && setIsCollapsed(false)} style={{ cursor: isCollapsed ? 'pointer' : 'default', width: '32px', height: '32px', objectFit: 'contain' }} />
           {!isCollapsed && (
             <div>
               <div className="sidebar-logo-text">edulinker</div>
@@ -184,7 +189,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
         {renderItems(pluginGroupE, 'groupE')}
 
         {/* Group G */}
-        {renderGroupTitle('groupG', 'G · AI 생기부 분석')}
+        {renderGroupTitle('groupG', 'G · AI 문서 생성')}
         {renderItems(pluginGroupG, 'groupG')}
 
         {/* Group H */}

@@ -16,7 +16,30 @@
       "Bash(ls -la *.tsx)",
       "Bash(find E:worksprojectedulinkerbackendinternalcorefilegateway -type f -name *.go)",
       "Bash(find E:worksprojectedulinker -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\) -path */frontend/* ! -path */node_modules/*)",
-      "Bash(find E:worksprojectedulinkerteacher-appfrontendsrc -name *.ts -o -name *.tsx)"
+      "Bash(find E:worksprojectedulinkerteacher-appfrontendsrc -name *.ts -o -name *.tsx)",
+      "Bash(grep -r \"SendMessage\\\\|MessageType\\\\|FileID\" /e/works/project/edulinker/teacher-app/frontend/src --include=*.tsx --include=*.ts)",
+      "Bash(docker compose:*)",
+      "Bash(go vet:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:9000/minio/health/live)",
+      "Bash(PGPASSWORD=edulinker psql -h localhost -U edulinker -d edulinker -c \"SELECT id, storage, bucket, file_name, size, created_at FROM file_records ORDER BY created_at DESC LIMIT 10;\" 2>&1)",
+      "Bash(find /e/works/project/edulinker -type f -name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js)",
+      "Bash(find /e/works/project/edulinker/teacher-app/frontend/src -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js \\\\\\))",
+      "Bash(find /e/works/project/edulinker/backend/internal -type f \\\\\\(-name *.go \\\\\\))",
+      "Bash(grep -r \"gemma\\\\|model\\\\|Ollama\" /e/works/project/edulinker --include=*.go --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"aianalysis\\\\|AIAnalysis\" /e/works/project/edulinker/backend --include=*.go)",
+      "Bash(node -e \":*)",
+      "Bash(find /e/works/project/edulinker -type f -name *hwp* -o -name *hancom* -o -name *sendoc* -o -name *document*preview*)",
+      "Bash(grep -r \"hwp\\\\|document.*convert\\\\|HWP\" /e/works/project/edulinker/backend --include=*.go)",
+      "Bash(find /e/works/project/edulinker/web-service -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) ! -path */node_modules/* ! -path */.next/*)",
+      "Bash(find /e/works/project/edulinker -path */node_modules -prune -o -path */.next -prune -o -type f \\\\\\(-name *hwp* -o -name *sendoc* -o -name *document* -o -name *converter* \\\\\\) -print)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/HNC/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(ls 'C:/Program Files \\(x86\\)/HNC/Office 2024/')",
+      "Bash(ls 'C:/Program Files \\(x86\\)/HNC/Office 2024/HOffice130/')",
+      "Bash(ls 'C:/Program Files \\(x86\\)/HNC/Office 2024/HOffice130/Bin/')",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

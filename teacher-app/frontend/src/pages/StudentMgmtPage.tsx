@@ -3,6 +3,18 @@ import { toast } from 'sonner'
 import { apiFetch } from '../api'
 import type { UserInfo } from '../App'
 
+interface EvalRecord {
+  id: string
+  student_id: string
+  subject: string
+  title: string
+  score: number
+  max_score: number
+  memo: string
+  eval_date: string
+  created_at: string
+}
+
 interface Student {
   id: string
   name: string
@@ -32,6 +44,18 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
   const [filterClass, setFilterClass] = useState<number>(user.classNum || 0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isAdmin = user.role === 'admin'
+
+  // Tab and performance evaluation state
+  const [activeTab, setActiveTab] = useState<'list' | 'eval'>('list')
+  const [evalStudent, setEvalStudent] = useState<Student | null>(null)
+  const [evalRecords, setEvalRecords] = useState<EvalRecord[]>([])
+  const [evalLoading, setEvalLoading] = useState(false)
+  const [showEvalForm, setShowEvalForm] = useState(false)
+  const [evalSubmitting, setEvalSubmitting] = useState(false)
+  const [evalForm, setEvalForm] = useState({
+    subject: '국어', title: '', score: '', max_score: '100', memo: '',
+    eval_date: new Date().toISOString().slice(0, 10)
+  })
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -144,7 +168,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
   const handleAddStudent = async () => {
     setAddError('')
     const { grade, classNum, number, name } = addForm
-    
+
     // Explicit check for empty strings or 0/NaN values
     if (!grade || grade === '0' || !classNum || classNum === '0' || !number || !name.trim()) {
       setAddError('학년, 반, 번호, 이름을 모두 입력해주세요.')
@@ -290,562 +314,771 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
     if (student) openEditModal(student)
   }
 
+  // ── Performance Evaluation handlers ──
+
+  const openEval = (student: Student) => {
+    setEvalStudent(student)
+    setActiveTab('eval')
+    fetchEvalRecords(student.id)
+  }
+
+  const fetchEvalRecords = async (studentId: string) => {
+    setEvalLoading(true)
+    try {
+      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation?student_id=${studentId}`)
+      if (res.ok) { const d = await res.json(); setEvalRecords(d || []) }
+      else setEvalRecords([])
+    } catch { setEvalRecords([]) }
+    finally { setEvalLoading(false) }
+  }
+
+  const handleEvalSubmit = async () => {
+    if (!evalStudent) return
+    if (!evalForm.title.trim() || !evalForm.score) { toast.error('평가명과 점수를 입력해주세요.'); return }
+    setEvalSubmitting(true)
+    try {
+      const res = await apiFetch('/api/plugins/studentmgmt/evaluation', {
+        method: 'POST',
+        body: JSON.stringify({
+          student_id: evalStudent.id,
+          subject: evalForm.subject,
+          title: evalForm.title.trim(),
+          score: Number(evalForm.score),
+          max_score: Number(evalForm.max_score) || 100,
+          memo: evalForm.memo,
+          eval_date: evalForm.eval_date,
+        })
+      })
+      if (res.ok) {
+        toast.success('수행평가 기록이 저장되었습니다.')
+        setShowEvalForm(false)
+        setEvalForm({ subject: '국어', title: '', score: '', max_score: '100', memo: '', eval_date: new Date().toISOString().slice(0, 10) })
+        fetchEvalRecords(evalStudent.id)
+      } else { const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.') }
+    } catch { toast.error('서버에 연결할 수 없습니다.') }
+    finally { setEvalSubmitting(false) }
+  }
+
+  const handleEvalDelete = async (id: string) => {
+    if (!confirm('이 수행평가 기록을 삭제하시겠습니까?')) return
+    try {
+      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation/${id}`, { method: 'DELETE' })
+      if (res.ok) { toast.success('삭제되었습니다.'); if (evalStudent) fetchEvalRecords(evalStudent.id) }
+      else toast.error('삭제에 실패했습니다.')
+    } catch { toast.error('서버에 연결할 수 없습니다.') }
+  }
+
+  const SUBJECTS = ['국어', '영어', '수학', '과학', '사회', '역사', '도덕', '미술', '음악', '체육', '기술·가정', '정보', '기타']
+
   const isProfileSet = !!(user.grade && user.grade > 0 && user.classNum && user.classNum > 0)
   const allSelected = students.length > 0 && selectedIds.size === students.length
   const someSelected = selectedIds.size > 0 && selectedIds.size < students.length
 
   return (
     <div style={{ padding: 24 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 600 }}>
-          <i className="fi fi-rr-graduation-cap" style={{ marginRight: 8 }} />
-          학생 관리
-        </h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => {
-              if (!isProfileSet) {
-                toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.')
-                return
-              }
-              setShowAddModal(true)
-              setAddError('')
-              setAddForm({
-                grade: String(user.grade),
-                classNum: String(user.classNum),
-                number: '',
-                name: ''
-              })
-            }}
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '2px solid var(--border)' }}>
+        {[{ id: 'list', label: '학생 목록' }, { id: 'eval', label: '수행평가 기록' }].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as 'list' | 'eval')}
             style={{
-              background: isProfileSet ? 'var(--accent-green)' : '#9ca3af',
-              color: 'white', padding: '8px 16px',
-              borderRadius: 8, border: 'none', cursor: isProfileSet ? 'pointer' : 'not-allowed', fontWeight: 600,
-              display: 'flex', alignItems: 'center', gap: 6
-            }}
-          >
-            <i className="fi fi-rr-user-add" />
-            학생 1명 추가
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileUpload}
-            style={{ display: 'none' }}
-          />
-          <button
-            onClick={() => {
-              if (!isProfileSet) {
-                toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.')
-                return
-              }
-              fileInputRef.current?.click()
-            }}
-            disabled={importing || !isProfileSet}
-            style={{
-              background: isProfileSet ? 'var(--accent-blue)' : '#9ca3af',
-              color: 'white', padding: '8px 16px',
-              borderRadius: 8, border: 'none', cursor: (importing || !isProfileSet) ? 'not-allowed' : 'pointer', fontWeight: 600,
-              display: 'flex', alignItems: 'center', gap: 6, opacity: importing ? 0.7 : 1
-            }}
-          >
-            <i className="fi fi-rr-file-upload" />
-            {importing ? '업로드 중...' : '엑셀로 학생 등록'}
-          </button>
-        </div>
+              padding: '10px 24px', fontWeight: 700, fontSize: 14, border: 'none', background: 'none', cursor: 'pointer',
+              borderBottom: `2px solid ${activeTab === tab.id ? '#6366f1' : 'transparent'}`,
+              color: activeTab === tab.id ? '#6366f1' : 'var(--text-muted)',
+              marginBottom: -2, transition: 'all 0.15s'
+            }}>{tab.label}</button>
+        ))}
       </div>
 
-      {/* Import Result */}
-      {importResult && (
-        <div style={{
-          padding: 16, borderRadius: 12, marginBottom: 20,
-          background: importResult.errors?.length ? '#fef2f2' : '#f0fdf4',
-          border: `1px solid ${importResult.errors?.length ? '#fecaca' : '#bbf7d0'}`
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: 8, color: importResult.errors?.length ? '#dc2626' : '#16a34a' }}>
-            <i className="fi fi-rr-checkbox" style={{ marginRight: 6 }} />
-            등록 결과: 전체 {importResult.total}명 중 {importResult.created}명 등록, {importResult.skipped}명 건너뜀
+      {/* ====== EVAL TAB ====== */}
+      {activeTab === 'eval' && (
+        <div style={{ display: 'flex', gap: 20 }}>
+          {/* Student picker (left) */}
+          <div style={{ width: 200, flexShrink: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 10 }}>학생 선택</div>
+            {students.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>학생 목록 탭에서<br />학생을 먼저 등록하세요.</div>
+            ) : students.map(s => (
+              <div key={s.id} onClick={() => openEval(s)}
+                style={{
+                  padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4, fontSize: 14,
+                  background: evalStudent?.id === s.id ? 'rgba(99,102,241,0.1)' : 'transparent',
+                  border: evalStudent?.id === s.id ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
+                  color: evalStudent?.id === s.id ? '#6366f1' : 'var(--text)',
+                  fontWeight: evalStudent?.id === s.id ? 700 : 400
+                }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 6 }}>{s.number}번</span>{s.name}
+              </div>
+            ))}
           </div>
-          {importResult.errors && importResult.errors.length > 0 && (
-            <div style={{ fontSize: 13, color: '#b91c1c' }}>
-              {importResult.errors.map((err, i) => (
-                <div key={i}>• {err}</div>
-              ))}
+
+          {/* Records (right) */}
+          <div style={{ flex: 1 }}>
+            {!evalStudent ? (
+              <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
+                <i className="fi fi-rr-edit" style={{ fontSize: 36, display: 'block', marginBottom: 12 }} />
+                왼쪽에서 학생을 선택하세요.
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{evalStudent.name} — 수행평가 기록</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{evalStudent.grade}학년 {evalStudent.class_num}반 {evalStudent.number}번</div>
+                  </div>
+                  <button onClick={() => setShowEvalForm(!showEvalForm)}
+                    style={{ padding: '9px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+                    <i className="fi fi-rr-plus" style={{ marginRight: 6 }} />평가 추가
+                  </button>
+                </div>
+
+                {/* Add Eval Form */}
+                {showEvalForm && (
+                  <div style={{ background: 'white', padding: 20, borderRadius: 12, border: '1px solid var(--border)', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>새 수행평가 기록</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>교과목</label>
+                        <select value={evalForm.subject} onChange={e => setEvalForm(f => ({ ...f, subject: e.target.value }))}
+                          style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }}>
+                          {SUBJECTS.map(s => <option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>평가날짜</label>
+                        <input type="date" value={evalForm.eval_date} onChange={e => setEvalForm(f => ({ ...f, eval_date: e.target.value }))}
+                          style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>점수 / 만점</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="number" value={evalForm.score} onChange={e => setEvalForm(f => ({ ...f, score: e.target.value }))} placeholder="점수"
+                            style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
+                          <span style={{ color: 'var(--text-muted)' }}>/</span>
+                          <input type="number" value={evalForm.max_score} onChange={e => setEvalForm(f => ({ ...f, max_score: e.target.value }))} placeholder="만점"
+                            style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>평가명 *</label>
+                      <input value={evalForm.title} onChange={e => setEvalForm(f => ({ ...f, title: e.target.value }))} placeholder="예: 1단원 소단원 수행평가"
+                        style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>메모</label>
+                      <textarea rows={2} value={evalForm.memo} onChange={e => setEvalForm(f => ({ ...f, memo: e.target.value }))} placeholder="특이사항, 교사 평가 의견..."
+                        style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <button onClick={() => setShowEvalForm(false)} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: 13 }}>취소</button>
+                      <button onClick={handleEvalSubmit} disabled={evalSubmitting}
+                        style={{ padding: '8px 22px', borderRadius: 7, border: 'none', background: '#6366f1', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: evalSubmitting ? 0.7 : 1 }}>
+                        {evalSubmitting ? '저장 중...' : '저장'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Eval Records Table */}
+                {evalLoading ? <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>불러오는 중...</div> :
+                  evalRecords.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 32, background: 'var(--surface)', borderRadius: 12, color: 'var(--text-muted)', fontSize: 14 }}>수행평가 기록이 없습니다.</div>
+                  ) : (
+                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: 'var(--bg-primary)' }}>
+                            {['날짜', '교과', '평가명', '점수', '메모', ''].map(h => (
+                              <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {evalRecords.map(r => (
+                            <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '10px 14px' }}>{r.eval_date}</td>
+                              <td style={{ padding: '10px 14px' }}><span style={{ padding: '2px 8px', borderRadius: 6, background: '#f1f5f9', fontWeight: 600 }}>{r.subject}</span></td>
+                              <td style={{ padding: '10px 14px', fontWeight: 600 }}>{r.title}</td>
+                              <td style={{ padding: '10px 14px' }}>
+                                <span style={{ fontWeight: 800, color: r.score >= r.max_score * 0.8 ? '#22c55e' : r.score >= r.max_score * 0.5 ? '#f59e0b' : '#ef4444' }}>{r.score}</span>
+                                <span style={{ color: 'var(--text-muted)' }}> / {r.max_score}</span>
+                              </td>
+                              <td style={{ padding: '10px 14px', color: 'var(--text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.memo}</td>
+                              <td style={{ padding: '10px 14px' }}>
+                                <button onClick={() => handleEvalDelete(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}
+                                  onMouseOver={e => (e.currentTarget.style.color = '#ef4444')} onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                                  <i className="fi fi-rr-trash" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                }
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ====== LIST TAB ====== */}
+      {activeTab === 'list' && (
+        <div>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 600 }}>
+              <i className="fi fi-rr-graduation-cap" style={{ marginRight: 8 }} />
+              학생 관리
+            </h3>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => {
+                  if (!isProfileSet) {
+                    toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.')
+                    return
+                  }
+                  setShowAddModal(true)
+                  setAddError('')
+                  setAddForm({
+                    grade: String(user.grade),
+                    classNum: String(user.classNum),
+                    number: '',
+                    name: ''
+                  })
+                }}
+                style={{
+                  background: isProfileSet ? 'var(--accent-green)' : '#9ca3af',
+                  color: 'white', padding: '8px 16px',
+                  borderRadius: 8, border: 'none', cursor: isProfileSet ? 'pointer' : 'not-allowed', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 6
+                }}
+              >
+                <i className="fi fi-rr-user-add" />
+                학생 1명 추가
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => {
+                  if (!isProfileSet) {
+                    toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.')
+                    return
+                  }
+                  fileInputRef.current?.click()
+                }}
+                disabled={importing || !isProfileSet}
+                style={{
+                  background: isProfileSet ? 'var(--accent-blue)' : '#9ca3af',
+                  color: 'white', padding: '8px 16px',
+                  borderRadius: 8, border: 'none', cursor: (importing || !isProfileSet) ? 'not-allowed' : 'pointer', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 6, opacity: importing ? 0.7 : 1
+                }}
+              >
+                <i className="fi fi-rr-file-upload" />
+                {importing ? '업로드 중...' : '엑셀로 학생 등록'}
+              </button>
+            </div>
+          </div>
+
+          {/* Import Result */}
+          {importResult && (
+            <div style={{
+              padding: 16, borderRadius: 12, marginBottom: 20,
+              background: importResult.errors?.length ? '#fef2f2' : '#f0fdf4',
+              border: `1px solid ${importResult.errors?.length ? '#fecaca' : '#bbf7d0'}`
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 8, color: importResult.errors?.length ? '#dc2626' : '#16a34a' }}>
+                <i className="fi fi-rr-checkbox" style={{ marginRight: 6 }} />
+                등록 결과: 전체 {importResult.total}명 중 {importResult.created}명 등록, {importResult.skipped}명 건너뜀
+              </div>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <div style={{ fontSize: 13, color: '#b91c1c' }}>
+                  {importResult.errors.map((err, i) => (
+                    <div key={i}>• {err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Excel Format Guide */}
+          <div style={{
+            padding: 16, borderRadius: 12, marginBottom: 20,
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)'
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14, color: 'var(--text-primary)' }}>
+              <i className="fi fi-rr-info" style={{ marginRight: 6 }} />
+              엑셀 파일 형식 안내
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              첫 번째 행(헤더)에 <b>학년, 반, 번호, 이름</b> 열이 포함되어야 합니다.<br />
+              학생은 비밀번호 없이 <b>학교 + 학년 + 반 + 번호 + 이름</b>으로 로그인합니다.
+            </div>
+            <table style={{ marginTop: 12, fontSize: 13, borderCollapse: 'collapse', width: '100%', maxWidth: 400 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-tertiary)' }}>
+                  <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>학년</th>
+                  <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>반</th>
+                  <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>번호</th>
+                  <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>이름</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>3</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>1</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>홍길동</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>3</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
+                  <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>김철수</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Filters + Selection Actions */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isAdmin ? (
+              <>
+                <select
+                  value={filterGrade}
+                  onChange={(e) => { setFilterGrade(Number(e.target.value)); setLoading(true) }}
+                  style={{
+                    padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
+                    background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 14
+                  }}
+                >
+                  <option value={0}>전체 학년</option>
+                  {[1, 2, 3, 4, 5, 6].map(g => (
+                    <option key={g} value={g}>{g}학년</option>
+                  ))}
+                </select>
+                <select
+                  value={filterClass}
+                  onChange={(e) => { setFilterClass(Number(e.target.value)); setLoading(true) }}
+                  style={{
+                    padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
+                    background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 14
+                  }}
+                >
+                  <option value={0}>전체 반</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => (
+                    <option key={c} value={c}>{c}반</option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', padding: '8px 0' }}>
+                {user.grade}학년 {user.classNum}반
+              </span>
+            )}
+
+            <div style={{ flex: 1 }} />
+
+            {/* Selection action buttons */}
+            {selectedIds.size > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{
+                  fontSize: 13, fontWeight: 600, color: 'var(--accent-blue)',
+                  background: 'rgba(59,130,246,0.1)', padding: '6px 12px', borderRadius: 8
+                }}>
+                  {selectedIds.size}명 선택
+                </span>
+                {selectedIds.size === 1 && (
+                  <button
+                    onClick={handleEditSelectedSingle}
+                    style={{
+                      background: 'var(--accent-blue)', color: 'white', padding: '7px 14px',
+                      borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                      display: 'flex', alignItems: 'center', gap: 5
+                    }}
+                  >
+                    <i className="fi fi-rr-edit" style={{ fontSize: 12 }} />
+                    수정
+                  </button>
+                )}
+                <button
+                  onClick={handleDeleteSelected}
+                  style={{
+                    background: 'var(--accent-red)', color: 'white', padding: '7px 14px',
+                    borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                    display: 'flex', alignItems: 'center', gap: 5
+                  }}
+                >
+                  <i className="fi fi-rr-trash" style={{ fontSize: 12 }} />
+                  선택 삭제
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  style={{
+                    background: 'transparent', color: 'var(--text-muted)', padding: '7px 10px',
+                    borderRadius: 8, border: '1px solid var(--border-color)', cursor: 'pointer', fontSize: 13
+                  }}
+                >
+                  선택 해제
+                </button>
+              </div>
+            )}
+
+            {selectedIds.size === 0 && (
+              <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                {students.length}명
+              </span>
+            )}
+
+            {selectedIds.size === 0 && ((isAdmin && filterGrade > 0 && filterClass > 0) || (!isAdmin && user.grade && user.classNum)) && (
+              <button
+                onClick={handleDeleteClass}
+                style={{
+                  background: 'var(--accent-red)', color: 'white', padding: '8px 14px',
+                  borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                  display: 'flex', alignItems: 'center', gap: 6
+                }}
+              >
+                <i className="fi fi-rr-trash" />
+                {isAdmin ? filterGrade : user.grade}학년 {isAdmin ? filterClass : user.classNum}반 전체 삭제
+              </button>
+            )}
+          </div>
+
+          {/* Student Table */}
+          {!isProfileSet ? (
+            <div style={{
+              textAlign: 'center', padding: 60,
+              background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5, color: '#ef4444' }}>
+                <i className="fi fi-rr-settings" />
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                학생을 등록하려면 <strong style={{ color: 'var(--text-primary)' }}>내 프로필</strong>에서 '담당 학년'과 '담당 반'을 먼저 설정해주세요.
+              </p>
+            </div>
+          ) : loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>
+              학생 목록을 불러오는 중...
+            </div>
+          ) : students.length === 0 ? (
+            <div style={{
+              textAlign: 'center', padding: 60,
+              background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)'
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
+                <i className="fi fi-rr-graduation-cap" />
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                등록된 학생이 없습니다. 엑셀 파일로 학생을 등록해주세요.
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)', overflow: 'hidden'
+            }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-tertiary)' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', width: 44 }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={el => { if (el) el.indeterminate = someSelected }}
+                        onChange={toggleSelectAll}
+                        style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)', cursor: 'pointer' }}
+                      />
+                    </th>
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>학년</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>반</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>번호</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>이름</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 80 }}>상태</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 60 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((s) => {
+                    const isChecked = selectedIds.has(s.id)
+                    return (
+                      <tr
+                        key={s.id}
+                        style={{
+                          borderTop: '1px solid var(--border-color)',
+                          background: isChecked ? 'rgba(59,130,246,0.06)' : 'transparent',
+                          transition: 'background 100ms'
+                        }}
+                      >
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelect(s.id)}
+                            style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)', cursor: 'pointer' }}
+                          />
+                        </td>
+                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.grade}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.class_num}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.number}</td>
+                        <td style={{ padding: '10px 16px', fontWeight: 500 }}>{s.name}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'center' }}>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
+                            background: s.is_active ? '#dcfce7' : '#fee2e2',
+                            color: s.is_active ? '#16a34a' : '#dc2626'
+                          }}>
+                            {s.is_active ? '활성' : '비활성'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => openEditModal(s)}
+                            style={{
+                              background: 'transparent', border: 'none', cursor: 'pointer',
+                              color: 'var(--text-muted)', fontSize: 14, padding: '4px 6px', borderRadius: 6,
+                              transition: 'color 150ms'
+                            }}
+                            onMouseOver={e => (e.currentTarget.style.color = 'var(--accent-blue)')}
+                            onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                            title="수정"
+                          >
+                            <i className="fi fi-rr-edit" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Add Student Modal */}
+          {showAddModal && (
+            <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 1000
+            }} onClick={() => setShowAddModal(false)}>
+              <div style={{
+                background: 'var(--bg-card, #1e293b)', borderRadius: 16, padding: 28, width: 400,
+                border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              }} onClick={(e) => e.stopPropagation()}>
+                <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <i className="fi fi-rr-user-add" />
+                  학생 1명 추가
+                </h4>
+
+                {addError && (
+                  <div style={{
+                    padding: 10, borderRadius: 8, marginBottom: 16,
+                    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 500
+                  }}>
+                    {addError}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
+                    <input
+                      type="number" min="1" max="6"
+                      value={addForm.grade}
+                      disabled
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: '#e2e8f0',
+                        color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
+                    <input
+                      type="number" min="1" max="20"
+                      value={addForm.classNum}
+                      disabled
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: '#e2e8f0',
+                        color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
+                    <input
+                      type="number" min="1" max="50" placeholder="1"
+                      value={addForm.number}
+                      onChange={(e) => setAddForm({ ...addForm, number: e.target.value })}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
+                  <input
+                    type="text" placeholder="홍길동"
+                    value={addForm.name}
+                    onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddStudent() }}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)', fontSize: 14, boxSizing: 'border-box'
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowAddModal(false)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
+                      background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600
+                    }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleAddStudent}
+                    disabled={adding}
+                    style={{
+                      padding: '8px 20px', borderRadius: 8, border: 'none',
+                      background: 'var(--accent-green)', color: 'white', cursor: adding ? 'not-allowed' : 'pointer',
+                      fontWeight: 600, opacity: adding ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6
+                    }}
+                  >
+                    <i className="fi fi-rr-check" />
+                    {adding ? '등록 중...' : '등록'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Student Modal */}
+          {editStudent && (
+            <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 1000
+            }} onClick={() => setEditStudent(null)}>
+              <div style={{
+                background: 'var(--bg-card, #1e293b)', borderRadius: 16, padding: 28, width: 400,
+                border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              }} onClick={(e) => e.stopPropagation()}>
+                <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <i className="fi fi-rr-edit" />
+                  학생 정보 수정
+                </h4>
+
+                {editError && (
+                  <div style={{
+                    padding: 10, borderRadius: 8, marginBottom: 16,
+                    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 500
+                  }}>
+                    {editError}
+                  </div>
+                )}
+
+                {/* Read-only info */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
+                    <input
+                      type="number" value={editStudent.grade} disabled
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: '#e2e8f0',
+                        color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
+                    <input
+                      type="number" value={editStudent.class_num} disabled
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: '#e2e8f0',
+                        color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
+                    <input
+                      type="number" value={editStudent.number} disabled
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8,
+                        border: '1px solid var(--border-color)', background: '#e2e8f0',
+                        color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Editable name */}
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
+                  <input
+                    type="text" placeholder="이름"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleEditStudent() }}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                      color: 'var(--text-primary)', fontSize: 14, boxSizing: 'border-box'
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setEditStudent(null)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
+                      background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600
+                    }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleEditStudent}
+                    disabled={editing}
+                    style={{
+                      padding: '8px 20px', borderRadius: 8, border: 'none',
+                      background: 'var(--accent-blue)', color: 'white', cursor: editing ? 'not-allowed' : 'pointer',
+                      fontWeight: 600, opacity: editing ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6
+                    }}
+                  >
+                    <i className="fi fi-rr-check" />
+                    {editing ? '저장 중...' : '저장'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* Excel Format Guide */}
-      <div style={{
-        padding: 16, borderRadius: 12, marginBottom: 20,
-        background: 'var(--bg-secondary)', border: '1px solid var(--border-color)'
-      }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 14, color: 'var(--text-primary)' }}>
-          <i className="fi fi-rr-info" style={{ marginRight: 6 }} />
-          엑셀 파일 형식 안내
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          첫 번째 행(헤더)에 <b>학년, 반, 번호, 이름</b> 열이 포함되어야 합니다.<br />
-          학생은 비밀번호 없이 <b>학교 + 학년 + 반 + 번호 + 이름</b>으로 로그인합니다.
-        </div>
-        <table style={{ marginTop: 12, fontSize: 13, borderCollapse: 'collapse', width: '100%', maxWidth: 400 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-tertiary)' }}>
-              <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>학년</th>
-              <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>반</th>
-              <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>번호</th>
-              <th style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>이름</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>3</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>1</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>홍길동</td>
-            </tr>
-            <tr>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>3</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>2</td>
-              <td style={{ padding: '6px 12px', textAlign: 'center', border: '1px solid var(--border-color)' }}>김철수</td>
-            </tr>
-          </tbody>
-        </table>
       </div>
-
-      {/* Filters + Selection Actions */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-        {isAdmin ? (
-          <>
-            <select
-              value={filterGrade}
-              onChange={(e) => { setFilterGrade(Number(e.target.value)); setLoading(true) }}
-              style={{
-                padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
-                background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 14
-              }}
-            >
-              <option value={0}>전체 학년</option>
-              {[1, 2, 3, 4, 5, 6].map(g => (
-                <option key={g} value={g}>{g}학년</option>
-              ))}
-            </select>
-            <select
-              value={filterClass}
-              onChange={(e) => { setFilterClass(Number(e.target.value)); setLoading(true) }}
-              style={{
-                padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
-                background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 14
-              }}
-            >
-              <option value={0}>전체 반</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => (
-                <option key={c} value={c}>{c}반</option>
-              ))}
-            </select>
-          </>
-        ) : (
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', padding: '8px 0' }}>
-            {user.grade}학년 {user.classNum}반
-          </span>
-        )}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Selection action buttons */}
-        {selectedIds.size > 0 && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{
-              fontSize: 13, fontWeight: 600, color: 'var(--accent-blue)',
-              background: 'rgba(59,130,246,0.1)', padding: '6px 12px', borderRadius: 8
-            }}>
-              {selectedIds.size}명 선택
-            </span>
-            {selectedIds.size === 1 && (
-              <button
-                onClick={handleEditSelectedSingle}
-                style={{
-                  background: 'var(--accent-blue)', color: 'white', padding: '7px 14px',
-                  borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                  display: 'flex', alignItems: 'center', gap: 5
-                }}
-              >
-                <i className="fi fi-rr-edit" style={{ fontSize: 12 }} />
-                수정
-              </button>
-            )}
-            <button
-              onClick={handleDeleteSelected}
-              style={{
-                background: 'var(--accent-red)', color: 'white', padding: '7px 14px',
-                borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                display: 'flex', alignItems: 'center', gap: 5
-              }}
-            >
-              <i className="fi fi-rr-trash" style={{ fontSize: 12 }} />
-              선택 삭제
-            </button>
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              style={{
-                background: 'transparent', color: 'var(--text-muted)', padding: '7px 10px',
-                borderRadius: 8, border: '1px solid var(--border-color)', cursor: 'pointer', fontSize: 13
-              }}
-            >
-              선택 해제
-            </button>
-          </div>
-        )}
-
-        {selectedIds.size === 0 && (
-          <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-            {students.length}명
-          </span>
-        )}
-
-        {selectedIds.size === 0 && ((isAdmin && filterGrade > 0 && filterClass > 0) || (!isAdmin && user.grade && user.classNum)) && (
-          <button
-            onClick={handleDeleteClass}
-            style={{
-              background: 'var(--accent-red)', color: 'white', padding: '8px 14px',
-              borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-              display: 'flex', alignItems: 'center', gap: 6
-            }}
-          >
-            <i className="fi fi-rr-trash" />
-            {isAdmin ? filterGrade : user.grade}학년 {isAdmin ? filterClass : user.classNum}반 전체 삭제
-          </button>
-        )}
-      </div>
-
-      {/* Student Table */}
-      {!isProfileSet ? (
-        <div style={{
-          textAlign: 'center', padding: 60,
-          background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)'
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5, color: '#ef4444' }}>
-            <i className="fi fi-rr-settings" />
-          </div>
-          <p style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-            학생을 등록하려면 <strong style={{ color: 'var(--text-primary)' }}>내 프로필</strong>에서 '담당 학년'과 '담당 반'을 먼저 설정해주세요.
-          </p>
-        </div>
-      ) : loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>
-          학생 목록을 불러오는 중...
-        </div>
-      ) : students.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: 60,
-          background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)'
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
-            <i className="fi fi-rr-graduation-cap" />
-          </div>
-          <p style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-            등록된 학생이 없습니다. 엑셀 파일로 학생을 등록해주세요.
-          </p>
-        </div>
-      ) : (
-        <div style={{
-          background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-color)', overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-tertiary)' }}>
-                <th style={{ padding: '10px 12px', textAlign: 'center', width: 44 }}>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={el => { if (el) el.indeterminate = someSelected }}
-                    onChange={toggleSelectAll}
-                    style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)', cursor: 'pointer' }}
-                  />
-                </th>
-                <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>학년</th>
-                <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>반</th>
-                <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 70 }}>번호</th>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>이름</th>
-                <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 80 }}>상태</th>
-                <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)', width: 60 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.map((s) => {
-                const isChecked = selectedIds.has(s.id)
-                return (
-                  <tr
-                    key={s.id}
-                    style={{
-                      borderTop: '1px solid var(--border-color)',
-                      background: isChecked ? 'rgba(59,130,246,0.06)' : 'transparent',
-                      transition: 'background 100ms'
-                    }}
-                  >
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSelect(s.id)}
-                        style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)', cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.grade}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.class_num}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'center' }}>{s.number}</td>
-                    <td style={{ padding: '10px 16px', fontWeight: 500 }}>{s.name}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'center' }}>
-                      <span style={{
-                        padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                        background: s.is_active ? '#dcfce7' : '#fee2e2',
-                        color: s.is_active ? '#16a34a' : '#dc2626'
-                      }}>
-                        {s.is_active ? '활성' : '비활성'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => openEditModal(s)}
-                        style={{
-                          background: 'transparent', border: 'none', cursor: 'pointer',
-                          color: 'var(--text-muted)', fontSize: 14, padding: '4px 6px', borderRadius: 6,
-                          transition: 'color 150ms'
-                        }}
-                        onMouseOver={e => (e.currentTarget.style.color = 'var(--accent-blue)')}
-                        onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-                        title="수정"
-                      >
-                        <i className="fi fi-rr-edit" />
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add Student Modal */}
-      {showAddModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000
-        }} onClick={() => setShowAddModal(false)}>
-          <div style={{
-            background: 'var(--bg-card, #1e293b)', borderRadius: 16, padding: 28, width: 400,
-            border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="fi fi-rr-user-add" />
-              학생 1명 추가
-            </h4>
-
-            {addError && (
-              <div style={{
-                padding: 10, borderRadius: 8, marginBottom: 16,
-                background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 500
-              }}>
-                {addError}
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
-                <input
-                  type="number" min="1" max="6"
-                  value={addForm.grade}
-                  disabled
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: '#e2e8f0',
-                    color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
-                <input
-                  type="number" min="1" max="20"
-                  value={addForm.classNum}
-                  disabled
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: '#e2e8f0',
-                    color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
-                <input
-                  type="number" min="1" max="50" placeholder="1"
-                  value={addForm.number}
-                  onChange={(e) => setAddForm({ ...addForm, number: e.target.value })}
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
-              <input
-                type="text" placeholder="홍길동"
-                value={addForm.name}
-                onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddStudent() }}
-                style={{
-                  width: '100%', padding: '8px 12px', borderRadius: 8,
-                  border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)', fontSize: 14, boxSizing: 'border-box'
-                }}
-                autoFocus
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowAddModal(false)}
-                style={{
-                  padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
-                  background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600
-                }}
-              >
-                취소
-              </button>
-              <button
-                onClick={handleAddStudent}
-                disabled={adding}
-                style={{
-                  padding: '8px 20px', borderRadius: 8, border: 'none',
-                  background: 'var(--accent-green)', color: 'white', cursor: adding ? 'not-allowed' : 'pointer',
-                  fontWeight: 600, opacity: adding ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6
-                }}
-              >
-                <i className="fi fi-rr-check" />
-                {adding ? '등록 중...' : '등록'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Student Modal */}
-      {editStudent && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000
-        }} onClick={() => setEditStudent(null)}>
-          <div style={{
-            background: 'var(--bg-card, #1e293b)', borderRadius: 16, padding: 28, width: 400,
-            border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
-          }} onClick={(e) => e.stopPropagation()}>
-            <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="fi fi-rr-edit" />
-              학생 정보 수정
-            </h4>
-
-            {editError && (
-              <div style={{
-                padding: 10, borderRadius: 8, marginBottom: 16,
-                background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13, fontWeight: 500
-              }}>
-                {editError}
-              </div>
-            )}
-
-            {/* Read-only info */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
-                <input
-                  type="number" value={editStudent.grade} disabled
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: '#e2e8f0',
-                    color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
-                <input
-                  type="number" value={editStudent.class_num} disabled
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: '#e2e8f0',
-                    color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
-                <input
-                  type="number" value={editStudent.number} disabled
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-color)', background: '#e2e8f0',
-                    color: '#64748b', fontSize: 14, textAlign: 'center', boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Editable name */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
-              <input
-                type="text" placeholder="이름"
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleEditStudent() }}
-                style={{
-                  width: '100%', padding: '8px 12px', borderRadius: 8,
-                  border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)', fontSize: 14, boxSizing: 'border-box'
-                }}
-                autoFocus
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setEditStudent(null)}
-                style={{
-                  padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
-                  background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600
-                }}
-              >
-                취소
-              </button>
-              <button
-                onClick={handleEditStudent}
-                disabled={editing}
-                style={{
-                  padding: '8px 20px', borderRadius: 8, border: 'none',
-                  background: 'var(--accent-blue)', color: 'white', cursor: editing ? 'not-allowed' : 'pointer',
-                  fontWeight: 600, opacity: editing ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6
-                }}
-              >
-                <i className="fi fi-rr-check" />
-                {editing ? '저장 중...' : '저장'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
