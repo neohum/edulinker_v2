@@ -18,6 +18,10 @@ export function GetDBUsers() {
   return window['go']['main']['App']['GetDBUsers']();
 }
 
+export function GetInactiveDBUsers() {
+  return window['go']['main']['App']['GetInactiveDBUsers']();
+}
+
 export function GetLocalIP() {
   return window['go']['main']['App']['GetLocalIP']();
 }
@@ -30,8 +34,16 @@ export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
 
+export function HardDeleteDBUser(arg1) {
+  return window['go']['main']['App']['HardDeleteDBUser'](arg1);
+}
+
 export function InstallAndStartWithScoop() {
   return window['go']['main']['App']['InstallAndStartWithScoop']();
+}
+
+export function ReactivateDBUser(arg1) {
+  return window['go']['main']['App']['ReactivateDBUser'](arg1);
 }
 
 export function ResetDBUserPassword(arg1, arg2) {

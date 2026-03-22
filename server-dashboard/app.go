@@ -557,6 +557,86 @@ func (a *App) DeleteDBUser(id string) error {
 	return err
 }
 
+func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
+	db, err := getDBConn()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, u.grade, u.class_num, u.is_active, u.created_at
+		FROM users u
+		LEFT JOIN schools s ON u.school_id = s.id
+		WHERE u.is_active = false
+		ORDER BY u.role, u.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []DBUser
+	for rows.Next() {
+		var u DBUser
+		var created time.Time
+		var schoolID sql.NullString
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &u.IsActive, &created); err != nil {
+			return nil, err
+		}
+		if schoolID.Valid {
+			u.SchoolID = schoolID.String
+		}
+		u.CreatedAt = created.Format(time.RFC3339)
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+func (a *App) ReactivateDBUser(id string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE users SET is_active = true WHERE id = $1", id)
+	return err
+}
+
+func (a *App) HardDeleteDBUser(id string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	// 1. NULL out sendoc author references (must succeed before delete)
+	if _, err := tx.Exec("UPDATE sendocs SET author_id = NULL WHERE author_id = $1", id); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("sendoc 참조 해제 실패: %w", err)
+	}
+
+	// 2. Remove parent-student links ($1 and $2 are the same value — required by PostgreSQL)
+	if _, err := tx.Exec("DELETE FROM parent_students WHERE parent_id = $1 OR student_id = $2", id, id); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("학부모-학생 연결 삭제 실패: %w", err)
+	}
+
+	// 3. Hard delete user
+	if _, err := tx.Exec("DELETE FROM users WHERE id = $1", id); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("사용자 삭제 실패: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 func (a *App) ResetDBUserPassword(id string, newPassword string) error {
 	db, err := getDBConn()
 	if err != nil {

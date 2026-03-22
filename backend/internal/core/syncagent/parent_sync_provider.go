@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/edulinker/backend/internal/core/notify"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -18,10 +19,11 @@ import (
 type ParentSyncProvider struct {
 	db      *gorm.DB
 	syncURL string // e.g. "https://sync-server/api/sync"
+	wsHub   *notify.Hub
 }
 
-func NewParentSyncProvider(db *gorm.DB, syncURL string) *ParentSyncProvider {
-	return &ParentSyncProvider{db: db, syncURL: syncURL}
+func NewParentSyncProvider(db *gorm.DB, syncURL string, hub *notify.Hub) *ParentSyncProvider {
+	return &ParentSyncProvider{db: db, syncURL: syncURL, wsHub: hub}
 }
 
 // GetSyncData returns student roster (public fields only) for cloud caching.
@@ -92,13 +94,13 @@ func (p *ParentSyncProvider) HandleEvent(payload string) error {
 			tempPw = tempPw[len(tempPw)-4:]
 		}
 		hash, _ := bcrypt.GenerateFromPassword([]byte(tempPw), bcrypt.DefaultCost)
-
-		// LoginID must be nil (pointer) to avoid unique constraint on empty string
 		parent = models.User{
 			SchoolID:     student.SchoolID,
 			Name:         req.ParentName,
 			Phone:        req.ParentPhone,
 			Role:         models.RoleParent,
+			Grade:        student.Grade, // 학생 학년 복사
+			Class:        student.Class, // 학생 반 복사
 			PasswordHash: string(hash),
 			IsActive:     true,
 			LoginID:      nil, // explicitly nil — use phone-based login
@@ -110,6 +112,8 @@ func (p *ParentSyncProvider) HandleEvent(payload string) error {
 		}
 		log.Printf("[ParentSync] ✅ Created new parent account: %s (%s) id=%s", parent.Name, parent.Phone, parent.ID)
 	} else {
+		// 이미 계정이 있어도 학년·반 업데이트
+		p.db.Model(&parent).Updates(map[string]interface{}{"grade": student.Grade, "class_num": student.Class})
 		log.Printf("[ParentSync] Found existing parent account: %s id=%s", parent.Name, parent.ID)
 	}
 
@@ -141,6 +145,20 @@ func (p *ParentSyncProvider) HandleEvent(payload string) error {
 		"학부모 계정이 %s 학생과 연동되었습니다. 임시 비밀번호: 전화번호 뒷 4자리",
 		student.Name,
 	))
+
+	// WebSocket: notify all connected teachers/admins of this school in real-time
+	if p.wsHub != nil {
+		p.wsHub.SendToSchool(student.SchoolID, &notify.WSMessage{
+			Type:     notify.MsgTypeSystem,
+			PluginID: "parent_link",
+			Payload: map[string]string{
+				"event":        "parent_linked",
+				"parent_name":  parent.Name,
+				"student_name": student.Name,
+				"message":      fmt.Sprintf("학부모 %s님이 %s 학생과 연동되었습니다.", parent.Name, student.Name),
+			},
+		})
+	}
 	return nil
 }
 
@@ -156,11 +174,8 @@ func (p *ParentSyncProvider) pushCallback(schoolCode, parentPhone, status, messa
 		"status":  status,
 		"message": message,
 	})
-	syncBase := p.syncURL
-	if len(syncBase) > 4 && syncBase[len(syncBase)-5:] == "/push" {
-		syncBase = syncBase[:len(syncBase)-5]
-	}
-	url := syncBase + "/parent/result"
+	// syncURL = "https://...railway.app/api/sync" — append /parent/result directly
+	url := p.syncURL + "/parent/result"
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Printf("[ParentSync] Callback push failed: %v", err)

@@ -103,12 +103,17 @@ func (h *ParentHandler) LinkParent(c *fiber.Ctx) error {
 			Name:         req.ParentName,
 			Phone:        req.ParentPhone,
 			Role:         models.RoleParent,
+			Grade:        student.Grade, // 학생 학년 복사
+			Class:        student.Class, // 학생 반 복사
 			PasswordHash: string(hash),
 			IsActive:     true,
 		}
 		if err := h.db.Create(&parent).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create parent account"})
 		}
+	} else {
+		// 이미 계정이 있어도 학년·반 업데이트
+		h.db.Model(&parent).Updates(map[string]interface{}{"grade": student.Grade, "class_num": student.Class})
 	}
 
 	// Check if already linked
@@ -163,4 +168,75 @@ func (h *ParentHandler) GetLinkedStudents(c *fiber.Ctx) error {
 		students[i] = l.Student
 	}
 	return c.JSON(fiber.Map{"students": students})
+}
+
+// GetStudentParentStatus godoc
+// GET /api/parent/student-links?grade=&class_num= (requires auth, role=teacher/admin)
+// Returns parent link status for each student in the teacher's class.
+func (h *ParentHandler) GetStudentParentStatus(c *fiber.Ctx) error {
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	grade := c.QueryInt("grade", 0)
+	classNum := c.QueryInt("class_num", 0)
+
+	// Fetch students
+	var students []models.User
+	q := h.db.Where("school_id = ? AND role = ? AND is_active = ?", schoolID, models.RoleStudent, true)
+	if grade > 0 {
+		q = q.Where("grade = ?", grade)
+	}
+	if classNum > 0 {
+		q = q.Where("class_num = ?", classNum)
+	}
+	q.Order("number ASC").Find(&students)
+
+	// Collect student IDs
+	studentIDs := make([]uuid.UUID, len(students))
+	for i, s := range students {
+		studentIDs[i] = s.ID
+	}
+
+	// Fetch parent links
+	var links []models.ParentStudent
+	h.db.Preload("Parent").
+		Where("student_id IN ? AND status = ?", studentIDs, "approved").
+		Find(&links)
+
+	// Map studentID → parent info
+	type ParentInfo struct {
+		Name  string `json:"name"`
+		Phone string `json:"phone"`
+	}
+	parentMap := map[uuid.UUID]ParentInfo{}
+	for _, l := range links {
+		parentMap[l.StudentID] = ParentInfo{Name: l.Parent.Name, Phone: l.Parent.Phone}
+	}
+
+	// Build result
+	type StudentParentStatus struct {
+		StudentID string      `json:"student_id"`
+		Name      string      `json:"name"`
+		Number    int         `json:"number"`
+		HasParent bool        `json:"has_parent"`
+		Parent    *ParentInfo `json:"parent,omitempty"`
+	}
+	result := make([]StudentParentStatus, len(students))
+	for i, s := range students {
+		p, found := parentMap[s.ID]
+		var pPtr *ParentInfo
+		if found {
+			pPtr = &p
+		}
+		result[i] = StudentParentStatus{
+			StudentID: s.ID.String(),
+			Name:      s.Name,
+			Number:    s.Number,
+			HasParent: found,
+			Parent:    pPtr,
+		}
+	}
+	return c.JSON(result)
 }

@@ -86,6 +86,24 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class HwpPagesResult {
+	    success: boolean;
+	    pages: string[];
+	    page_count: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HwpPagesResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.pages = source["pages"];
+	        this.page_count = source["page_count"];
+	        this.error = source["error"];
+	    }
+	}
 	export class LoginResult {
 	    success: boolean;
 	    token: string;
@@ -157,6 +175,26 @@ export namespace main {
 	        this.installed = source["installed"];
 	        this.running = source["running"];
 	        this.path = source["path"];
+	        this.error = source["error"];
+	    }
+	}
+	export class PdfConvertResult {
+	    success: boolean;
+	    pdf_base64: string;
+	    pages: string[];
+	    page_count: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PdfConvertResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.pdf_base64 = source["pdf_base64"];
+	        this.pages = source["pages"];
+	        this.page_count = source["page_count"];
 	        this.error = source["error"];
 	    }
 	}

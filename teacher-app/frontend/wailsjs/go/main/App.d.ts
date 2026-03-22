@@ -14,7 +14,11 @@ export function ConvertExcelToPdf(arg1:string,arg2:string):Promise<main.OfficeCo
 
 export function ConvertHwp(arg1:string,arg2:string,arg3:string):Promise<main.HwpConvertResult>;
 
+export function ConvertHwpToPages(arg1:string,arg2:string):Promise<main.HwpPagesResult>;
+
 export function ConvertPptToPdf(arg1:string,arg2:string):Promise<main.OfficeConvertResult>;
+
+export function ConvertToPdfAndImages(arg1:string,arg2:string):Promise<main.PdfConvertResult>;
 
 export function DownloadFile(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 

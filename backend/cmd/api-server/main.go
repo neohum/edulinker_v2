@@ -138,13 +138,10 @@ func main() {
 	syncagent.RegisterProvider("announcement", annPlugin)
 	syncagent.RegisterProvider("schoolevents", eventsPlugin)
 	syncagent.RegisterProvider("curriculum", curriculumPlugin)
+	syncagent.RegisterProvider("sendoc", sendocPlugin)
 
 	// Register parent student sync provider
-	localAPIBase := os.Getenv("LOCAL_API_BASE")
-	if localAPIBase == "" {
-		localAPIBase = "http://localhost:5200/api"
-	}
-	parentSyncProvider := syncagent.NewParentSyncProvider(db, localAPIBase)
+	parentSyncProvider := syncagent.NewParentSyncProvider(db, syncURL, wsHub)
 	syncagent.RegisterProvider("parent_link", parentSyncProvider)
 	agent.Start()
 
@@ -232,10 +229,15 @@ func main() {
 	parentRoutes.Get("/students/search", parentHandler.SearchStudents)
 	parentRoutes.Post("/link", parentHandler.LinkParent)
 
+	// --- Public linker route (no auth) ---
+	publicLinker := api.Group("/public/linker")
+	linkerPlugin.RegisterPublicRoutes(publicLinker)
+
 	// --- Protected routes (require auth) ---
 	protected := api.Group("", middleware.AuthMiddleware(authSvc))
 	protected.Get("/auth/me", authHandler.Me)
 	protected.Get("/parent/my-students", parentHandler.GetLinkedStudents)
+	protected.Get("/parent/student-links", parentHandler.GetStudentParentStatus)
 
 	// Mount AI Gateway under protected group
 	aiSvc.RegisterRoutes(protected.Group("/core"))
@@ -257,12 +259,16 @@ func main() {
 	userRoutes.Post("/", middleware.RoleMiddleware(models.RoleAdmin), userHandler.CreateUser)
 	userRoutes.Post("/add-student", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.AddStudent)
 	userRoutes.Post("/import-students", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.ImportStudentsExcel)
+	userRoutes.Get("/student-template", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DownloadStudentTemplate)
 	userRoutes.Delete("/students-by-class", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DeleteStudentsByClass)
 	userRoutes.Post("/delete-students-batch", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.DeleteStudentsBatch)
 	userRoutes.Get("/", userHandler.ListUsers)
+	userRoutes.Get("/inactive", middleware.RoleMiddleware(models.RoleAdmin), userHandler.ListInactiveUsers)
 	userRoutes.Get("/:id", userHandler.GetUser)
 	userRoutes.Put("/:id", userHandler.UpdateUser)
 	userRoutes.Delete("/:id", middleware.RoleMiddleware(models.RoleAdmin), userHandler.DeleteUser)
+	userRoutes.Post("/:id/reactivate", middleware.RoleMiddleware(models.RoleAdmin), userHandler.ReactivateUser)
+	userRoutes.Delete("/:id/permanent", middleware.RoleMiddleware(models.RoleAdmin), userHandler.HardDeleteUser)
 
 	// --- Notification management ---
 	notifyHandler := handlers.NewNotifyHandler(notifySvc)

@@ -78,7 +78,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
           {currentPage === 'counseling' && <CounselingPage user={user} />}
-          {currentPage === 'curriculum' && <CurriculumPage />}
+          {currentPage === 'curriculum' && <CurriculumPage user={user} />}
           {currentPage === 'aianalysis' && <AIAnalysisPage onNavigate={(p) => setCurrentPage(p as PageView)} />}
           {currentPage === 'schoolevents' && <SchoolEventsPage />}
 

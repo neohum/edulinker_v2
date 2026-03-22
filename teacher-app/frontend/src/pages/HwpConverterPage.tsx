@@ -11,6 +11,7 @@ export default function HwpConverterPage() {
   const [file, setFile] = useState<File | null>(null)
   const [converting, setConverting] = useState(false)
   const [result, setResult] = useState<{ type: string, url: string, fileName: string, size: number } | null>(null)
+  const [pageResults, setPageResults] = useState<{ urls: string[], fileNames: string[] } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [hancom, setHancom] = useState<HancomStatus | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -81,30 +82,45 @@ export default function HwpConverterPage() {
 
     setConverting(true)
     setResult(null)
+    setPageResults(null)
 
     try {
       const wailsApp = (window as any).go?.main?.App
+      const base64Data = await fileToBase64(file)
 
-      // Fast path: use ConvertHwpDirect if file has a local path (Wails can access)
-      // For drag-drop files, fall back to base64 method
-      if (wailsApp?.ConvertHwp) {
-        const base64Data = await fileToBase64(file)
+      if (type === 'image' && wailsApp?.ConvertHwpToPages) {
+        // Per-page image conversion
+        const res = await wailsApp.ConvertHwpToPages(file.name, base64Data)
+        if (res.success && res.pages?.length > 0) {
+          const baseName = file.name.replace(/\.[^/.]+$/, '')
+          const urls: string[] = []
+          const fileNames: string[] = []
+          for (let i = 0; i < res.pages.length; i++) {
+            const binaryStr = atob(res.pages[i])
+            const bytes = new Uint8Array(binaryStr.length)
+            for (let j = 0; j < binaryStr.length; j++) bytes[j] = binaryStr.charCodeAt(j)
+            const blob = new Blob([bytes], { type: 'image/png' })
+            urls.push(URL.createObjectURL(blob))
+            fileNames.push(`${baseName}_${i + 1}.png`)
+          }
+          setPageResults({ urls, fileNames })
+          toast.success(`${file.name} 변환 완료! (${res.page_count}페이지)`)
+        } else {
+          toast.error(res.error || '이미지 변환 실패')
+        }
+      } else if (wailsApp?.ConvertHwp) {
+        // PDF conversion (or image fallback)
         const res = await wailsApp.ConvertHwp(file.name, base64Data, type)
-
         if (res.success) {
           if (res.data) {
-            // base64 result — decode to blob
             const binaryStr = atob(res.data)
             const bytes = new Uint8Array(binaryStr.length)
-            for (let i = 0; i < binaryStr.length; i++) {
-              bytes[i] = binaryStr.charCodeAt(i)
-            }
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
             const mimeType = type === 'pdf' ? 'application/pdf' : 'image/png'
             const blob = new Blob([bytes], { type: mimeType })
             const url = URL.createObjectURL(blob)
             setResult({ type, url, fileName: res.file_name, size: res.size })
           } else {
-            // Native save — file already saved, no blob needed
             setResult({ type, url: '', fileName: res.file_name, size: res.size })
           }
           toast.success(`${file.name} 변환 완료!`)
@@ -131,6 +147,31 @@ export default function HwpConverterPage() {
     a.click()
     document.body.removeChild(a)
     toast.info(`${result.fileName} 다운로드를 시작합니다.`)
+  }
+
+  const handlePageDownload = (idx: number) => {
+    if (!pageResults) return
+    const a = document.createElement('a')
+    a.href = pageResults.urls[idx]
+    a.download = pageResults.fileNames[idx]
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  const handleAllPagesDownload = () => {
+    if (!pageResults) return
+    pageResults.urls.forEach((url, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = pageResults.fileNames[i]
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      }, i * 200)
+    })
+    toast.info(`${pageResults.urls.length}개 파일 다운로드를 시작합니다.`)
   }
 
   const handleNativeFileSelect = async () => {
@@ -255,7 +296,7 @@ export default function HwpConverterPage() {
                 이미지로 변환
               </button>
               <button
-                onClick={() => { setFile(null); setResult(null) }}
+                onClick={() => { setFile(null); setResult(null); setPageResults(null) }}
                 disabled={converting}
                 style={{
                   background: 'transparent', color: 'var(--text-secondary)',
@@ -314,6 +355,59 @@ export default function HwpConverterPage() {
               <i className="fi fi-rr-download" />
               변환된 파일 다운로드
             </button>
+          </div>
+        )}
+
+        {pageResults && (
+          <div style={{
+            marginTop: 32, padding: 24, background: '#f0f9ff',
+            borderRadius: 20, border: '1px solid #bae6fd',
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', background: '#dcfce7', color: '#16a34a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <i className="fi fi-rr-check" />
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 18 }}>변환 완료! ({pageResults.urls.length}페이지)</span>
+            </div>
+
+            <button
+              style={{
+                background: '#0369a1', color: 'white', padding: '10px 24px',
+                borderRadius: 12, border: 'none', fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 10,
+                margin: '0 auto 20px', boxShadow: '0 4px 12px rgba(3, 105, 161, 0.2)'
+              }}
+              onClick={handleAllPagesDownload}
+            >
+              <i className="fi fi-rr-download" />
+              전체 다운로드
+            </button>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 16
+            }}>
+              {pageResults.urls.map((url, i) => (
+                <div key={i} style={{
+                  background: 'white', borderRadius: 12, overflow: 'hidden',
+                  border: '1px solid #e2e8f0', cursor: 'pointer'
+                }} onClick={() => handlePageDownload(i)}>
+                  <img src={url} alt={`${i + 1}페이지`} style={{
+                    width: '100%', height: 'auto', display: 'block'
+                  }} />
+                  <div style={{
+                    padding: '8px 12px', fontSize: 13, fontWeight: 600,
+                    color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6
+                  }}>
+                    <i className="fi fi-rr-download" style={{ fontSize: 11 }} />
+                    {i + 1}페이지
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

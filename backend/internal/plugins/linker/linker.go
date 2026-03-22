@@ -11,16 +11,17 @@ import (
 // ── Models ──
 
 type Bookmark struct {
-	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SchoolID  uuid.UUID `json:"school_id" gorm:"type:uuid;index"`
-	UserID    uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
-	Title     string    `json:"title" gorm:"type:varchar(100);not null"`
-	URL       string    `json:"url" gorm:"type:varchar(500);not null"`
-	Icon      string    `json:"icon,omitempty" gorm:"type:varchar(100)"`
-	Category  string    `json:"category" gorm:"type:varchar(50);default:'general'"`
-	SortOrder int       `json:"sort_order" gorm:"default:0"`
-	IsShared  bool      `json:"is_shared" gorm:"default:false"` // shared with students
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SchoolID   uuid.UUID `json:"school_id" gorm:"type:uuid;index"`
+	UserID     uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
+	Title      string    `json:"title" gorm:"type:varchar(100);not null"`
+	URL        string    `json:"url" gorm:"type:varchar(500);not null"`
+	StudentURL string    `json:"student_url" gorm:"type:varchar(500);default:''"` // separate URL shown to students
+	Icon       string    `json:"icon,omitempty" gorm:"type:varchar(100)"`
+	Category   string    `json:"category" gorm:"type:varchar(50);default:'general'"`
+	SortOrder  int       `json:"sort_order" gorm:"default:0"`
+	IsShared   bool      `json:"is_shared" gorm:"default:false"` // shared with students
+	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 // ── Plugin ──
@@ -47,6 +48,17 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Put("/reorder", p.reorder)
 }
 
+// RegisterPublicRoutes registers unauthenticated routes (called from api-server for student access)
+func (p *Plugin) RegisterPublicRoutes(r fiber.Router) {
+	r.Get("/shared/:schoolCode", p.listSharedPublic)
+}
+
+// BookmarkWithOwner wraps Bookmark with an extra is_own flag for the teacher UI
+type BookmarkWithOwner struct {
+	Bookmark
+	IsOwn bool `json:"is_own"`
+}
+
 func (p *Plugin) list(c *fiber.Ctx) error {
 	userID, _ := c.Locals("userID").(uuid.UUID)
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
@@ -54,6 +66,29 @@ func (p *Plugin) list(c *fiber.Ctx) error {
 	var bookmarks []Bookmark
 	p.db.Where("user_id = ? OR (school_id = ? AND is_shared = true)", userID, schoolID).
 		Order("sort_order ASC").Find(&bookmarks)
+
+	result := make([]BookmarkWithOwner, len(bookmarks))
+	for i, bm := range bookmarks {
+		result[i] = BookmarkWithOwner{Bookmark: bm, IsOwn: bm.UserID == userID}
+	}
+	return c.JSON(result)
+}
+
+// listSharedPublic returns all is_shared bookmarks for a school, identified by school code
+func (p *Plugin) listSharedPublic(c *fiber.Ctx) error {
+	schoolCode := c.Params("schoolCode")
+	if schoolCode == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "school code required"})
+	}
+	// Find school by code
+	var school struct {
+		ID uuid.UUID
+	}
+	if err := p.db.Table("schools").Select("id").Where("code = ?", schoolCode).First(&school).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "school not found"})
+	}
+	var bookmarks []Bookmark
+	p.db.Where("school_id = ? AND is_shared = true", school.ID).Order("sort_order ASC").Find(&bookmarks)
 	return c.JSON(bookmarks)
 }
 

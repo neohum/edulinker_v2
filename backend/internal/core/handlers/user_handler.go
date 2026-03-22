@@ -268,7 +268,57 @@ func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
 	}
 
-	return c.JSON(fiber.Map{"message": "user deleted"})
+	return c.JSON(fiber.Map{"message": "user deactivated"})
+}
+
+// ReactivateUser restores a soft-deleted user (admin-only).
+func (h *UserHandler) ReactivateUser(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
+	}
+
+	result := h.db.Model(&models.User{}).Where("id = ?", userID).Update("is_active", true)
+	if result.RowsAffected == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	return c.JSON(fiber.Map{"message": "user reactivated"})
+}
+
+// HardDeleteUser permanently deletes a user after clearing FK references (admin-only).
+func (h *UserHandler) HardDeleteUser(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
+	}
+
+	// 1. NULL out sendoc author references to avoid FK violation
+	h.db.Exec("UPDATE sendocs SET author_id = NULL WHERE author_id = ?", userID)
+
+	// 2. Remove parent-student links
+	h.db.Exec("DELETE FROM parent_students WHERE parent_id = ? OR student_id = ?", userID, userID)
+
+	// 3. Hard delete the user
+	if err := h.db.Unscoped().Delete(&models.User{}, "id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete user"})
+	}
+
+	return c.JSON(fiber.Map{"message": "user permanently deleted"})
+}
+
+// ListInactiveUsers returns deactivated users for the school (admin-only).
+func (h *UserHandler) ListInactiveUsers(c *fiber.Ctx) error {
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "school context not found"})
+	}
+
+	var users []models.User
+	h.db.Preload("School").Where("school_id = ? AND is_active = ?", schoolID, false).
+		Order("role, name").Find(&users)
+
+	return c.JSON(fiber.Map{"users": users, "total": len(users)})
 }
 
 // AddStudent registers a single student (teacher or admin).
@@ -354,7 +404,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 
 	// Detect column indices from header row
 	header := rows[0]
-	gradeCol, classCol, numCol, nameCol := -1, -1, -1, -1
+	gradeCol, classCol, numCol, nameCol, genderCol := -1, -1, -1, -1, -1
 	for i, cell := range header {
 		cell = strings.TrimSpace(cell)
 		switch {
@@ -366,6 +416,8 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			numCol = i
 		case strings.Contains(cell, "이름") || strings.Contains(cell, "성명"):
 			nameCol = i
+		case strings.Contains(cell, "성별") || strings.Contains(cell, "gender"):
+			genderCol = i
 		}
 	}
 
@@ -389,6 +441,15 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 		gradeStr := strings.TrimSpace(row[gradeCol])
 		classStr := strings.TrimSpace(row[classCol])
 		numStr := strings.TrimSpace(row[numCol])
+		gender := ""
+		if genderCol >= 0 && genderCol < len(row) {
+			g := strings.TrimSpace(row[genderCol])
+			if g == "남" || g == "남자" || g == "M" || g == "m" {
+				gender = "남"
+			} else if g == "여" || g == "여자" || g == "F" || g == "f" {
+				gender = "여"
+			}
+		}
 
 		if name == "" {
 			result.Errors = append(result.Errors, fmt.Sprintf("%d행: 이름이 비어있습니다", rowNum))
@@ -417,16 +478,24 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 		var existing models.User
 		if h.db.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ? AND number = ?",
 			schoolID, models.RoleStudent, grade, classNum, number).First(&existing).Error == nil {
-			// Update name if changed
+			// Update name/gender if changed
+			updated := false
 			if existing.Name != name {
 				existing.Name = name
+				updated = true
+			}
+			if gender != "" && existing.Gender != gender {
+				existing.Gender = gender
+				updated = true
+			}
+			if updated {
 				h.db.Save(&existing)
 			}
 			result.Skipped++
 			continue
 		}
 
-		// Create student (no password needed - students login by school/grade/class/number/name)
+		// Create student
 		student := models.User{
 			SchoolID: schoolID,
 			Name:     name,
@@ -434,6 +503,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			Grade:    grade,
 			Class:    classNum,
 			Number:   number,
+			Gender:   gender,
 			IsActive: true,
 		}
 
@@ -447,6 +517,49 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(result)
+}
+
+// DownloadStudentTemplate generates and returns a sample student import Excel template.
+func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
+	f := excelize.NewFile()
+	sheet := "학생등록양식"
+	f.SetSheetName("Sheet1", sheet)
+
+	// Header row with style
+	headers := []string{"학년", "반", "번호", "이름", "성별"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, h)
+	}
+
+	// Sample rows
+	samples := [][]interface{}{
+		{3, 2, 1, "홍길동", "남"},
+		{3, 2, 2, "김영희", "여"},
+	}
+	for r, row := range samples {
+		for col, val := range row {
+			cell, _ := excelize.CoordinatesToCellName(col+1, r+2)
+			f.SetCellValue(sheet, cell, val)
+		}
+	}
+
+	// Column widths
+	f.SetColWidth(sheet, "A", "D", 10)
+	f.SetColWidth(sheet, "E", "E", 8)
+
+	// Add note row
+	f.SetCellValue(sheet, "A5", "※ 성별 입력: 남 또는 여")
+
+	// Write to buffer
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "템플릿 생성 실패"})
+	}
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", `attachment; filename="student_template.xlsx"`)
+	return c.Send(buf.Bytes())
 }
 
 // DeleteStudentsBatch deletes multiple students by their IDs.

@@ -1,6 +1,7 @@
 package sendoc
 
 import (
+	"encoding/json"
 	"log"
 	"time"
 
@@ -32,6 +33,95 @@ func (p *Plugin) OnEnable(schoolID uuid.UUID) error {
 
 func (p *Plugin) OnDisable(schoolID uuid.UUID) error {
 	log.Printf("[Sendoc] Disabled for school: %s", schoolID)
+	return nil
+}
+
+// ── SyncProvider Implementation ──
+
+func (p *Plugin) GetSyncData(schoolID string) interface{} {
+	type SendocPublic struct {
+		ID                uuid.UUID   `json:"id"`
+		Title             string      `json:"title"`
+		Description       string      `json:"description,omitempty"`
+		BackgroundURL     string      `json:"background_url,omitempty"`
+		FieldsJSON        string      `json:"fields_json,omitempty"`
+		RequiresSignature bool        `json:"requires_signature"`
+		CreatedAt         time.Time   `json:"created_at"`
+		TargetUserIDs     []uuid.UUID `json:"target_user_ids"`
+		Author            *struct {
+			Name string `json:"name"`
+		} `json:"author,omitempty"`
+	}
+
+	var docs []models.Sendoc
+	// Fetch all documents and their recipients for this school
+	p.db.Preload("Author").Preload("Recipients").Where("school_id = ?", schoolID).Order("created_at desc").Find(&docs)
+
+	var result []SendocPublic
+	for _, d := range docs {
+		var uids []uuid.UUID
+		for _, r := range d.Recipients {
+			uids = append(uids, r.UserID)
+		}
+
+		doc := SendocPublic{
+			ID:                d.ID,
+			Title:             d.Title,
+			Description:       d.Content,
+			BackgroundURL:     d.BackgroundURL,
+			FieldsJSON:        d.FieldsJSON,
+			RequiresSignature: d.RequiresSignature,
+			CreatedAt:         d.CreatedAt,
+			TargetUserIDs:     uids,
+		}
+		if d.Author.Name != "" {
+			doc.Author = &struct {
+				Name string `json:"name"`
+			}{Name: d.Author.Name}
+		}
+		result = append(result, doc)
+	}
+	return result
+}
+
+func (p *Plugin) HandleEvent(payload string) error {
+	var ev struct {
+		Type              string `json:"type"`
+		DocID             string `json:"doc_id"`
+		UserID            string `json:"user_id"`
+		SignatureImageURL string `json:"signature_image_url"`
+		FormDataJSON      string `json:"form_data_json"`
+	}
+	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+		log.Printf("[Sendoc] HandleEvent parse error: %v", err)
+		return err
+	}
+
+	if ev.Type == "sendoc_sign" {
+		docID, err := uuid.Parse(ev.DocID)
+		if err != nil {
+			return err
+		}
+		userID, err := uuid.Parse(ev.UserID)
+		if err != nil {
+			return err
+		}
+
+		now := time.Now()
+		result := p.db.Model(&models.SendocRecipient{}).
+			Where("sendoc_id = ? AND user_id = ?", docID, userID).
+			Updates(map[string]interface{}{
+				"is_signed":           true,
+				"signature_image_url": ev.SignatureImageURL,
+				"form_data_json":      ev.FormDataJSON,
+				"signed_at":           &now,
+			})
+		if result.Error != nil {
+			log.Printf("[Sendoc] HandleEvent sign error: %v", result.Error)
+			return result.Error
+		}
+		log.Printf("[Sendoc] HandleEvent: signature submitted for doc=%s user=%s (rows=%d)", ev.DocID, ev.UserID, result.RowsAffected)
+	}
 	return nil
 }
 

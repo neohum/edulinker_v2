@@ -1,192 +1,256 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { getToken } from '../api'
+import { apiFetch } from '../api'
+import type { UserInfo } from '../App'
 
-interface WeeklyPlan {
+interface Student {
   id: string
-  title: string
-  content: string
-  week_start: string
-  week_end: string
-  created_at: string
+  name: string
+  grade: number
+  class_num: number
+  number: number
 }
 
-interface Evaluation {
+interface EvalRecord {
   id: string
   student_id: string
   subject: string
-  evaluation_type: string
+  title: string
   score: number
-  feedback: string
+  max_score: number
+  memo: string
+  eval_date: string
   created_at: string
-  student?: { name: string }
 }
 
-export default function CurriculumPage() {
-  const [plans, setPlans] = useState<WeeklyPlan[]>([])
-  const [evals, setEvals] = useState<Evaluation[]>([])
-  const [activeTab, setActiveTab] = useState<'plans' | 'evals'>('plans')
+interface CurriculumPageProps {
+  user?: UserInfo
+}
 
-  // Add plan modal
-  const [showAddPlan, setShowAddPlan] = useState(false)
-  const [planTitle, setPlanTitle] = useState('')
-  const [planContent, setPlanContent] = useState('')
+const SUBJECTS = ['국어', '영어', '수학', '과학', '사회', '역사', '도덕', '미술', '음악', '체육', '기술·가정', '정보', '기타']
 
-  useEffect(() => {
-    fetchData()
-  }, [activeTab])
+export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
+  const [students, setStudents] = useState<Student[]>([])
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [evalRecords, setEvalRecords] = useState<EvalRecord[]>([])
+  const [loadingStudents, setLoadingStudents] = useState(true)
+  const [evalLoading, setEvalLoading] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [form, setForm] = useState({
+    subject: '국어', title: '', score: '', max_score: '100', memo: '',
+    eval_date: new Date().toISOString().slice(0, 10)
+  })
 
-  const fetchData = async () => {
+  useEffect(() => { fetchStudents() }, [])
+  useEffect(() => { if (selectedStudent) fetchEvalRecords(selectedStudent.id) }, [selectedStudent])
+
+  const fetchStudents = async () => {
     try {
-      const token = await getToken()
-      const endpoint = activeTab === 'plans' ? 'weekly-plans' : 'evaluations'
-      const res = await fetch(`http://localhost:5200/api/plugins/curriculum/${endpoint}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      let url = '/api/core/users?role=student&page_size=200'
+      if (user?.grade) url += `&grade=${user.grade}`
+      if (user?.classNum) url += `&class_num=${user.classNum}`
+      const res = await apiFetch(url)
       if (res.ok) {
         const data = await res.json()
-        if (activeTab === 'plans') setPlans(data || [])
-        else setEvals(data || [])
+        const list: Student[] = (data.users || [])
+          .filter((s: any) => (!user?.grade || s.grade === user.grade) && (!user?.classNum || s.class_num === user.classNum))
+        list.sort((a, b) => a.number - b.number)
+        setStudents(list)
       }
-    } catch (e) {
-      console.error(e)
-    }
+    } catch (e) { console.error(e) }
+    finally { setLoadingStudents(false) }
   }
 
-  const handleAddPlan = async () => {
-    if (!planTitle.trim()) { toast.warning('제목을 입력하세요'); return }
+  const fetchEvalRecords = async (studentId: string) => {
+    setEvalLoading(true)
     try {
-      const token = await getToken()
-      const res = await fetch('http://localhost:5200/api/plugins/curriculum/weekly-plans', {
+      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation?student_id=${studentId}`)
+      if (res.ok) { const d = await res.json(); setEvalRecords(d || []) }
+      else setEvalRecords([])
+    } catch { setEvalRecords([]) } finally { setEvalLoading(false) }
+  }
+
+  const handleSubmit = async () => {
+    if (!selectedStudent) return
+    if (!form.title.trim() || !form.score) { toast.error('평가명과 점수를 입력해주세요.'); return }
+    setSubmitting(true)
+    try {
+      const res = await apiFetch('/api/plugins/studentmgmt/evaluation', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify({
-          title: planTitle,
-          content: planContent,
-          week_start: new Date().toISOString(),
-          week_end: new Date(Date.now() + 7 * 86400000).toISOString()
+          student_id: selectedStudent.id, subject: form.subject, title: form.title.trim(),
+          score: Number(form.score), max_score: Number(form.max_score) || 100,
+          memo: form.memo, eval_date: form.eval_date
         })
       })
       if (res.ok) {
-        toast.success('주간학습안내가 등록되었습니다.')
-        setShowAddPlan(false)
-        setPlanTitle('')
-        setPlanContent('')
-        fetchData()
-      } else {
-        toast.error('등록에 실패했습니다.')
-      }
-    } catch (e) {
-      console.error(e)
-      toast.error('서버에 연결할 수 없습니다.')
-    }
+        toast.success('수행평가 기록이 저장되었습니다.')
+        setShowForm(false)
+        setForm({ subject: '국어', title: '', score: '', max_score: '100', memo: '', eval_date: new Date().toISOString().slice(0, 10) })
+        fetchEvalRecords(selectedStudent.id)
+      } else { const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.') }
+    } catch { toast.error('서버에 연결할 수 없습니다.') } finally { setSubmitting(false) }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('이 수행평가 기록을 삭제하시겠습니까?')) return
+    try {
+      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation/${id}`, { method: 'DELETE' })
+      if (res.ok) { toast.success('삭제되었습니다.'); if (selectedStudent) fetchEvalRecords(selectedStudent.id) }
+      else toast.error('삭제에 실패했습니다.')
+    } catch { toast.error('서버에 연결할 수 없습니다.') }
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-        <button
-          onClick={() => setActiveTab('plans')}
-          style={{
-            padding: '10px 20px', borderRadius: 8, fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: activeTab === 'plans' ? 'var(--primary)' : 'var(--surface)',
-            color: activeTab === 'plans' ? 'white' : 'var(--text)'
-          }}
-        >
-          주간학습안내
-        </button>
-        <button
-          onClick={() => setActiveTab('evals')}
-          style={{
-            padding: '10px 20px', borderRadius: 8, fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: activeTab === 'evals' ? 'var(--primary)' : 'var(--surface)',
-            color: activeTab === 'evals' ? 'white' : 'var(--text)'
-          }}
-        >
-          수행·단원평가 기록
-        </button>
-      </div>
-
-      <div style={{ background: 'white', padding: 24, borderRadius: 12, border: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600 }}>
-            {activeTab === 'plans' ? '주간학습안내 배포 내역' : '단원평가 성적 기록'}
-          </h3>
-          {activeTab === 'plans' && (
-            <button onClick={() => setShowAddPlan(true)} style={{ background: '#10b981', color: 'white', padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-              + 새 주간학습 작성
-            </button>
-          )}
+    <div style={{ display: 'flex', height: '100%', gap: 0 }}>
+      {/* Left: Student List */}
+      <div style={{ width: 220, borderRight: '1px solid var(--border)', padding: '16px 8px', overflowY: 'auto', background: 'var(--bg-primary)', flexShrink: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 12, padding: '0 8px' }}>
+          학생 목록 ({students.length}명)
         </div>
-
-        {activeTab === 'plans' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {plans.length === 0 ? <div style={{ color: 'var(--text-muted)' }}>등록된 주간학습안내가 없습니다.</div> : plans.map(p => (
-              <div key={p.id} style={{ padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <strong style={{ fontSize: 16 }}>{p.title}</strong>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{new Date(p.week_start).toLocaleDateString()} ~ {new Date(p.week_end).toLocaleDateString()}</span>
-                </div>
-                <div style={{ fontSize: 14, color: 'var(--text)' }}>{p.content}</div>
-              </div>
-            ))}
-          </div>
+        {loadingStudents ? (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px' }}>불러오는 중...</div>
+        ) : students.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '8px' }}>학생관리에서<br />학생을 먼저 등록하세요.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {evals.length === 0 ? <div style={{ color: 'var(--text-muted)' }}>등록된 평가 기록이 없습니다.</div> : evals.map(e => (
-              <div key={e.id} style={{ padding: 16, border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <span style={{ background: '#e0e7ff', color: '#4f46e5', padding: '4px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600, marginRight: 8 }}>{e.subject}</span>
-                  <strong>{e.evaluation_type}</strong>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>피드백: {e.feedback}</div>
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--primary)' }}>{e.score}점</div>
-              </div>
-            ))}
-          </div>
+          students.map(s => (
+            <div key={s.id} onClick={() => setSelectedStudent(s)}
+              style={{
+                padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+                background: selectedStudent?.id === s.id ? 'rgba(99,102,241,0.1)' : 'transparent',
+                border: selectedStudent?.id === s.id ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
+                color: selectedStudent?.id === s.id ? '#6366f1' : 'var(--text)',
+                fontWeight: selectedStudent?.id === s.id ? 700 : 400,
+                fontSize: 14, transition: 'all 0.15s'
+              }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 6 }}>{s.number}번</span>
+              {s.name}
+            </div>
+          ))
         )}
       </div>
 
-      {showAddPlan && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 100
-        }}>
-          <div style={{ background: 'white', padding: 24, borderRadius: 16, width: '100%', maxWidth: 500 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>새 주간학습안내 작성</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>제목</label>
-                <input
-                  value={planTitle}
-                  onChange={e => setPlanTitle(e.target.value)}
-                  placeholder="예: 5월 1주차"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>안내 내용</label>
-                <textarea
-                  rows={4}
-                  value={planContent}
-                  onChange={e => setPlanContent(e.target.value)}
-                  placeholder="간략한 안내 내용을 입력하세요"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button onClick={() => { setShowAddPlan(false); setPlanTitle(''); setPlanContent('') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>취소</button>
-                <button onClick={handleAddPlan} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#10b981', color: 'white', fontWeight: 600, cursor: 'pointer' }}>등록</button>
-              </div>
+      {/* Right: Eval Records */}
+      <div style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {!selectedStudent ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 15 }}>
+            <div style={{ textAlign: 'center' }}>
+              <i className="fi fi-rr-edit" style={{ fontSize: 40, display: 'block', marginBottom: 12 }} />
+              왼쪽에서 학생을 선택하면 수행평가 기록을 확인하고 추가할 수 있습니다.
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{selectedStudent.name} 학생 수행평가 기록</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {selectedStudent.grade}학년 {selectedStudent.class_num}반 {selectedStudent.number}번
+                </div>
+              </div>
+              <button onClick={() => setShowForm(!showForm)}
+                style={{ padding: '10px 20px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
+                <i className="fi fi-rr-plus" style={{ marginRight: 6 }} />평가 추가
+              </button>
+            </div>
+
+            {/* Add Form */}
+            {showForm && (
+              <div style={{ background: 'white', padding: 24, borderRadius: 14, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>새 수행평가 기록</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>교과목</label>
+                    <select value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
+                      {SUBJECTS.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>평가 날짜</label>
+                    <input type="date" value={form.eval_date} onChange={e => setForm(f => ({ ...f, eval_date: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>점수 / 만점</label>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input type="number" value={form.score} onChange={e => setForm(f => ({ ...f, score: e.target.value }))} placeholder="점수"
+                        style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
+                      <input type="number" value={form.max_score} onChange={e => setForm(f => ({ ...f, max_score: e.target.value }))} placeholder="만점"
+                        style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>평가명 *</label>
+                  <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="예: 1단원 수행평가, 서술형 평가..."
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>메모 (특이사항·피드백)</label>
+                  <textarea rows={2} value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} placeholder="교사 평가 의견, 특이사항..."
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, resize: 'vertical' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setShowForm(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: 14 }}>취소</button>
+                  <button onClick={handleSubmit} disabled={submitting}
+                    style={{ padding: '9px 24px', borderRadius: 8, border: 'none', background: '#6366f1', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: submitting ? 0.7 : 1 }}>
+                    {submitting ? '저장 중...' : '저장'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Records */}
+            {evalLoading ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>불러오는 중...</div>
+            ) : evalRecords.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', background: 'var(--surface)', borderRadius: 14 }}>
+                아직 수행평가 기록이 없습니다.
+              </div>
+            ) : (
+              <div style={{ background: 'white', borderRadius: 14, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)' }}>
+                      {['날짜', '교과', '평가명', '점수', '메모', ''].map(h => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evalRecords.map(r => (
+                      <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{r.eval_date}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: 20, background: '#e0e7ff', color: '#4f46e5', fontWeight: 700, fontSize: 12 }}>{r.subject}</span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.title}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontWeight: 800, fontSize: 16, color: r.score >= r.max_score * 0.8 ? '#22c55e' : r.score >= r.max_score * 0.5 ? '#f59e0b' : '#ef4444' }}>{r.score}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> / {r.max_score}</span>
+                        </td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.memo}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <button onClick={() => handleDelete(r.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}
+                            onMouseOver={e => (e.currentTarget.style.color = '#ef4444')}
+                            onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
+                            <i className="fi fi-rr-trash" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -58,6 +58,7 @@ type User struct {
 	Grade        int       `json:"grade,omitempty" gorm:"type:int;default:0"`
 	Class        int       `json:"class_num,omitempty" gorm:"type:int;default:0;column:class_num"`
 	Number       int       `json:"number,omitempty" gorm:"type:int;default:0"`
+	Gender       string    `json:"gender,omitempty" gorm:"type:varchar(10);default:''"`
 	Department   string    `json:"department,omitempty" gorm:"type:varchar(50)"`
 	TaskName     string    `json:"task_name,omitempty" gorm:"type:varchar(50)"`
 	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`

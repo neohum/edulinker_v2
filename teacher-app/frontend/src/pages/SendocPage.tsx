@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { getToken, apiFetch } from '../api'
 import type { UserInfo } from '../App'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker?url'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 interface Sendoc {
   id: string
@@ -72,8 +76,11 @@ export default function SendocPage({ user }: SendocPageProps) {
   // File Selector States (from HwpConverterPage)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isConverting, setIsConverting] = useState(false)
+  const [convertProgress, setConvertProgress] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [hancom, setHancom] = useState<{ installed: boolean, version: string } | null>(null)
+  const [pageImages, setPageImages] = useState<string[]>([])   // base64 per page
+  const [currentPageIdx, setCurrentPageIdx] = useState(0)      // which page is shown
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Status/Recipient states
@@ -83,6 +90,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [showRecipientModal, setShowRecipientModal] = useState(false)
+  const [expandedNodes, setExpandedNodes] = useState<string[]>([])
 
   // Signature states
   const [activeSignField, setActiveSignField] = useState<string | null>(null)
@@ -184,10 +192,11 @@ export default function SendocPage({ user }: SendocPageProps) {
     const file = e.target.files?.[0]
     if (file) {
       const name = file.name.toLowerCase()
-      if (name.endsWith('.hwp') || name.endsWith('.hwpx')) {
+      if (name.endsWith('.hwp') || name.endsWith('.hwpx') || name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.pdf')) {
         setSelectedFile(file)
+        setTitle(file.name.replace(/\.[^/.]+$/, ''))
       } else {
-        toast.error('HWP 또는 HWPX 파일만 가능합니다.')
+        toast.error('HWP, HWPX, XLSX, PDF 파일만 가능합니다.')
       }
     }
   }
@@ -195,8 +204,11 @@ export default function SendocPage({ user }: SendocPageProps) {
   const handleProcessDocument = async () => {
     if (!selectedFile) return
     setIsConverting(true)
+    setConvertProgress('파일 읽는 중...')
     try {
       const wailsApp = (window as any).go?.main?.App
+      if (!wailsApp) throw new Error('앱이 연결되지 않았습니다.')
+
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
@@ -204,37 +216,129 @@ export default function SendocPage({ user }: SendocPageProps) {
         reader.readAsDataURL(selectedFile)
       })
 
-      const fileName = selectedFile.name
-      const lowerName = fileName.toLowerCase()
+      const lowerName = selectedFile.name.toLowerCase()
+      const isHwp = lowerName.endsWith('.hwp') || lowerName.endsWith('.hwpx')
 
-      // Convert HWP → image (PNG)
-      if (!lowerName.endsWith('.hwp') && !lowerName.endsWith('.hwpx')) {
-        throw new Error('HWP/HWPX 파일만 지원됩니다.')
+      let bgBlobUrl = ''
+      let serverBg = ''
+      let pagesData: string[] = []
+
+      if (isHwp) {
+        // ── HWP/HWPX: Try ConvertToPdfAndImages first for multi-page extraction ──
+        if (wailsApp.ConvertToPdfAndImages) {
+          try {
+            setConvertProgress('HWP 문서 처리 중...')
+            const pdfRes = await wailsApp.ConvertToPdfAndImages(selectedFile.name, base64)
+
+            // If backend returned PDF, try rendering standard pages via PDF.js to fix HWP "Facing Pages" layout bugs
+            if (pdfRes.success && pdfRes.pdf_base64) {
+              setConvertProgress('PDF 클라이언트 병합 추출 중...')
+              try {
+                const binaryPdfStr = atob(pdfRes.pdf_base64)
+                const pdfBytes = new Uint8Array(binaryPdfStr.length)
+                for (let i = 0; i < binaryPdfStr.length; i++) pdfBytes[i] = binaryPdfStr.charCodeAt(i)
+
+                const pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise
+                const numPages = pdfDoc.numPages
+                const localPages: string[] = []
+
+                for (let n = 1; n <= numPages; n++) {
+                  const page = await pdfDoc.getPage(n)
+                  const viewport = page.getViewport({ scale: 1.5 }) // 1.5 is a good balance for resolution
+                  const canvas = document.createElement('canvas')
+                  canvas.width = viewport.width
+                  canvas.height = viewport.height
+                  const ctx = canvas.getContext('2d')!
+                  await page.render({ canvasContext: ctx, viewport }).promise
+                  const dataUrl = canvas.toDataURL('image/png')
+                  localPages.push(dataUrl.split(',')[1]) // extract base64 chunk
+                }
+                if (localPages.length > 0) {
+                  pdfRes.pages = localPages
+                }
+              } catch (pdfErr) {
+                console.warn('PDF.js client extraction failed', pdfErr)
+              }
+            }
+
+            if (pdfRes.success && pdfRes.pages && pdfRes.pages.length > 0) {
+              pagesData = pdfRes.pages
+              // Upload first page PNG as background image
+              const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.png'
+              const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, pdfRes.pages[0])
+              if (uploadRes.url) serverBg = uploadRes.url
+
+              const binaryStr = atob(pdfRes.pages[0])
+              const bytes = new Uint8Array(binaryStr.length)
+              for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+              bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+            }
+          } catch {
+            // Fallback below
+            console.warn("multi-page extraction failed, falling back to basic image mode")
+          }
+        }
+
+        if (pagesData.length === 0) {
+          // Fallback: use existing reliable single-image converter
+          setConvertProgress('HWP 단일 이미지 변환 중...')
+          const convRes = await wailsApp.ConvertHwp(selectedFile.name, base64, 'image')
+          if (!convRes.success || !convRes.data) throw new Error(convRes.error || 'HWP 변환 실패')
+
+          const imgName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.png'
+          const uploadRes = await wailsApp.UploadFileFromBytes(imgName, convRes.data)
+          if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
+          serverBg = uploadRes.url
+
+          const binaryStr = atob(convRes.data)
+          const bytes = new Uint8Array(binaryStr.length)
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+          bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+        }
+
+      } else {
+        // ── XLSX / PDF: convert to PDF + extract pages ──
+        if (!wailsApp.ConvertToPdfAndImages) throw new Error('ConvertToPdfAndImages를 찾을 수 없습니다.')
+        setConvertProgress('PDF 변환 중...')
+        const result = await wailsApp.ConvertToPdfAndImages(selectedFile.name, base64)
+        if (!result.success) throw new Error(result.error || '변환 실패')
+
+        if (!result.pages || result.pages.length === 0) {
+          throw new Error('페이지 이미지를 추출하지 못했습니다. 한컴오피스 또는 Excel이 필요합니다.')
+        }
+
+        pagesData = result.pages
+        setConvertProgress(`이미지 처리 중... (${result.page_count}페이지)`)
+
+        // Upload first page PNG as background image
+        const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.png'
+        const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, result.pages[0])
+        if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
+        serverBg = uploadRes.url
+
+        // Local blob from first page
+        const binaryStr = atob(result.pages[0])
+        const bytes = new Uint8Array(binaryStr.length)
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+        bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
       }
-      const convRes = await wailsApp.ConvertHwp(fileName, base64, 'image')
-      if (!convRes.success || !convRes.data) throw new Error(convRes.error || 'HWP 변환 실패')
-      const imgBase64 = convRes.data
 
-      // 2. Upload image to server
-      const imgName = fileName.replace(/\.[^/.]+$/, '') + '.png'
-      const uploadRes = await wailsApp.UploadFileFromBytes(imgName, imgBase64)
-      if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
-
-      // 3. Local blob URL for immediate preview
-      const binaryStr = atob(imgBase64)
-      const bytes = new Uint8Array(binaryStr.length)
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-      const blob = new Blob([bytes], { type: 'image/png' })
-      const blobUrl = URL.createObjectURL(blob)
-
-      setBackgroundUrl(blobUrl)
-      setServerBgUrl(uploadRes.url)
+      // Apply to designer
+      if (pagesData.length > 0) {
+        setPageImages(pagesData)
+        setCurrentPageIdx(0)
+      } else {
+        setPageImages([])
+      }
+      setBackgroundUrl(bgBlobUrl)
+      setServerBgUrl(serverBg)
       setViewMode('designer')
-      toast.success('문서가 준비되었습니다.')
+      toast.success(`문서가 준비되었습니다.${pagesData.length > 1 ? ` (${pagesData.length}페이지)` : ''}`)
     } catch (err: any) {
       toast.error(err.message || '처리 오류')
     } finally {
       setIsConverting(false)
+      setConvertProgress('')
     }
   }
 
@@ -399,7 +503,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   const handleSend = async () => {
-    if (!title) return toast.error('제목을 입력하세요.')
+    if (!title.trim()) return toast.error('제목을 입력하세요.')
     if (selectedUsers.length === 0) return toast.error('수신자를 선택하세요.')
     try {
       const res = await apiFetch('/api/plugins/sendoc', {
@@ -457,7 +561,7 @@ export default function SendocPage({ user }: SendocPageProps) {
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
           onDragLeave={() => setIsDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) setSelectedFile(f); }}
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) { setSelectedFile(f); setTitle(f.name.replace(/\.[^/.]+$/, '')); } }}
           style={{ background: isDragging ? '#eff6ff' : 'white', padding: 60, borderRadius: 24, border: isDragging ? '2px solid #3b82f6' : '2px dashed #e2e8f0', textAlign: 'center', cursor: 'pointer' }}
           onClick={() => fileInputRef.current?.click()}
         >
@@ -465,22 +569,28 @@ export default function SendocPage({ user }: SendocPageProps) {
             <div>
               <i className="fi fi-rr-upload" style={{ fontSize: 48, color: '#94a3b8', marginBottom: 16 }} />
               <p style={{ fontWeight: 700, fontSize: 18 }}>문서를 드래그하거나 클릭하여 선택</p>
-              <p style={{ color: '#64748b', fontSize: 14, marginTop: 8 }}>지원 형식: .hwp, .hwpx</p>
+              <p style={{ color: '#64748b', fontSize: 14, marginTop: 8 }}>지원 형식: .hwp, .hwpx, .xlsx, .xls, .pdf</p>
             </div>
           ) : (
             <div onClick={e => e.stopPropagation()}>
               <i className="fi fi-rr-document" style={{ fontSize: 48, color: '#3b82f6', marginBottom: 16 }} />
               <p style={{ fontWeight: 700, fontSize: 18 }}>{selectedFile.name}</p>
               <p style={{ color: '#64748b', fontSize: 14, marginTop: 8 }}>{(selectedFile.size / 1024).toFixed(1)} KB</p>
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24 }}>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24, flexDirection: 'column', alignItems: 'center' }}>
                 <button onClick={handleProcessDocument} disabled={isConverting} className="btn-primary" style={{ padding: '12px 32px' }}>
-                  {isConverting ? '변환 및 업로드 중...' : '이 파일로 문서 작성하기'}
+                  {isConverting ? (convertProgress || '변환 중...') : '이 파일로 문서 작성하기'}
                 </button>
-                <button onClick={() => setSelectedFile(null)} className="btn-secondary">파일 변경</button>
+                {isConverting && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366f1', fontSize: 13 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #c7d2fe', borderTop: '2px solid #6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    {convertProgress}
+                  </div>
+                )}
+                {!isConverting && <button onClick={() => setSelectedFile(null)} className="btn-secondary">파일 변경</button>}
               </div>
             </div>
           )}
-          <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".hwp,.hwpx" style={{ display: 'none' }} />
+          <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".hwp,.hwpx,.xlsx,.xls,.pdf" style={{ display: 'none' }} />
         </div>
       </div>
     )
@@ -513,6 +623,38 @@ export default function SendocPage({ user }: SendocPageProps) {
           {!isViewer && (
             <div style={{ width: 240, background: 'white', borderRight: '1px solid #e2e8f0', padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>도구 상자</div>
+              {/* Page navigation when multi-page document */}
+              {pageImages.length > 1 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>
+                    페이지 {currentPageIdx + 1} / {pageImages.length}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                    {pageImages.map((pg, idx) => {
+                      const isCurrent = idx === currentPageIdx
+                      return (
+                        <div key={idx}
+                          onClick={() => {
+                            setCurrentPageIdx(idx)
+                            const binaryStr = atob(pg)
+                            const bytes = new Uint8Array(binaryStr.length)
+                            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+                            const blob = new Blob([bytes], { type: 'image/png' })
+                            setBackgroundUrl(URL.createObjectURL(blob))
+                          }}
+                          style={{ cursor: 'pointer', border: isCurrent ? '2px solid #6366f1' : '2px solid #e2e8f0', borderRadius: 6, overflow: 'hidden', opacity: isCurrent ? 1 : 0.7 }}>
+                          <img src={`data:image/png;base64,${pg}`} alt={`${idx + 1}페이지`}
+                            style={{ width: '100%', display: 'block' }} />
+                          <div style={{ textAlign: 'center', fontSize: 10, padding: '2px 0', background: isCurrent ? '#e0e7ff' : '#f8fafc', color: isCurrent ? '#4f46e5' : '#94a3b8', fontWeight: 600 }}>
+                            {idx + 1}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{ height: 1, background: '#f1f5f9', marginTop: 12 }} />
+                </div>
+              )}
               <div style={{ display: 'grid', gap: 8 }}>
                 <button onClick={() => { setIsDrawingMode(false); addField('text') }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #eee', background: 'white', cursor: 'pointer' }}>
                   <i className="fi fi-rr-text-input" style={{ color: '#3b82f6' }} /> <span style={{ fontSize: 14 }}>텍스트 추가</span>
@@ -624,22 +766,153 @@ export default function SendocPage({ user }: SendocPageProps) {
           </div>
         )}
 
-        {showRecipientModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 500, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-              <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>수신자 선택 ({selectedUsers.length}명)</h4>
-              <div style={{ flex: 1, overflowY: 'auto', marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {allUsers.map(u => (
-                  <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', border: '1px solid #eee', borderRadius: 12, cursor: 'pointer', background: selectedUsers.includes(u.id) ? '#f0f9ff' : 'white' }}>
-                    <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => e.target.checked ? setSelectedUsers([...selectedUsers, u.id]) : setSelectedUsers(selectedUsers.filter(id => id !== u.id))} />
-                    <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600 }}>{u.name} <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>{u.role}</span></div><div style={{ fontSize: 12, color: '#64748b' }}>{u.grade > 0 ? `${u.grade}학년 ${u.class_num}반` : '소속 정보 없음'}</div></div>
-                  </label>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}><button onClick={() => setShowRecipientModal(false)} className="btn-secondary" style={{ flex: 1 }}>취소</button><button onClick={handleSend} className="btn-primary" style={{ flex: 2 }}>발송하기</button></div>
+        {showRecipientModal && (() => {
+          const roleLabel: Record<string, string> = { teacher: '교사', student: '학생', parent: '학부모', admin: '관리자' }
+          const expandKey = (key: string) => expandedNodes.includes(key)
+          const toggleExpand = (key: string) => setExpandedNodes(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+
+          // Build tree: role → group → class → users
+          const teachers = allUsers.filter(u => u.role === 'teacher' || u.role === 'admin')
+          const students = allUsers.filter(u => u.role === 'student')
+          const parents = allUsers.filter(u => u.role === 'parent')
+
+          // Group teachers by department
+          const teachersByDept: Record<string, any[]> = {}
+          teachers.forEach(u => {
+            const dept = u.department || '미배정'
+            if (!teachersByDept[dept]) teachersByDept[dept] = []
+            teachersByDept[dept].push(u)
+          })
+
+          // Group students/parents by grade → class
+          const groupByGradeClass = (users: any[]) => {
+            const byGrade: Record<number, Record<number, any[]>> = {}
+            users.forEach(u => {
+              const g = u.grade || 0
+              const c = u.class_num || 0
+              if (!byGrade[g]) byGrade[g] = {}
+              if (!byGrade[g][c]) byGrade[g][c] = []
+              byGrade[g][c].push(u)
+            })
+            return byGrade
+          }
+          const studentTree = groupByGradeClass(students)
+          const parentTree = groupByGradeClass(parents)
+
+          // Helpers
+          const getUsersInGroup = (users: any[]) => users.map(u => u.id)
+          const isAllSelected = (ids: string[]) => ids.length > 0 && ids.every(id => selectedUsers.includes(id))
+          const isSomeSelected = (ids: string[]) => ids.some(id => selectedUsers.includes(id))
+          const toggleGroup = (ids: string[]) => {
+            if (isAllSelected(ids)) {
+              setSelectedUsers(prev => prev.filter(id => !ids.includes(id)))
+            } else {
+              setSelectedUsers(prev => [...new Set([...prev, ...ids])])
+            }
+          }
+
+          const renderUser = (u: any) => (
+            <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', cursor: 'pointer', borderRadius: 8, background: selectedUsers.includes(u.id) ? '#eff6ff' : 'transparent', marginLeft: 8 }}>
+              <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={e => e.target.checked ? setSelectedUsers(p => [...p, u.id]) : setSelectedUsers(p => p.filter(id => id !== u.id))} />
+              <span style={{ fontSize: 13 }}>{u.name}</span>
+              {u.number > 0 && <span style={{ fontSize: 11, color: '#94a3b8' }}>{u.number}번</span>}
+            </label>
+          )
+
+          const renderGroupHeader = (key: string, label: string, userIds: string[], icon: string, depth: number) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', borderRadius: 10, background: expandKey(key) ? '#f8fafc' : 'transparent', marginLeft: depth * 16 }}
+              onClick={() => toggleExpand(key)}>
+              <i className={`fi ${expandKey(key) ? 'fi-rr-angle-down' : 'fi-rr-angle-right'}`} style={{ fontSize: 11, color: '#94a3b8', width: 14 }} />
+              <input type="checkbox" checked={isAllSelected(userIds)} ref={el => { if (el) el.indeterminate = !isAllSelected(userIds) && isSomeSelected(userIds) }}
+                onClick={e => e.stopPropagation()} onChange={() => toggleGroup(userIds)} style={{ accentColor: '#3b82f6' }} />
+              <i className={`fi ${icon}`} style={{ fontSize: 13, color: '#64748b' }} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
+              <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>{userIds.length}명</span>
             </div>
-          </div>
-        )}
+          )
+
+          // Collect all user IDs for a role tree
+          const allTeacherIds = teachers.map(u => u.id)
+          const allStudentIds = students.map(u => u.id)
+          const allParentIds = parents.map(u => u.id)
+
+          return (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 520, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h4 style={{ fontSize: 18, fontWeight: 700 }}>수신자 선택</h4>
+                  <span style={{ fontSize: 13, color: '#3b82f6', fontWeight: 600 }}>{selectedUsers.length}명 선택됨</span>
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+                  {/* ── 교사 ── */}
+                  {teachers.length > 0 && (<>
+                    {renderGroupHeader('teacher', '교사', allTeacherIds, 'fi-rr-chalkboard-user', 0)}
+                    {expandKey('teacher') && Object.entries(teachersByDept).sort(([a], [b]) => a.localeCompare(b)).map(([dept, users]) => {
+                      const deptKey = `teacher-${dept}`
+                      const deptIds = getUsersInGroup(users)
+                      return (<div key={deptKey}>
+                        {renderGroupHeader(deptKey, dept, deptIds, 'fi-rr-building', 1)}
+                        {expandKey(deptKey) && users.sort((a: any, b: any) => a.name.localeCompare(b.name)).map(renderUser)}
+                      </div>)
+                    })}
+                  </>)}
+
+                  {/* ── 학생 ── */}
+                  {students.length > 0 && (<>
+                    {renderGroupHeader('student', '학생', allStudentIds, 'fi-rr-graduation-cap', 0)}
+                    {expandKey('student') && Object.entries(studentTree).sort(([a], [b]) => Number(a) - Number(b)).map(([grade, classes]) => {
+                      const gradeKey = `student-${grade}`
+                      const gradeIds = Object.values(classes).flat().map((u: any) => u.id)
+                      return (<div key={gradeKey}>
+                        {renderGroupHeader(gradeKey, Number(grade) > 0 ? `${grade}학년` : '미배정', gradeIds, 'fi-rr-layers', 1)}
+                        {expandKey(gradeKey) && Object.entries(classes).sort(([a], [b]) => Number(a) - Number(b)).map(([cls, users]) => {
+                          const clsKey = `student-${grade}-${cls}`
+                          const clsIds = getUsersInGroup(users)
+                          return (<div key={clsKey}>
+                            {renderGroupHeader(clsKey, Number(cls) > 0 ? `${cls}반` : '미배정', clsIds, 'fi-rr-users', 2)}
+                            {expandKey(clsKey) && users.sort((a: any, b: any) => (a.number || 0) - (b.number || 0)).map(renderUser)}
+                          </div>)
+                        })}
+                      </div>)
+                    })}
+                  </>)}
+
+                  {/* ── 학부모 ── */}
+                  {parents.length > 0 && (<>
+                    {renderGroupHeader('parent', '학부모', allParentIds, 'fi-rr-users-alt', 0)}
+                    {expandKey('parent') && Object.entries(parentTree).sort(([a], [b]) => Number(a) - Number(b)).map(([grade, classes]) => {
+                      const gradeKey = `parent-${grade}`
+                      const gradeIds = Object.values(classes).flat().map((u: any) => u.id)
+                      return (<div key={gradeKey}>
+                        {renderGroupHeader(gradeKey, Number(grade) > 0 ? `${grade}학년` : '미배정', gradeIds, 'fi-rr-layers', 1)}
+                        {expandKey(gradeKey) && Object.entries(classes).sort(([a], [b]) => Number(a) - Number(b)).map(([cls, users]) => {
+                          const clsKey = `parent-${grade}-${cls}`
+                          const clsIds = getUsersInGroup(users)
+                          return (<div key={clsKey}>
+                            {renderGroupHeader(clsKey, Number(cls) > 0 ? `${cls}반` : '미배정', clsIds, 'fi-rr-users', 2)}
+                            {expandKey(clsKey) && users.sort((a: any, b: any) => a.name.localeCompare(b.name)).map(renderUser)}
+                          </div>)
+                        })}
+                      </div>)
+                    })}
+                  </>)}
+
+                  {allUsers.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>사용자 목록이 없습니다.</div>}
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setSelectedUsers(allUsers.map((u: any) => u.id))} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>전체선택</button>
+                  <button onClick={() => setSelectedUsers([])} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>선택해제</button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => setShowRecipientModal(false)} className="btn-secondary" style={{ padding: '10px 20px' }}>취소</button>
+                  <button onClick={handleSend} className="btn-primary" style={{ padding: '10px 24px' }}>발송하기</button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </div>
     )
   }

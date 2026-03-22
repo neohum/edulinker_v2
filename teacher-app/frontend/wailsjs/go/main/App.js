@@ -26,8 +26,16 @@ export function ConvertHwp(arg1, arg2, arg3) {
   return window['go']['main']['App']['ConvertHwp'](arg1, arg2, arg3);
 }
 
+export function ConvertHwpToPages(arg1, arg2) {
+  return window['go']['main']['App']['ConvertHwpToPages'](arg1, arg2);
+}
+
 export function ConvertPptToPdf(arg1, arg2) {
   return window['go']['main']['App']['ConvertPptToPdf'](arg1, arg2);
+}
+
+export function ConvertToPdfAndImages(arg1, arg2) {
+  return window['go']['main']['App']['ConvertToPdfAndImages'](arg1, arg2);
 }
 
 export function DownloadFile(arg1, arg2) {

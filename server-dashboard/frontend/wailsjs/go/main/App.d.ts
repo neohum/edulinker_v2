@@ -10,13 +10,19 @@ export function DeleteDBUser(arg1:string):Promise<void>;
 
 export function GetDBUsers():Promise<Array<main.DBUser>>;
 
+export function GetInactiveDBUsers():Promise<Array<main.DBUser>>;
+
 export function GetLocalIP():Promise<string>;
 
 export function GetLogs():Promise<Array<string>>;
 
 export function GetStatus():Promise<main.ServerStatus>;
 
+export function HardDeleteDBUser(arg1:string):Promise<void>;
+
 export function InstallAndStartWithScoop():Promise<void>;
+
+export function ReactivateDBUser(arg1:string):Promise<void>;
 
 export function ResetDBUserPassword(arg1:string,arg2:string):Promise<void>;
 
