@@ -9,6 +9,9 @@ export namespace main {
 	    role: string;
 	    grade: number;
 	    class_num: number;
+	    number: number;
+	    gender: string;
+	    student_name: string;
 	    is_active: boolean;
 	    created_at: string;
 	
@@ -26,6 +29,9 @@ export namespace main {
 	        this.role = source["role"];
 	        this.grade = source["grade"];
 	        this.class_num = source["class_num"];
+	        this.number = source["number"];
+	        this.gender = source["gender"];
+	        this.student_name = source["student_name"];
 	        this.is_active = source["is_active"];
 	        this.created_at = source["created_at"];
 	    }

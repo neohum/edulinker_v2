@@ -1,1 +1,0 @@
-package main; import ("os/exec"; "fmt"; "syscall"); func main() { cmd := exec.Command("go", "run", "./cmd/api-server/"); cmd.Dir = "e:\\works\\project\\edulinker\\backend"; cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}; out, err := cmd.CombinedOutput(); fmt.Printf("ERR: %v\nOUTPUT: %s\n", err, string(out)) }

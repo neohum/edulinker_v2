@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 
 type DBUser = {
   id: string; name: string; phone: string; role: string;
-  grade: number; class_num: number; school_name: string; is_active: boolean; created_at: string;
+  grade: number; class_num: number; number: number; gender: string; student_name: string;
+  school_name: string; is_active: boolean; created_at: string;
 };
 
 export default function UserManagement() {
@@ -166,6 +167,14 @@ export default function UserManagement() {
     return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
   };
 
+  const formatGender = (g: string) => {
+    if (!g) return '';
+    const lower = g.toLowerCase();
+    if (lower === 'm' || lower === 'male' || lower === '남자') return '남';
+    if (lower === 'f' || lower === 'female' || lower === '여자') return '여';
+    return g;
+  };
+
   return (
     <div className="flex flex-col gap-4 h-full">
       <header className="flex justify-between items-center mb-2">
@@ -226,9 +235,8 @@ export default function UserManagement() {
             <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 border-b border-slate-200 dark:border-slate-800 sticky top-0 backdrop-blur-sm z-10">
               <tr>
                 <th className="px-4 py-3 font-semibold w-32">이름</th>
-                <th className="px-4 py-3 font-semibold">학교</th>
                 <th className="px-4 py-3 font-semibold w-24">역할</th>
-                <th className="px-4 py-3 font-semibold w-28">학년/반</th>
+                <th className="px-4 py-3 font-semibold w-48">상세 정보</th>
                 <th className="px-4 py-3 font-semibold w-32">전화번호</th>
                 <th className="px-4 py-3 font-semibold text-right w-52">관리</th>
               </tr>
@@ -237,11 +245,20 @@ export default function UserManagement() {
               {paginated.map(u => (
                 <tr key={u.id} className={`transition-colors ${tab === 'inactive' ? 'opacity-60 hover:opacity-100' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}`}>
                   <td className="px-4 py-3 font-medium">{u.name}</td>
-                  <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={u.school_name}>{u.school_name || '-'}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded inline-flex text-xs font-semibold ${roleBadge(u.role)}`}>{u.role}</span>
+                    <span className={`px-2 py-1 rounded inline-flex text-xs font-semibold ${roleBadge(u.role)}`}>
+                      {u.role === 'admin' ? '관리자' : u.role === 'teacher' ? '교사' : u.role === 'student' ? '학생' : u.role === 'parent' ? '학부모' : u.role}
+                    </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-500">{u.grade ? `${u.grade}학년 ${u.class_num}반` : '-'}</td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                    {u.role === 'student' ? (
+                      u.grade ? `${u.grade}학년 ${u.class_num}반 ${u.number}번${formatGender(u.gender) ? ` (${formatGender(u.gender)})` : ''}` : '-'
+                    ) : u.role === 'parent' ? (
+                      u.grade ? `${u.grade}학년 ${u.class_num}반 ${u.number}번 (${u.student_name || '자녀 미연동'})` : '-'
+                    ) : (
+                      u.grade ? `${u.grade}학년 ${u.class_num}반` : '-'
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-500 tabular-nums">{u.phone}</td>
                   <td className="px-4 py-3 text-right flex justify-end gap-1">
                     {tab === 'active' ? (

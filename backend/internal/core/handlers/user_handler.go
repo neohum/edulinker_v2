@@ -44,6 +44,8 @@ type UpdateUserRequest struct {
 	ClassNum   *int    `json:"class_num,omitempty"`
 	Department *string `json:"department,omitempty"`
 	TaskName   *string `json:"task_name,omitempty"`
+	Gender     *string `json:"gender,omitempty"`
+	Number     *int    `json:"number,omitempty"`
 }
 
 type UserListResponse struct {
@@ -204,21 +206,28 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
 	}
 
+	var user models.User
+	if h.db.First(&user, "id = ?", userID).Error != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+	}
+
 	// Check authorization: admin can update anyone, users can update themselves
 	currentUserID, _ := c.Locals("userID").(uuid.UUID)
 	currentRole, _ := c.Locals("role").(models.Role)
+	currentSchoolID, _ := c.Locals("schoolID").(uuid.UUID)
+
 	if currentRole != models.RoleAdmin && currentUserID != userID {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "insufficient permissions"})
+		// Allow teachers to update students in the same school
+		if currentRole == models.RoleTeacher && user.Role == models.RoleStudent && user.SchoolID == currentSchoolID {
+			// Authorized
+		} else {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "insufficient permissions"})
+		}
 	}
 
 	var req UpdateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
-	}
-
-	var user models.User
-	if h.db.First(&user, "id = ?", userID).Error != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
 	}
 
 	// Apply updates
@@ -248,6 +257,12 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	}
 	if req.TaskName != nil {
 		user.TaskName = *req.TaskName
+	}
+	if req.Gender != nil {
+		user.Gender = *req.Gender
+	}
+	if req.Number != nil {
+		user.Number = *req.Number
 	}
 
 	h.db.Save(&user)

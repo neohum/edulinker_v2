@@ -16,7 +16,12 @@ function App() {
   const [localIP, setLocalIP] = useState('');
   const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') === 'true');
   const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') === 'true');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => localStorage.getItem('sidebar_open') !== 'false');
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('sidebar_open', isSidebarOpen.toString());
+  }, [isSidebarOpen]);
 
   useEffect(() => {
     localStorage.setItem('autoStart', autoStart.toString());
@@ -196,47 +201,60 @@ function App() {
     <div className="flex h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-200">
       <Toaster richColors position="top-center" />
       {/* Sidebar */}
-      <div className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center py-8">
-        <div className="flex flex-col items-center justify-center mb-4">
-          <img src={logoUrl} alt="EduLinker Logo" className="w-14 h-14 drop-shadow-xl" />
-        </div>
-        <h1 className="text-xl font-bold tracking-tight">edulinker</h1>
-        <p className="text-xs text-slate-500 mb-4 uppercase tracking-widest font-semibold mt-1">Server Dashboard</p>
+      <div className={`relative transition-all duration-300 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center py-8 shrink-0 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute -right-3 top-8 w-6 h-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center text-slate-400 hover:text-indigo-500 shadow-sm z-10 transition-transform"
+        >
+          <i className={`fi fi-rr-angle-small-${isSidebarOpen ? 'left' : 'right'} text-xs`} />
+        </button>
 
-        <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-md mb-6 w-full max-w-[180px] text-center whitespace-nowrap overflow-hidden text-ellipsis shadow-sm">
-          IP: {localIP}
+        <div className="flex flex-col items-center justify-center mb-4 transition-transform">
+          <img src={logoUrl} alt="EduLinker Logo" className={`drop-shadow-xl transition-all ${isSidebarOpen ? 'w-14 h-14' : 'w-10 h-10'}`} />
         </div>
 
-        <nav className="w-full px-4 flex flex-col gap-2">
+        <div className={`overflow-hidden transition-all flex flex-col items-center ${isSidebarOpen ? 'opacity-100 max-h-20 mb-4' : 'opacity-0 max-h-0 mb-0'}`}>
+          <h1 className="text-xl font-bold tracking-tight">edulinker</h1>
+          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">Server Dashboard</p>
+        </div>
+
+        <div className={`text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 py-1.5 rounded-md mb-6 whitespace-nowrap overflow-hidden text-ellipsis shadow-sm transition-all ${isSidebarOpen ? 'w-full max-w-[180px] px-3' : 'w-14 px-1 text-[10px] text-center'}`}>
+          {isSidebarOpen ? `IP: ${localIP}` : localIP.split('.')[3] || 'IP'}
+        </div>
+
+        <nav className={`w-full flex flex-col gap-2 ${isSidebarOpen ? 'px-4' : 'px-2'}`}>
           <button
             onClick={() => setActiveTab('status')}
-            className={`flex items-center gap-3 font-medium px-4 py-3 rounded-lg w-full text-sm transition-colors ${activeTab === 'status'
+            title="시스템 상태"
+            className={`flex items-center font-medium py-3 rounded-lg text-sm transition-colors ${activeTab === 'status'
               ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
               : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
+              } ${isSidebarOpen ? 'gap-3 px-4 w-full' : 'justify-center w-full px-0'}`}
           >
-            <i className="fi fi-rr-chart-line-up" style={{ fontSize: 18 }} />
-            시스템 상태
+            <i className="fi fi-rr-chart-line-up shrink-0" style={{ fontSize: 18 }} />
+            {isSidebarOpen && <span className="whitespace-nowrap">시스템 상태</span>}
           </button>
           <button
             onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-3 font-medium px-4 py-3 rounded-lg w-full text-sm transition-colors ${activeTab === 'settings'
+            title="서버 설정"
+            className={`flex items-center font-medium py-3 rounded-lg text-sm transition-colors ${activeTab === 'settings'
               ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
               : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
+              } ${isSidebarOpen ? 'gap-3 px-4 w-full' : 'justify-center w-full px-0'}`}
           >
-            <i className="fi fi-rr-settings" style={{ fontSize: 18 }} />
-            서버 설정
+            <i className="fi fi-rr-settings shrink-0" style={{ fontSize: 18 }} />
+            {isSidebarOpen && <span className="whitespace-nowrap">서버 설정</span>}
           </button>
           <button
             onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-3 font-medium px-4 py-3 rounded-lg w-full text-sm transition-colors ${activeTab === 'users'
+            title="사용자 관리"
+            className={`flex items-center font-medium py-3 rounded-lg text-sm transition-colors ${activeTab === 'users'
               ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
               : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-              }`}
+              } ${isSidebarOpen ? 'gap-3 px-4 w-full' : 'justify-center w-full px-0'}`}
           >
-            <i className="fi fi-rr-users" style={{ fontSize: 18 }} />
-            사용자 관리
+            <i className="fi fi-rr-users shrink-0" style={{ fontSize: 18 }} />
+            {isSidebarOpen && <span className="whitespace-nowrap">사용자 관리</span>}
           </button>
         </nav>
       </div>

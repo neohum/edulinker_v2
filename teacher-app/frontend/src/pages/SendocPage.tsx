@@ -72,6 +72,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
   const [serverBgUrl, setServerBgUrl] = useState<string | null>(null)
   const [fields, setFields] = useState<DocField[]>([])
+  const [resultViewerData, setResultViewerData] = useState<{ doc: Sendoc, fields: DocField[], bgUrl: string } | null>(null)
 
   // File Selector States (from HwpConverterPage)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -97,6 +98,8 @@ export default function SendocPage({ user }: SendocPageProps) {
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const isDraggingField = useRef(false)
+  const [draftCanvasData, setDraftCanvasData] = useState<string | null>(null)
 
   // Zoom & Full Canvas Drawing
   const [zoom, setZoom] = useState(1)
@@ -136,6 +139,43 @@ export default function SendocPage({ user }: SendocPageProps) {
       scrollContainerRef.current.style.removeProperty('user-select');
     }
   }
+
+  // Auto-Save / Draft Logic
+  const handleSaveDraft = (isAuto = false) => {
+    if (!activeDoc || viewMode !== 'signer') return
+    const isCanvasBlank = (cvs: HTMLCanvasElement) => {
+      const blank = document.createElement('canvas'); blank.width = cvs.width; blank.height = cvs.height;
+      return cvs.toDataURL() === blank.toDataURL();
+    }
+    let sigData = ''
+    if (fullCanvasRef.current && !isCanvasBlank(fullCanvasRef.current)) {
+      sigData = fullCanvasRef.current.toDataURL()
+    }
+    const draft = { fields, fullCanvas: sigData }
+    localStorage.setItem(`sendoc_draft_${activeDoc.id}`, JSON.stringify(draft))
+    if (!isAuto) toast.success('임시 저장이 완료되었습니다.')
+  }
+
+  // Auto save effect
+  useEffect(() => {
+    if (viewMode !== 'signer' || !activeDoc) return
+    const interval = setInterval(() => handleSaveDraft(true), 30000)
+    return () => clearInterval(interval)
+  }, [viewMode, activeDoc, fields])
+
+  // Draw draft canvas when mounted
+  useEffect(() => {
+    if (viewMode === 'signer' && fullCanvasRef.current && draftCanvasData) {
+      const img = new Image()
+      img.onload = () => {
+        const ctx = fullCanvasRef.current?.getContext('2d')
+        ctx?.clearRect(0, 0, 1600, 2262)
+        ctx?.drawImage(img, 0, 0)
+        setDraftCanvasData(null)
+      }
+      img.src = draftCanvasData
+    }
+  }, [viewMode, draftCanvasData])
 
   useEffect(() => {
     if (isTeacher) fetchDocs()
@@ -219,6 +259,22 @@ export default function SendocPage({ user }: SendocPageProps) {
       const lowerName = selectedFile.name.toLowerCase()
       const isHwp = lowerName.endsWith('.hwp') || lowerName.endsWith('.hwpx')
 
+      const convertBase64ToWebP = (base64Str: string): Promise<string> => {
+        return new Promise((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            const canvas = document.createElement('canvas')
+            canvas.width = img.width
+            canvas.height = img.height
+            const ctx = canvas.getContext('2d')
+            if (ctx) ctx.drawImage(img, 0, 0)
+            resolve(canvas.toDataURL('image/webp', 0.8).split(',')[1] || base64Str)
+          }
+          img.onerror = () => resolve(base64Str)
+          img.src = base64Str.startsWith('data:') ? base64Str : `data:image/png;base64,${base64Str}`
+        })
+      }
+
       let bgBlobUrl = ''
       let serverBg = ''
       let pagesData: string[] = []
@@ -262,16 +318,20 @@ export default function SendocPage({ user }: SendocPageProps) {
             }
 
             if (pdfRes.success && pdfRes.pages && pdfRes.pages.length > 0) {
+              setConvertProgress('WebP 이미지 최적화 중...')
+              for (let i = 0; i < pdfRes.pages.length; i++) {
+                pdfRes.pages[i] = await convertBase64ToWebP(pdfRes.pages[i])
+              }
               pagesData = pdfRes.pages
-              // Upload first page PNG as background image
-              const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.png'
+              // Upload first page WebP as background image
+              const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.webp'
               const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, pdfRes.pages[0])
               if (uploadRes.url) serverBg = uploadRes.url
 
               const binaryStr = atob(pdfRes.pages[0])
               const bytes = new Uint8Array(binaryStr.length)
               for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-              bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+              bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }))
             }
           } catch {
             // Fallback below
@@ -285,15 +345,19 @@ export default function SendocPage({ user }: SendocPageProps) {
           const convRes = await wailsApp.ConvertHwp(selectedFile.name, base64, 'image')
           if (!convRes.success || !convRes.data) throw new Error(convRes.error || 'HWP 변환 실패')
 
-          const imgName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.png'
-          const uploadRes = await wailsApp.UploadFileFromBytes(imgName, convRes.data)
+          setConvertProgress('WebP 이미지 최적화 중...')
+          const webpData = await convertBase64ToWebP(convRes.data)
+          pagesData = [webpData]
+
+          const imgName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.webp'
+          const uploadRes = await wailsApp.UploadFileFromBytes(imgName, webpData)
           if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
           serverBg = uploadRes.url
 
-          const binaryStr = atob(convRes.data)
+          const binaryStr = atob(webpData)
           const bytes = new Uint8Array(binaryStr.length)
           for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-          bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+          bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }))
         }
 
       } else {
@@ -308,19 +372,22 @@ export default function SendocPage({ user }: SendocPageProps) {
         }
 
         pagesData = result.pages
-        setConvertProgress(`이미지 처리 중... (${result.page_count}페이지)`)
+        setConvertProgress(`이미지 WebP 최적화 처리 중... (${result.page_count}페이지)`)
+        for (let i = 0; i < pagesData.length; i++) {
+          pagesData[i] = await convertBase64ToWebP(pagesData[i])
+        }
 
-        // Upload first page PNG as background image
-        const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.png'
-        const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, result.pages[0])
+        // Upload first page WebP as background image
+        const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.webp'
+        const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, pagesData[0])
         if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
         serverBg = uploadRes.url
 
         // Local blob from first page
-        const binaryStr = atob(result.pages[0])
+        const binaryStr = atob(pagesData[0])
         const bytes = new Uint8Array(binaryStr.length)
         for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-        bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+        bgBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/webp' }))
       }
 
       // Apply to designer
@@ -363,9 +430,10 @@ export default function SendocPage({ user }: SendocPageProps) {
     const initialX = (field.x / 100) * rect.width; const initialY = (field.y / 100) * rect.height
     const onMouseMove = (me: MouseEvent) => {
       const dx = me.clientX - startX; const dy = me.clientY - startY
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDraggingField.current = true
       setFields(prev => prev.map(f => f.id === id ? { ...f, x: Math.min(90, Math.max(0, ((initialX + dx) / rect.width) * 100)), y: Math.min(95, Math.max(0, ((initialY + dy) / rect.height) * 100)) } : f))
     }
-    const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp) }
+    const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); setTimeout(() => { isDraggingField.current = false }, 50) }
     document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp)
   }
 
@@ -380,9 +448,10 @@ export default function SendocPage({ user }: SendocPageProps) {
     const onMouseMove = (me: MouseEvent) => {
       const dx = (me.clientX - startX) / zoom;
       const dy = (me.clientY - startY) / zoom;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDraggingField.current = true
       setFields(prev => prev.map(f => f.id === id ? { ...f, width: Math.max(30, initialWidth + dx), height: Math.max(30, initialHeight + dy) } : f))
     }
-    const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp) }
+    const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); setTimeout(() => { isDraggingField.current = false }, 50) }
     document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp)
   }
 
@@ -454,20 +523,37 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   const openSignView = async (doc: PendingDoc) => {
-    setActiveDoc(doc); setTitle(doc.title); setBackgroundUrl(null)
+    setActiveDoc(doc); setTitle(doc.title); setBackgroundUrl(null); setDraftCanvasData(null)
     try {
       let f = JSON.parse(doc.fields_json || '[]')
+      let hasDraft = false
+
       if (doc.is_signed && doc.form_data_json && doc.form_data_json !== '{}' && doc.form_data_json !== '[]') {
         try {
           const recFields = JSON.parse(doc.form_data_json)
           if (Array.isArray(recFields) && recFields.length > 0) f = recFields
         } catch { }
+      } else if (!doc.is_signed) {
+        const draftStr = localStorage.getItem(`sendoc_draft_${doc.id}`)
+        if (draftStr) {
+          if (window.confirm('이전에 작성 중이던 임시 저장본이 있습니다. 이어서 작성하시겠습니까?')) {
+            try {
+              const draft = JSON.parse(draftStr)
+              if (draft.fields) f = draft.fields
+              if (draft.fullCanvas) setDraftCanvasData(draft.fullCanvas)
+              hasDraft = true
+            } catch (e) { }
+          }
+        }
       }
       setFields(f)
+      if (!hasDraft) {
+        fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262)
+      }
     } catch { setFields([]) }
     setViewMode('signer')
     try {
-      const blobUrl = await fetchImageAsBlob(doc.background_url)
+      const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
       setBackgroundUrl(blobUrl)
     } catch {
       toast.error('문서를 불러올 수 없습니다.')
@@ -475,7 +561,6 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   const openResultViewer = async (doc: Sendoc, recipient: RecipientStatus) => {
-    setActiveDoc(doc); setTitle(`${doc.title} - ${recipient.user.name}의 응답`); setBackgroundUrl(null)
     try {
       const baseFields: DocField[] = JSON.parse(doc.fields_json || '[]')
       let finalFields = baseFields
@@ -485,18 +570,18 @@ export default function SendocPage({ user }: SendocPageProps) {
           if (Array.isArray(recFields) && recFields.length > 0) finalFields = recFields
         } catch { }
       }
+      const hasFullCanvas = finalFields.some(f => f.id === 'full_canvas_overlay')
+
       finalFields = finalFields.map(f => {
-        if (f.type === 'signature' && recipient.signature_image_url) {
+        if (hasFullCanvas && f.id === 'full_canvas_overlay') {
+          return { ...f, signatureData: recipient.signature_image_url }
+        } else if (!hasFullCanvas && f.type === 'signature' && recipient.signature_image_url) {
           return { ...f, signatureData: recipient.signature_image_url }
         }
         return f
       })
-      setFields(finalFields)
-    } catch { setFields([]) }
-    setShowStatusModal(false); setViewMode('viewer')
-    try {
-      const blobUrl = await fetchImageAsBlob(doc.background_url)
-      setBackgroundUrl(blobUrl)
+      const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
+      setResultViewerData({ doc, fields: finalFields, bgUrl: blobUrl })
     } catch {
       toast.error('문서를 불러올 수 없습니다.')
     }
@@ -522,17 +607,28 @@ export default function SendocPage({ user }: SendocPageProps) {
         return cvs.toDataURL() === blank.toDataURL();
       }
       let sigData = ''
+      let finalFields = [...fields];
       if (fullCanvasRef.current && !isCanvasBlank(fullCanvasRef.current)) {
-        sigData = fullCanvasRef.current.toDataURL()
+        sigData = fullCanvasRef.current.toDataURL('image/webp', 0.6)
+        finalFields.push({
+          id: 'full_canvas_overlay',
+          type: 'signature',
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 1131,
+          label: '전체 화면 펜선'
+        } as any);
       } else {
         sigData = fields.find(f => f.type === 'signature')?.signatureData || ''
       }
 
       const res = await apiFetch(`/api/plugins/sendoc/sign/${activeDoc.id}/submit`, {
         method: 'POST',
-        body: JSON.stringify({ signature_image_url: sigData, form_data_json: JSON.stringify(fields) })
+        body: JSON.stringify({ signature_image_url: sigData, form_data_json: JSON.stringify(finalFields) })
       })
       if (res.ok) {
+        localStorage.removeItem(`sendoc_draft_${activeDoc.id}`)
         toast.success('제출 완료!'); setViewMode('list'); fetchPendingDocs()
       } else {
         const errorData = await res.json().catch(() => ({}));
@@ -615,6 +711,7 @@ export default function SendocPage({ user }: SendocPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {!isSigner && !isViewer && <button onClick={() => setShowRecipientModal(true)} className="btn-primary" style={{ padding: '8px 24px' }}>발송하기</button>}
+            {isSigner && !activeDoc?.is_signed && <button onClick={() => handleSaveDraft(false)} className="btn-secondary" style={{ padding: '8px 16px' }}>임시 저장</button>}
             {isSigner && <button onClick={handleSubmitSignature} className="btn-primary" style={{ padding: '8px 24px' }} disabled={activeDoc?.is_signed}>{activeDoc?.is_signed ? '이미 제출됨' : '작성 완료 및 제출'}</button>}
           </div>
         </div>
@@ -682,7 +779,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                           <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}><span>펜/지우개 굵기</span> <strong>{penSize}px</strong></div>
                           <input type="range" min="1" max="30" value={penSize} onChange={(e) => setPenSize(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer', accentColor: '#4f46e5' }} />
                         </div>
-                        <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 800, 1131) } }} style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-trash" /> 캔버스 초기화</button>
+                        <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262); } }} style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-trash" /> 캔버스 초기화</button>
                       </div>
                     )}
                   </>
@@ -699,7 +796,7 @@ export default function SendocPage({ user }: SendocPageProps) {
             <div style={{ position: 'relative', width: 800 * zoom, height: 1131 * zoom }}>
               <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: 800, height: 1131, transform: `scale(${zoom})`, transformOrigin: 'top left', background: 'white', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
                 {backgroundUrl ? (
-                  <img src={backgroundUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} alt="문서 배경" />
+                  <img src={backgroundUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.') }} />
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
                     <div className="spinner" style={{ marginBottom: 16 }} />
@@ -719,8 +816,8 @@ export default function SendocPage({ user }: SendocPageProps) {
                   {fields.map(f => (
                     <div key={f.id} onMouseDown={(e) => handleFieldDrag(f.id, e)} style={{
                       position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: f.width, height: f.height,
-                      background: f.signatureData ? 'white' : (f.type === 'signature' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)'),
-                      border: f.signatureData ? '1px solid #eee' : `2px dashed ${f.type === 'signature' ? '#ef4444' : '#3b82f6'}`,
+                      background: f.signatureData ? 'transparent' : (f.type === 'signature' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)'),
+                      border: f.signatureData ? 'none' : `2px dashed ${f.type === 'signature' ? '#ef4444' : '#3b82f6'}`,
                       borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isViewer ? 'default' : 'move'
                     }}>
                       {f.type === 'text' ? (
@@ -735,14 +832,12 @@ export default function SendocPage({ user }: SendocPageProps) {
                           )}
                         </>
                       ) : (
-                        <>
-                          <div onClick={() => !isViewer && !activeDoc?.is_signed && setActiveSignField(f.id)} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer ? 'pointer' : 'default' }}>
-                            {f.signatureData ? <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <><i className="fi fi-rr-edit" style={{ marginRight: 6 }} /> {!isViewer ? '서명하기' : '서명란'}</>}
-                          </div>
-                          {!isViewer && (
-                            <div onMouseDown={(e) => handleFieldResize(f.id, e)} style={{ position: 'absolute', bottom: -6, right: -6, width: 14, height: 14, background: '#ef4444', borderRadius: '50%', cursor: 'nwse-resize', border: '2px solid white', zIndex: 50, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} />
-                          )}
-                        </>
+                        <div onClick={() => { if (isDraggingField.current) return; if (!isViewer && !activeDoc?.is_signed) setActiveSignField(f.id); }} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer ? 'pointer' : 'default' }}>
+                          {f.signatureData ? <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <><i className="fi fi-rr-edit" style={{ marginRight: 6 }} /> {!isViewer ? '서명하기' : '서명란'}</>}
+                        </div>
+                      )}
+                      {!isViewer && (
+                        <div onMouseDown={(e) => handleFieldResize(f.id, e)} style={{ position: 'absolute', bottom: -6, right: -6, width: 14, height: 14, background: f.type === 'signature' ? '#ef4444' : '#3b82f6', borderRadius: '50%', cursor: 'nwse-resize', border: '2px solid white', zIndex: 50, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} />
                       )}
                       {!isViewer && <button onClick={(e) => { e.stopPropagation(); setFields(prev => prev.filter(field => field.id !== f.id)); }} style={{ position: 'absolute', top: -10, right: -10, background: '#475569', color: 'white', border: 'none', borderRadius: '50%', width: 20, height: 20, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>✕</button>}
                     </div>
@@ -1018,6 +1113,33 @@ export default function SendocPage({ user }: SendocPageProps) {
               </div>
             )}
             <button onClick={() => setShowStatusModal(false)} className="btn-secondary" style={{ marginTop: 24, width: '100%' }}>닫기</button>
+          </div>
+        </div>
+      )}
+
+      {resultViewerData && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div style={{ background: '#f1f5f9', borderRadius: 16, width: '90%', maxWidth: 1000, height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 24px', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700 }}>{resultViewerData.doc.title} - 결과 확인</h3>
+              <button onClick={() => setResultViewerData(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: 24, display: 'flex', justifyContent: 'center' }}>
+              <div style={{ position: 'relative', width: 800, minHeight: 1131, background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
+                {resultViewerData.fields.map(f => (
+                  <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
+                    {f.type === 'text' ? (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

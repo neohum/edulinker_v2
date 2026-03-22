@@ -80,7 +80,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
   const [chatName, setChatName] = useState('')
   const [allUsers, setAllUsers] = useState<UserEntry[]>([])
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set())
-  const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [userSearchQuery, setUserSearchQuery] = useState('')
 
   const userRef = useRef(user)
@@ -348,9 +348,9 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
       if (res.ok) {
         const data = await res.json()
         const userList = data.users || []
-        // Filter out students and current user
+        // Filter out students (allow current user for self-chat)
         const teachers = userList.filter((u: UserEntry) =>
-          u.role !== 'student' && u.id !== user?.id
+          u.role !== 'student'
         )
         setAllUsers(teachers)
       }
@@ -649,7 +649,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
           return dataUrl
         }
       }
-    } catch {}
+    } catch { }
 
     // Fallback: fetch via JS
     try {
@@ -663,7 +663,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
         fileUrlCache.current.set(fileId, url)
         return url
       }
-    } catch {}
+    } catch { }
     return ''
   }, [])
 
@@ -738,7 +738,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
     setShowCreateChat(true)
     setSelectedUserIds(new Set())
     setChatName('')
-    setCollapsedDepts(new Set())
+    setCollapsedGroups(new Set())
     setUserSearchQuery('')
     fetchAllUsers()
   }
@@ -807,32 +807,36 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
     }
   }
 
-  // Group users by department for tree view
+  // Group users by grade for tree view
   const userTree = useMemo(() => {
+    const teachersOnly = allUsers.filter(u => u.role === 'teacher' || u.role === 'admin')
     const query = userSearchQuery.trim().toLowerCase()
     const filtered = query
-      ? allUsers.filter(u =>
+      ? teachersOnly.filter(u =>
         u.name.toLowerCase().includes(query) ||
         (u.department || '').toLowerCase().includes(query) ||
-        (u.task_name || '').toLowerCase().includes(query)
+        (u.task_name || '').toLowerCase().includes(query) ||
+        (u.grade ? `${u.grade}학년`.includes(query) : false)
       )
-      : allUsers
+      : teachersOnly
 
     const groups: Record<string, UserEntry[]> = {}
     for (const u of filtered) {
-      const dept = u.department || '부서 미지정'
-      if (!groups[dept]) groups[dept] = []
-      groups[dept].push(u)
+      const groupName = u.grade ? `${u.grade}학년` : '학년 미배정'
+      if (!groups[groupName]) groups[groupName] = []
+      groups[groupName].push(u)
     }
 
-    // Sort departments alphabetically, but put '부서 미지정' last
+    // Sort grades numerically, but put '학년 미배정' last
     const sortedKeys = Object.keys(groups).sort((a, b) => {
-      if (a === '부서 미지정') return 1
-      if (b === '부서 미지정') return -1
-      return a.localeCompare(b, 'ko')
+      if (a === '학년 미배정') return 1
+      if (b === '학년 미배정') return -1
+      const numA = parseInt(a) || 0
+      const numB = parseInt(b) || 0
+      return numA - numB
     })
 
-    return sortedKeys.map(dept => ({ dept, users: groups[dept] }))
+    return sortedKeys.map(groupName => ({ groupName, users: groups[groupName] }))
   }, [allUsers, userSearchQuery])
 
   const toggleUser = (userId: string) => {
@@ -844,16 +848,16 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
     })
   }
 
-  const toggleDept = (dept: string) => {
-    setCollapsedDepts(prev => {
+  const toggleGroup = (groupName: string) => {
+    setCollapsedGroups(prev => {
       const next = new Set(prev)
-      if (next.has(dept)) next.delete(dept)
-      else next.add(dept)
+      if (next.has(groupName)) next.delete(groupName)
+      else next.add(groupName)
       return next
     })
   }
 
-  const toggleDeptAll = (dept: string, users: UserEntry[]) => {
+  const toggleGroupAll = (groupName: string, users: UserEntry[]) => {
     const allSelected = users.every(u => selectedUserIds.has(u.id))
     setSelectedUserIds(prev => {
       const next = new Set(prev)
@@ -1211,7 +1215,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
             {/* Modal Header */}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)' }}>
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>새 채팅 시작하기</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>대화할 사람을 선택하세요. 부서별로 정리되어 있습니다.</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>대화할 사람을 선택하세요. 학년별로 정리되어 있습니다.</p>
             </div>
 
             {/* Chat Name */}
@@ -1229,7 +1233,7 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
               <input
                 value={userSearchQuery}
                 onChange={e => setUserSearchQuery(e.target.value)}
-                placeholder="이름 또는 부서로 검색..."
+                placeholder="이름, 학년, 또는 부서로 검색..."
                 style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-color)', boxSizing: 'border-box', fontSize: 13, outline: 'none', background: 'var(--bg-primary)' }}
               />
             </div>
@@ -1256,21 +1260,21 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
                   {allUsers.length === 0 ? '등록된 교직원이 없습니다.' : '검색 결과가 없습니다.'}
                 </div>
               ) : (
-                userTree.map(({ dept, users }) => {
-                  const isCollapsed = collapsedDepts.has(dept)
+                userTree.map(({ groupName, users }) => {
+                  const isCollapsed = collapsedGroups.has(groupName)
                   const allChecked = users.every(u => selectedUserIds.has(u.id))
                   const someChecked = !allChecked && users.some(u => selectedUserIds.has(u.id))
 
                   return (
-                    <div key={dept} style={{ marginBottom: 4 }}>
-                      {/* Department Header */}
+                    <div key={groupName} style={{ marginBottom: 4 }}>
+                      {/* Group Header */}
                       <div
                         style={{
                           display: 'flex', alignItems: 'center', gap: 8, padding: '8px 4px',
                           cursor: 'pointer', userSelect: 'none', borderRadius: 6,
                           transition: 'background 150ms'
                         }}
-                        onClick={() => toggleDept(dept)}
+                        onClick={() => toggleGroup(groupName)}
                         onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
                         onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
                       >
@@ -1279,19 +1283,19 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
                           ▼
                         </span>
 
-                        {/* Department Checkbox */}
+                        {/* Group Checkbox */}
                         <input
                           type="checkbox"
                           checked={allChecked}
                           ref={el => { if (el) el.indeterminate = someChecked }}
-                          onChange={(e) => { e.stopPropagation(); toggleDeptAll(dept, users) }}
+                          onChange={(e) => { e.stopPropagation(); toggleGroupAll(groupName, users) }}
                           onClick={e => e.stopPropagation()}
                           style={{ width: 16, height: 16, accentColor: 'var(--accent-blue)', cursor: 'pointer' }}
                         />
 
-                        {/* Department name + count */}
+                        {/* Group name + count */}
                         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
-                          {dept}
+                          {groupName}
                         </span>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '2px 8px', borderRadius: 10 }}>
                           {users.length}명
@@ -1332,7 +1336,14 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
                                 </div>
                                 {/* Name & Role */}
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{u.name}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {u.name}
+                                    {u.grade && u.class_num ? (
+                                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>
+                                        ({u.grade}학년 {u.class_num}반)
+                                      </span>
+                                    ) : null}
+                                  </div>
                                   {u.task_name && (
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.task_name}</div>
                                   )}

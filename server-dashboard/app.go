@@ -493,16 +493,19 @@ Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!
 
 // DBUser represents a simplified user view for the dashboard
 type DBUser struct {
-	ID         string `json:"id"`
-	SchoolID   string `json:"school_id"`
-	SchoolName string `json:"school_name"`
-	Name       string `json:"name"`
-	Phone      string `json:"phone"`
-	Role       string `json:"role"`
-	Grade      int    `json:"grade"`
-	ClassNum   int    `json:"class_num"`
-	IsActive   bool   `json:"is_active"`
-	CreatedAt  string `json:"created_at"`
+	ID          string `json:"id"`
+	SchoolID    string `json:"school_id"`
+	SchoolName  string `json:"school_name"`
+	Name        string `json:"name"`
+	Phone       string `json:"phone"`
+	Role        string `json:"role"`
+	Grade       int    `json:"grade"`
+	ClassNum    int    `json:"class_num"`
+	Number      int    `json:"number"`
+	Gender      string `json:"gender"`
+	StudentName string `json:"student_name"`
+	IsActive    bool   `json:"is_active"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func getDBConn() (*sql.DB, error) {
@@ -518,7 +521,13 @@ func (a *App) GetDBUsers() ([]DBUser, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, u.grade, u.class_num, u.is_active, u.created_at
+		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, 
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.grade FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.grade END as grade,
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.class_num FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.class_num END as class_num,
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.number FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE COALESCE(u.number, 0) END as number,
+               COALESCE(u.gender, '') as gender,
+               (SELECT student.name FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1) as student_name,
+               u.is_active, u.created_at
 		FROM users u
 		LEFT JOIN schools s ON u.school_id = s.id
 		WHERE u.is_active = true
@@ -534,11 +543,23 @@ func (a *App) GetDBUsers() ([]DBUser, error) {
 		var u DBUser
 		var created time.Time
 		var schoolID sql.NullString
-		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &u.IsActive, &created); err != nil {
+		var number sql.NullInt64
+		var gender sql.NullString
+		var studentName sql.NullString
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &studentName, &u.IsActive, &created); err != nil {
 			return nil, err
 		}
 		if schoolID.Valid {
 			u.SchoolID = schoolID.String
+		}
+		if number.Valid {
+			u.Number = int(number.Int64)
+		}
+		if gender.Valid {
+			u.Gender = gender.String
+		}
+		if studentName.Valid {
+			u.StudentName = studentName.String
 		}
 		u.CreatedAt = created.Format(time.RFC3339)
 		users = append(users, u)
@@ -565,7 +586,13 @@ func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, u.grade, u.class_num, u.is_active, u.created_at
+		SELECT u.id, u.school_id, COALESCE(s.name, ''), u.name, u.phone, u.role, 
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.grade FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.grade END as grade,
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.class_num FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.class_num END as class_num,
+               CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.number FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE COALESCE(u.number, 0) END as number,
+               COALESCE(u.gender, '') as gender,
+               (SELECT student.name FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1) as student_name,
+               u.is_active, u.created_at
 		FROM users u
 		LEFT JOIN schools s ON u.school_id = s.id
 		WHERE u.is_active = false
@@ -581,11 +608,23 @@ func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
 		var u DBUser
 		var created time.Time
 		var schoolID sql.NullString
-		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &u.IsActive, &created); err != nil {
+		var number sql.NullInt64
+		var gender sql.NullString
+		var studentName sql.NullString
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &studentName, &u.IsActive, &created); err != nil {
 			return nil, err
 		}
 		if schoolID.Valid {
 			u.SchoolID = schoolID.String
+		}
+		if number.Valid {
+			u.Number = int(number.Int64)
+		}
+		if gender.Valid {
+			u.Gender = gender.String
+		}
+		if studentName.Valid {
+			u.StudentName = studentName.String
 		}
 		u.CreatedAt = created.Format(time.RFC3339)
 		users = append(users, u)
@@ -616,22 +655,44 @@ func (a *App) HardDeleteDBUser(id string) error {
 		return err
 	}
 
-	// 1. NULL out sendoc author references (must succeed before delete)
-	if _, err := tx.Exec("UPDATE sendocs SET author_id = NULL WHERE author_id = $1", id); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("sendoc 참조 해제 실패: %w", err)
+	queries := []struct {
+		desc string
+		sql  string
+	}{
+		{"sendoc 참조 해제", "UPDATE sendocs SET author_id = NULL WHERE author_id = $1"},
+		{"schoolevent 참조 해제", "UPDATE school_events SET author_id = NULL WHERE author_id = $1"},
+		{"gatong 참조 해제", "UPDATE gatongs SET author_id = NULL WHERE author_id = $1"},
+		{"학부모-학생 연결", "DELETE FROM parent_students WHERE parent_id = $1 OR student_id = $1"},
+		{"sendoc 수신자", "DELETE FROM sendoc_recipients WHERE user_id = $1"},
+		{"gatong 응답", "DELETE FROM gatong_responses WHERE user_id = $1"},
+		{"schoolevent 참여", "DELETE FROM school_event_participants WHERE user_id = $1"},
+		{"ai 분석 기록", "DELETE FROM ai_analysis_logs WHERE teacher_id = $1 OR target_student_id = $1"},
+		{"학생 상담 기록", "DELETE FROM student_counselings WHERE teacher_id = $1 OR student_id = $1"},
+		{"학생 결석 기록", "DELETE FROM student_absences WHERE student_id = $1"},
+		{"교사 인사 기록", "DELETE FROM teacher_hr_records WHERE teacher_id = $1"},
+		{"교육과정 계획", "DELETE FROM curriculum_plans WHERE teacher_id = $1"},
+		{"교육과정 평가", "DELETE FROM curriculum_evaluations WHERE teacher_id = $1 OR student_id = $1"},
 	}
 
-	// 2. Remove parent-student links ($1 and $2 are the same value — required by PostgreSQL)
-	if _, err := tx.Exec("DELETE FROM parent_students WHERE parent_id = $1 OR student_id = $2", id, id); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("학부모-학생 연결 삭제 실패: %w", err)
+	for _, q := range queries {
+		// Use savepoint to safely catch and ignore "table does not exist" or specific FK errors that don't apply
+		tx.Exec("SAVEPOINT delete_sp")
+		if _, err := tx.Exec(q.sql, id); err != nil {
+			if strings.Contains(err.Error(), "does not exist") {
+				tx.Exec("ROLLBACK TO SAVEPOINT delete_sp")
+			} else {
+				tx.Rollback()
+				return fmt.Errorf("%s 처리 중 DB 오류: %w", q.desc, err)
+			}
+		} else {
+			tx.Exec("RELEASE SAVEPOINT delete_sp")
+		}
 	}
 
-	// 3. Hard delete user
+	// 3. Finally, Hard delete the user itself
 	if _, err := tx.Exec("DELETE FROM users WHERE id = $1", id); err != nil {
 		tx.Rollback()
-		return fmt.Errorf("사용자 삭제 실패: %w", err)
+		return fmt.Errorf("사용자 본체 레코드 영구 삭제 실패: %w", err)
 	}
 
 	return tx.Commit()

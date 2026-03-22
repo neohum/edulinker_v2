@@ -48,7 +48,23 @@ func (a *App) startHwpWorker() {
 	}
 }
 
+func (a *App) enforceHwpProcessLimit(maxCount int) {
+	// PowerShell script to forcefully kill the oldest HWP processes if the count exceeds maxCount
+	psCmd := fmt.Sprintf(`
+$procs = @(Get-Process -Name "Hwp" -ErrorAction SilentlyContinue)
+if ($procs.Count -gt %d) {
+    $toKill = $procs | Sort-Object StartTime | Select-Object -First ($procs.Count - %d)
+    foreach ($p in $toKill) {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+`, maxCount, maxCount)
+	exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Run()
+}
+
 func (a *App) ensureHwpObject() error {
+	a.enforceHwpProcessLimit(4) // Ensure no more than 4 HWP processes are running
+
 	if a.hwpObject != nil {
 		// Quick health check
 		if _, err := oleutil.GetProperty(a.hwpObject, "Version"); err == nil {

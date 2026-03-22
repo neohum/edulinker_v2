@@ -164,7 +164,7 @@ function getPageTitle(page: string): string {
     attendance: '지각·결석',
     gatong: '가정통신문',
     sendoc: '전자문서/서명',
-    studentmgmt: '학생관리·상담',
+    studentmgmt: '학생관리',
     curriculum: '주간학습·평가',
     aianalysis: 'AI 문서 생성',
     schoolevents: '학교행사·투표',

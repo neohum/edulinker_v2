@@ -51,7 +51,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   // Edit student modal state
   const [editStudent, setEditStudent] = useState<Student | null>(null)
-  const [editForm, setEditForm] = useState({ number: '', name: '' })
+  const [editForm, setEditForm] = useState({ number: '', name: '', gender: '' })
   const [editError, setEditError] = useState('')
   const [editing, setEditing] = useState(false)
 
@@ -215,7 +215,13 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+        const student = students.find(s => s.id === id)
+        if (student) openEditModal(student)
+      }
       return next
     })
   }
@@ -246,19 +252,19 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const openEditModal = (student: Student) => {
     setEditStudent(student)
-    setEditForm({ number: String(student.number), name: student.name })
+    setEditForm({ number: String(student.number), name: student.name, gender: student.gender || '' })
     setEditError('')
   }
 
   const handleEditStudent = async () => {
     if (!editStudent) return
     setEditError('')
-    const { number, name } = editForm
+    const { number, name, gender } = editForm
     if (!number || !name.trim()) { setEditError('번호와 이름을 입력해주세요.'); return }
     setEditing(true)
     try {
       const res = await apiFetch(`/api/core/users/${editStudent.id}`, {
-        method: 'PUT', body: JSON.stringify({ name: name.trim() })
+        method: 'PUT', body: JSON.stringify({ name: name.trim(), number: parseInt(number), gender })
       })
       if (res.ok) { toast.success('학생 정보가 수정되었습니다.'); setEditStudent(null); fetchStudents() }
       else { const data = await res.json(); setEditError(data.error || '수정에 실패했습니다.') }
@@ -517,11 +523,22 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
               </div>
             </div>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
-              <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
+                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>성별</label>
+                <select value={editForm.gender} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
+                  <option value="">알 수 없음/미지정</option>
+                  <option value="남">남</option>
+                  <option value="여">여</option>
+                </select>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setEditStudent(null)}

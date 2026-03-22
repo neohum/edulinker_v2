@@ -229,9 +229,19 @@ func main() {
 	parentRoutes.Get("/students/search", parentHandler.SearchStudents)
 	parentRoutes.Post("/link", parentHandler.LinkParent)
 
+	// --- Public file access (no auth req for viewing images) ---
+	if fileGW != nil {
+		fileHandler := handlers.NewFileHandler(fileGW)
+		api.Get("/core/files/:id", fileHandler.Download)
+	}
+
 	// --- Public linker route (no auth) ---
 	publicLinker := api.Group("/public/linker")
 	linkerPlugin.RegisterPublicRoutes(publicLinker)
+
+	// --- Public sendoc route (no auth) ---
+	publicSendoc := api.Group("/public/sendoc")
+	sendocPlugin.RegisterPublicRoutes(publicSendoc)
 
 	// --- Protected routes (require auth) ---
 	protected := api.Group("", middleware.AuthMiddleware(authSvc))

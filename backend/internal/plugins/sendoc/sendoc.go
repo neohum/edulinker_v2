@@ -139,6 +139,10 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	signerAPI.Post("/:id/submit", p.submitSignature)
 }
 
+func (p *Plugin) RegisterPublicRoutes(router fiber.Router) {
+	router.Post("/sign/:id/submit", p.publicSubmitSignature)
+}
+
 // ── Handlers ──
 
 func (p *Plugin) createDocument(c *fiber.Ctx) error {
@@ -160,7 +164,7 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 
 	doc := models.Sendoc{
 		SchoolID:          schoolID,
-		AuthorID:          userID,
+		AuthorID:          &userID,
 		Title:             req.Title,
 		Content:           req.Content,
 		BackgroundURL:     req.BackgroundURL,
@@ -275,6 +279,52 @@ func (p *Plugin) submitSignature(c *fiber.Ctx) error {
 	parsedDocID, err := uuid.Parse(docID)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid document id"})
+	}
+
+	now := time.Now()
+	result := p.db.Model(&models.SendocRecipient{}).
+		Where("sendoc_id = ? AND user_id = ?", parsedDocID, userID).
+		Updates(map[string]interface{}{
+			"is_signed":           true,
+			"signature_image_url": req.SignatureImageURL,
+			"form_data_json":      req.FormDataJSON,
+			"signed_at":           &now,
+		})
+
+	if result.Error != nil || result.RowsAffected == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "recipient record not found or update failed"})
+	}
+
+	return c.JSON(fiber.Map{"message": "signature submitted successfully"})
+}
+
+func (p *Plugin) publicSubmitSignature(c *fiber.Ctx) error {
+	docID := c.Params("id")
+
+	var req struct {
+		UserID            string `json:"user_id"`
+		SignatureImageURL string `json:"signature_image_url"`
+		FormDataJSON      string `json:"form_data_json"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
+	}
+
+	parsedDocID, err := uuid.Parse(docID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid document id"})
+	}
+
+	var userID uuid.UUID
+	if req.UserID != "" {
+		if uid, err := uuid.Parse(req.UserID); err == nil {
+			userID = uid
+		}
+	}
+
+	if userID == uuid.Nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required for public submissions"})
 	}
 
 	now := time.Now()

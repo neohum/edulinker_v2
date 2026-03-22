@@ -11,7 +11,7 @@ import (
 type Sendoc struct {
 	ID                uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	SchoolID          uuid.UUID      `gorm:"type:uuid;not null;index" json:"school_id"`
-	AuthorID          uuid.UUID      `gorm:"type:uuid;not null" json:"author_id"`
+	AuthorID          *uuid.UUID     `gorm:"type:uuid" json:"author_id"`
 	Title             string         `gorm:"type:varchar(200);not null" json:"title"`
 	Content           string         `gorm:"type:text;not null" json:"content"`             // HTML/Markdown or description
 	BackgroundURL     string         `gorm:"type:varchar(500)" json:"background_url"`       // Image path of the document

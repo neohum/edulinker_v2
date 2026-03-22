@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go vet:*)",
+      "Bash(go build:*)",
+      "Bash(wails generate:*)",
+      "WebSearch",
+      "WebFetch(domain:help.hancom.com)",
+      "WebFetch(domain:store.hancom.com)",
+      "WebFetch(domain:martinii.fun)",
+      "WebFetch(domain:forum.developer.hancom.com)",
+      "WebFetch(domain:documents.sdk.hancom.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:cdn.hancom.com)",
+      "WebFetch(domain:jar-download.com)",
+      "WebFetch(domain:playbooks.com)",
+      "WebFetch(domain:developer.hancom.com)",
+      "WebFetch(domain:velog.io)",
+      "WebFetch(domain:martiniifun.github.io)",
+      "WebFetch(domain:www.inflearn.com)",
+      "Bash(powershell -NoProfile -Command \"Get-Printer | Select-Object Name | Format-Table -AutoSize\" 2>&1)",
+      "Bash(npx tsc:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
