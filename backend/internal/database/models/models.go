@@ -63,9 +63,24 @@ type User struct {
 	TaskName     string    `json:"task_name,omitempty" gorm:"type:varchar(50)"`
 	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`
 	PasswordHash string    `json:"-" gorm:"type:varchar(255)"`
+	PIN          string    `json:"-" gorm:"type:varchar(20)"`                // For student login
+	ParentPhone  string    `json:"parent_phone,omitempty" gorm:"type:varchar(20);index"` // For parent auto-linking
 	IsActive     bool      `json:"is_active" gorm:"default:true"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+
+	School School `json:"school,omitempty" gorm:"foreignKey:SchoolID"`
+}
+
+// RegisteredDevice represents a device authorized to access student content.
+type RegisteredDevice struct {
+	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	DeviceID  string    `json:"device_id" gorm:"type:varchar(100);uniqueIndex;not null"`
+	SchoolID  uuid.UUID `json:"school_id" gorm:"type:uuid;index;not null"`
+	Name      string    `json:"name" gorm:"type:varchar(100)"`
+	IsActive  bool      `json:"is_active" gorm:"default:true"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	School School `json:"school,omitempty" gorm:"foreignKey:SchoolID"`
 }

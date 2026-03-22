@@ -50,6 +50,15 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.SchoolVoting{},
 		&models.EventRecord{},
 		&models.ParentStudent{},
+		&models.RegisteredDevice{},
+		&models.SchoolDocumentChunk{},
+		&models.SchoolAIChat{},
+		&models.ClassAssignmentSession{},
+		&models.ParentClassRequest{},
+		&models.Facility{},
+		&models.FacilityReservation{},
+		&models.TaskHandover{},
+		&models.MultiEvaluation{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto-migrate: %w", err)

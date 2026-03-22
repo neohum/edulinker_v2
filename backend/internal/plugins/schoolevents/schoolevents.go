@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/edulinker/backend/internal/core/middleware"
+	"github.com/edulinker/backend/internal/core/rag"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -11,11 +12,12 @@ import (
 )
 
 type Plugin struct {
-	db *gorm.DB
+	db     *gorm.DB
+	ragSvc *rag.Service
 }
 
-func New(db *gorm.DB) *Plugin {
-	return &Plugin{db: db}
+func New(db *gorm.DB, ragSvc *rag.Service) *Plugin {
+	return &Plugin{db: db, ragSvc: ragSvc}
 }
 
 func (p *Plugin) ID() string      { return "schoolevents" }
@@ -86,6 +88,11 @@ func (p *Plugin) createVoting(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create voting event"})
 	}
 
+	// Index for RAG
+	if p.ragSvc != nil {
+		go p.ragSvc.IndexDocument(schoolID, "voting", vote.ID, "[투표] "+vote.Title, vote.Content, "")
+	}
+
 	return c.Status(fiber.StatusCreated).JSON(vote)
 }
 
@@ -119,6 +126,11 @@ func (p *Plugin) createEventRecord(c *fiber.Ctx) error {
 
 	if err := p.db.Create(&record).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create event record"})
+	}
+
+	// Index for RAG
+	if p.ragSvc != nil {
+		go p.ragSvc.IndexDocument(schoolID, "event", record.ID, "[행사] "+record.Title, "행사 유형: "+record.EventType, "")
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(record)

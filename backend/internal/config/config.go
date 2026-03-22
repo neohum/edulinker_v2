@@ -69,13 +69,22 @@ func (d DatabaseConfig) DSN() string {
 }
 
 // Load reads configuration from environment variables with defaults.
-func Load() *Config {
-	if err := godotenv.Load(); err != nil {
-		godotenv.Load("../.env")    // fallback for tests or different cwd
-		godotenv.Load("../../.env") // fallback
+// It returns an error if essential configuration is missing.
+func Load() (*Config, error) {
+	// Try loading .env files in order of proximity
+	godotenv.Load()
+	godotenv.Load("../.env")
+	godotenv.Load("../../.env")
+
+	// Essential configuration check
+	requiredEnvs := []string{"JWT_SECRET", "DB_PASSWORD"}
+	for _, env := range requiredEnvs {
+		if os.Getenv(env) == "" {
+			return nil, fmt.Errorf("essential environment variable %s is missing", env)
+		}
 	}
 
-	return &Config{
+	cfg := &Config{
 		Server: ServerConfig{
 			Host: getEnv("SERVER_HOST", "0.0.0.0"),
 			Port: getEnv("SERVER_PORT", "8080"),
@@ -83,8 +92,8 @@ func Load() *Config {
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
-			User:     getEnv("DB_USER", "edulinker"),
-			Password: getEnv("DB_PASSWORD", "edulinker"),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: os.Getenv("DB_PASSWORD"),
 			DBName:   getEnv("DB_NAME", "edulinker"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
@@ -97,7 +106,7 @@ func Load() *Config {
 		MinIO: MinIOConfig{
 			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
 			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"), // Local dev default
 			Bucket:    getEnv("MINIO_BUCKET", "edulinker-local"),
 			UseSSL:    false,
 		},
@@ -109,11 +118,13 @@ func Load() *Config {
 			Bucket:    getEnv("WASABI_BUCKET", "edulinker"),
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "edulinker-dev-secret-change-me"),
+			Secret:          os.Getenv("JWT_SECRET"),
 			ExpiryHours:     24,
 			RefreshExpiryHr: 168, // 7 days
 		},
 	}
+
+	return cfg, nil
 }
 
 func getEnv(key, fallback string) string {

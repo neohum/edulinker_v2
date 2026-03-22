@@ -27,13 +27,14 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// StudentLoginRequest for student login by school/grade/class/number/name.
+// StudentLoginRequest for student login by school/grade/class/number/name + PIN.
 type StudentLoginRequest struct {
 	SchoolCode string `json:"school_code"`
 	Grade      int    `json:"grade"`
 	ClassNum   int    `json:"class_num"`
 	Number     int    `json:"number"`
 	Name       string `json:"name"`
+	PIN        string `json:"pin"`
 }
 
 // RegisterRequest for self-registration (public).
@@ -171,13 +172,29 @@ func (h *AuthHandler) StudentLogin(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "학교코드, 학년, 반, 번호, 이름을 모두 입력해주세요"})
 	}
 
-	// Find school by code
+	// 1. Device Binding Check (Required for students)
+	deviceID := c.Get("X-Device-ID")
+	if deviceID == "" {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "허가되지 않은 기기입니다. 학교 내 지정된 PC를 이용해 주세요."})
+	}
+
+	var registeredDevice models.RegisteredDevice
+	if err := h.db.Where("device_id = ? AND is_active = ?", deviceID, true).First(&registeredDevice).Error; err != nil {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "등록되지 않은 기기입니다. 관리자에게 문의하세요."})
+	}
+
+	// 2. Find school by code
 	var school models.School
 	if err := h.db.Where("code = ?", req.SchoolCode).First(&school).Error; err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "등록되지 않은 학교입니다"})
 	}
 
-	// Find student by school + grade + class + number + name
+	// Device must belong to the school
+	if registeredDevice.SchoolID != school.ID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "해당 학교에서 허가된 기기가 아닙니다"})
+	}
+
+	// 3. Find student by school + grade + class + number + name
 	var user models.User
 	result := h.db.Preload("School").Where(
 		"school_id = ? AND role = ? AND grade = ? AND class_num = ? AND number = ? AND name = ?",
@@ -185,6 +202,11 @@ func (h *AuthHandler) StudentLogin(c *fiber.Ctx) error {
 	).First(&user)
 	if result.Error != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "등록되지 않은 학생입니다. 선생님에게 문의하세요."})
+	}
+
+	// 4. PIN Check (If set)
+	if user.PIN != "" && user.PIN != req.PIN {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "PIN 번호가 일치하지 않습니다"})
 	}
 
 	if !user.IsActive {

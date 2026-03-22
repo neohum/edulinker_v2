@@ -27,7 +27,9 @@ type PdfConvertResult struct {
 //   - XLSX/XLS : Uses Excel COM via PowerShell to export each page as PNG (ExportAsFixedFormat+render).
 //   - PDF      : Copies the PDF and attempts WinRT page conversion; falls back gracefully.
 func (a *App) ConvertToPdfAndImages(inputName string, inputBase64 string) PdfConvertResult {
-	log.Printf("[PdfConv] Start: %s", inputName)
+	// Sanitize inputName
+	safeInputName := filepath.Base(inputName)
+	log.Printf("[PdfConv] Start: %s", safeInputName)
 
 	fileData, err := base64.StdEncoding.DecodeString(inputBase64)
 	if err != nil {
@@ -40,13 +42,13 @@ func (a *App) ConvertToPdfAndImages(inputName string, inputBase64 string) PdfCon
 	}
 	defer os.RemoveAll(tmpDir)
 
-	inputPath := filepath.Join(tmpDir, inputName)
+	inputPath := filepath.Join(tmpDir, safeInputName)
 	if err := os.WriteFile(inputPath, fileData, 0644); err != nil {
 		return PdfConvertResult{Error: "임시 파일 저장 실패"}
 	}
 
-	ext := strings.ToLower(filepath.Ext(inputName))
-	baseName := strings.TrimSuffix(inputName, filepath.Ext(inputName))
+	ext := strings.ToLower(filepath.Ext(safeInputName))
+	baseName := strings.TrimSuffix(safeInputName, filepath.Ext(safeInputName))
 	pdfPath := filepath.Join(tmpDir, baseName+".pdf")
 	imgDir := filepath.Join(tmpDir, "pages")
 	os.MkdirAll(imgDir, 0755)
@@ -316,21 +318,22 @@ func (a *App) extractHwpPagesDirect(inputPath, outDir string) []string {
 
 // convertExcelToPdfDirect uses ExportAsFixedFormat via PowerShell Excel COM.
 func convertExcelToPdfDirect(inputPath, outputPath string) error {
-	psCmd := fmt.Sprintf(`
+	psCmd := `
+param([string]$InputPath, [string]$OutputPath)
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
-    $wb = $excel.Workbooks.Open('%s', 0, $true)
-    $wb.ExportAsFixedFormat(0, '%s')
+    $wb = $excel.Workbooks.Open($InputPath, 0, $true)
+    $wb.ExportAsFixedFormat(0, $OutputPath)
     $wb.Close($false)
 } finally {
     $excel.Quit()
     [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
-`, inputPath, outputPath)
+`
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd, "-InputPath", inputPath, "-OutputPath", outputPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Excel PDF 변환 실패: %v\n%s", err, string(out))
@@ -349,17 +352,19 @@ func extractExcelPages(inputPath, outDir string) []string {
 	// so we export the whole workbook as PDF then use Windows.Data.Pdf WinRT
 	// — but since WinRT may be unreliable, we use a simpler approach:
 	// Export each SHEET as an image using ActiveSheet.CopyPicture + Chart.Export.
-	psCmd := fmt.Sprintf(`
+	psCmd := `
+param([string]$InputPath, [string]$OutDir)
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $results = @()
 try {
-    $wb = $excel.Workbooks.Open('%s', 0, $true)
+    $wb = $excel.Workbooks.Open($InputPath, 0, $true)
     $sheetIdx = 0
     foreach ($ws in $wb.Worksheets) {
         $sheetIdx++
-        $outPath = '%s\sheet_{0:D4}.png' -f $sheetIdx
+        $fileName = "sheet_{0:D4}.png" -f $sheetIdx
+        $outPath = Join-Path $OutDir $fileName
         try {
             # Select used range
             $range = $ws.UsedRange
@@ -380,9 +385,9 @@ try {
     $excel.Quit()
     [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
-`, inputPath, outDir)
+`
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd, "-InputPath", inputPath, "-OutDir", outDir)
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	log.Printf("[PdfConv] Excel page export:\n%s", output)

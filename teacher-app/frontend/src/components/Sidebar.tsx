@@ -36,12 +36,14 @@ const pluginGroupB: NavItem[] = [
 ]
 
 const pluginGroupC: NavItem[] = [
+  { id: 'schooladmin', label: '행정 및 인사 관리', icon: 'fi fi-rr-briefcase' },
   { id: 'teacherhr', label: '교사인사·복무', icon: 'fi fi-rr-building' },
 ]
 
 const pluginGroupD: NavItem[] = [
   { id: 'studentmgmt', label: '학생관리', icon: 'fi fi-rr-graduation-cap' },
   { id: 'counseling', label: '상담', icon: 'fi fi-rr-comments' },
+  { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users-class' },
 ]
 
 const pluginGroupE: NavItem[] = [
@@ -59,6 +61,7 @@ const pluginGroupH: NavItem[] = [
 const pluginGroupI: NavItem[] = [
   { id: 'linker', label: 'linker', icon: 'fi fi-rr-link' },
   { id: 'pcinfo', label: 'pc-info', icon: 'fi fi-rr-computer' },
+  { id: 'resourcemgmt', label: '시설 예약', icon: 'fi fi-rr-building' },
 ]
 
 const systemItems: NavItem[] = [
@@ -67,19 +70,37 @@ const systemItems: NavItem[] = [
 
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    groupA: true,
-    groupB: true,
-    groupD: true,
-    groupE: true,
-    groupG: true,
-    groupH: true,
-    groupI: true,
-    system: true,
+  
+  // Load saved group states or default to all closed
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('sidebar_open_groups')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch (e) {
+        console.error('Failed to parse sidebar states', e)
+      }
+    }
+    // Default: All closed except system
+    return {
+      groupA: false,
+      groupB: false,
+      groupC: false,
+      groupD: false,
+      groupE: false,
+      groupG: false,
+      groupH: false,
+      groupI: false,
+      system: true,
+    }
   })
 
   const toggleGroup = (groupId: string) => {
-    setOpenGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
+    setOpenGroups(prev => {
+      const next = { ...prev, [groupId]: !prev[groupId] }
+      localStorage.setItem('sidebar_open_groups', JSON.stringify(next))
+      return next
+    })
   }
 
   const roleLabel: Record<string, string> = {

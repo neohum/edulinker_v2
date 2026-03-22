@@ -2,9 +2,11 @@ package gatong
 
 import (
 	"log"
+	"time"
 
 	"github.com/edulinker/backend/internal/core/middleware"
 	"github.com/edulinker/backend/internal/core/notify"
+	"github.com/edulinker/backend/internal/core/rag"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -14,10 +16,11 @@ import (
 type Plugin struct {
 	db        *gorm.DB
 	notifySvc *notify.NotificationService
+	ragSvc    *rag.Service
 }
 
-func New(db *gorm.DB, notifySvc *notify.NotificationService) *Plugin {
-	return &Plugin{db: db, notifySvc: notifySvc}
+func New(db *gorm.DB, notifySvc *notify.NotificationService, ragSvc *rag.Service) *Plugin {
+	return &Plugin{db: db, notifySvc: notifySvc, ragSvc: ragSvc}
 }
 
 func (p *Plugin) ID() string      { return "gatong" }
@@ -46,6 +49,35 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	viewerAPI := router.Group("/view", middleware.RoleMiddleware(models.RoleParent, models.RoleStudent))
 	viewerAPI.Get("/", p.listGatongsForUser)
 	viewerAPI.Post("/:id/respond", p.submitResponse)
+	viewerAPI.Post("/:id/add-to-todo", p.addToTodo) // 신규: 가통 내용을 할 일로 등록
+}
+
+func (p *Plugin) addToTodo(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(uuid.UUID)
+	gatongID := c.Params("id")
+
+	var gatong models.Gatong
+	if err := p.db.First(&gatong, "id = ?", gatongID).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "가정통신문을 찾을 수 없습니다."})
+	}
+
+	// Create a new Todo record for the user (using todo plugin's model structure concept)
+	// Note: We'll direct-save to the todos table since we share the DB
+	todo := map[string]interface{}{
+		"id":         uuid.New(),
+		"user_id":    userID,
+		"school_id":  gatong.SchoolID,
+		"title":      "[가통] " + gatong.Title,
+		"content":    gatong.Content,
+		"is_done":    false,
+		"created_at": time.Now(),
+	}
+
+	if err := p.db.Table("todos").Create(&todo).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "할 일 등록에 실패했습니다."})
+	}
+
+	return c.JSON(fiber.Map{"message": "나의 할 일(Todo)에 등록되었습니다."})
 }
 
 // Handlers
@@ -78,6 +110,11 @@ func (p *Plugin) createGatong(c *fiber.Ctx) error {
 
 	if err := p.db.Create(&gatong).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create gatong"})
+	}
+
+	// Index for RAG
+	if p.ragSvc != nil {
+		go p.ragSvc.IndexDocument(schoolID, "gatong", gatong.ID, gatong.Title, gatong.Content, "")
 	}
 
 	// Send notification using the notification service

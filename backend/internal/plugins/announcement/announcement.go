@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/edulinker/backend/internal/core/notify"
+	"github.com/edulinker/backend/internal/core/rag"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -46,11 +47,12 @@ type AnnouncementRead struct {
 type Plugin struct {
 	db        *gorm.DB
 	notifySvc *notify.NotificationService
+	ragSvc    *rag.Service
 }
 
-func New(db *gorm.DB, notifySvc *notify.NotificationService) *Plugin {
+func New(db *gorm.DB, notifySvc *notify.NotificationService, ragSvc *rag.Service) *Plugin {
 	db.AutoMigrate(&Announcement{}, &AnnouncementRead{})
-	return &Plugin{db: db, notifySvc: notifySvc}
+	return &Plugin{db: db, notifySvc: notifySvc, ragSvc: ragSvc}
 }
 
 func (p *Plugin) ID() string      { return "announcement" }
@@ -140,6 +142,11 @@ func (p *Plugin) create(c *fiber.Ctx) error {
 		DueDate:  req.DueDate,
 	}
 	p.db.Create(&ann)
+
+	// Index for RAG
+	if p.ragSvc != nil {
+		go p.ragSvc.IndexDocument(schoolID, "announcement", ann.ID, ann.Title, ann.Content, "")
+	}
 
 	// Send notification to all teachers in the school
 	if p.notifySvc != nil {

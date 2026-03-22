@@ -21,13 +21,16 @@ import HwpConverterPage from './HwpConverterPage'
 import XlsxConverterPage from './XlsxConverterPage'
 import PptxConverterPage from './PptxConverterPage'
 import CounselingPage from './CounselingPage'
+import ClassMgmtPage from './ClassMgmtPage'
+import ResourceMgmtPage from './ResourceMgmtPage'
+import SchoolAdminPage from './SchoolAdminPage'
 
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile'
+type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
@@ -81,6 +84,9 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'curriculum' && <CurriculumPage user={user} />}
           {currentPage === 'aianalysis' && <AIAnalysisPage onNavigate={(p) => setCurrentPage(p as PageView)} />}
           {currentPage === 'schoolevents' && <SchoolEventsPage />}
+          {currentPage === 'classmgmt' && <ClassMgmtPage />}
+          {currentPage === 'resourcemgmt' && <ResourceMgmtPage />}
+          {currentPage === 'schooladmin' && <SchoolAdminPage user={user} />}
 
           <div style={{ display: currentPage === 'messenger' ? 'block' : 'none', height: '100%' }}>
             <MessengerPage user={user} isActive={currentPage === 'messenger'} onUnreadChange={setUnreadMsgCount} />
@@ -98,7 +104,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'settings' && <SettingsPage />}
           {currentPage === 'profile' && <ProfilePage user={user} />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
+          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && currentPage !== 'classmgmt' && currentPage !== 'resourcemgmt' && currentPage !== 'schooladmin' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
         </div>
       </div>
     </div>
@@ -175,6 +181,9 @@ function getPageTitle(page: string): string {
     'pptx-converter': 'PPT to PDF 변환',
     settings: '설정',
     profile: '내 프로필',
+    classmgmt: '반편성 관리',
+    resourcemgmt: '시설 예약',
+    schooladmin: '행정 및 인사 관리',
   }
   return titles[page] || page
 }

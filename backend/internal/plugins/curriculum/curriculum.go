@@ -1,9 +1,11 @@
 package curriculum
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/edulinker/backend/internal/core/middleware"
+	"github.com/edulinker/backend/internal/core/rag"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -11,11 +13,12 @@ import (
 )
 
 type Plugin struct {
-	db *gorm.DB
+	db     *gorm.DB
+	ragSvc *rag.Service
 }
 
-func New(db *gorm.DB) *Plugin {
-	return &Plugin{db: db}
+func New(db *gorm.DB, ragSvc *rag.Service) *Plugin {
+	return &Plugin{db: db, ragSvc: ragSvc}
 }
 
 func (p *Plugin) ID() string      { return "curriculum" }
@@ -81,6 +84,12 @@ func (p *Plugin) createWeeklyPlan(c *fiber.Ctx) error {
 
 	if err := p.db.Create(&plan).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save weekly plan"})
+	}
+
+	// Index for RAG
+	if p.ragSvc != nil {
+		title := fmt.Sprintf("%s 주간학습안내: %s", plan.WeekStart.Format("2006-01-02"), plan.Title)
+		go p.ragSvc.IndexDocument(schoolID, "curriculum", plan.ID, title, plan.Content, "")
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(plan)

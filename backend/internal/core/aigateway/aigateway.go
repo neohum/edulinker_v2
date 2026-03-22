@@ -55,7 +55,7 @@ func (s *Service) autoCompleteDocument(c *fiber.Ctx) error {
 	systemPrompt := "당신은 학교 교무/행정 문서를 전문적으로 작성해주는 AI 어시스턴트입니다. 다음 주어진 키워드와 상황을 바탕으로, 격식있고 전문적인 학교 공문 또는 가정통신문 초안을 작성해주세요:\n\n"
 	fullPrompt := systemPrompt + req.Prompt
 
-	respText, err := s.callOllama(model, fullPrompt)
+	respText, err := s.GenerateAnswer(model, fullPrompt)
 	if err != nil {
 		log.Printf("[AIGW] Ollama execution failed with model %s: %v", model, err)
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
@@ -83,7 +83,7 @@ func (s *Service) summarizeText(c *fiber.Ctx) error {
 	systemPrompt := "다음 입력된 문서 내용을 한두 문장으로 핵심만 요약해주세요:\n\n"
 	fullPrompt := systemPrompt + req.Text
 
-	respText, err := s.callOllama(model, fullPrompt)
+	respText, err := s.GenerateAnswer(model, fullPrompt)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
 			"error": "AI 서비스 응답 실패 (요약)",
@@ -242,7 +242,8 @@ func (s *Service) deleteModel(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "success"})
 }
 
-func (s *Service) callOllama(model string, prompt string) (string, error) {
+// GenerateAnswer calls Ollama to generate a response for a given prompt.
+func (s *Service) GenerateAnswer(model string, prompt string) (string, error) {
 	ollamaReq := map[string]interface{}{
 		"model":  model,
 		"prompt": prompt,
@@ -282,6 +283,40 @@ func (s *Service) callOllama(model string, prompt string) (string, error) {
 	}
 
 	return "", fmt.Errorf("Ollama 응답 형식 오류")
+}
+
+// Embed generates embeddings for the given text using Ollama.
+func (s *Service) Embed(model string, input string) ([]float32, error) {
+	ollamaReq := map[string]interface{}{
+		"model":  model,
+		"prompt": input,
+	}
+
+	jsonData, err := json.Marshal(ollamaReq)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Post(s.ollamaURL+"/api/embeddings", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("Ollama embeddings connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Ollama embeddings error (Status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var ollamaResp struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return nil, err
+	}
+
+	return ollamaResp.Embedding, nil
 }
 
 func min(a, b int) int {

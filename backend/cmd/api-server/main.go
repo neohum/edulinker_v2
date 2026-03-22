@@ -15,6 +15,7 @@ import (
 	"github.com/edulinker/backend/internal/core/handlers"
 	"github.com/edulinker/backend/internal/core/middleware"
 	"github.com/edulinker/backend/internal/core/notify"
+	"github.com/edulinker/backend/internal/core/rag"
 	"github.com/edulinker/backend/internal/core/registry"
 	"github.com/edulinker/backend/internal/core/syncagent"
 	"github.com/edulinker/backend/internal/database"
@@ -22,11 +23,14 @@ import (
 	"github.com/edulinker/backend/internal/plugins/aianalysis"
 	"github.com/edulinker/backend/internal/plugins/announcement"
 	"github.com/edulinker/backend/internal/plugins/attendance"
+	"github.com/edulinker/backend/internal/plugins/classmgmt"
 	"github.com/edulinker/backend/internal/plugins/curriculum"
 	"github.com/edulinker/backend/internal/plugins/gatong"
 	"github.com/edulinker/backend/internal/plugins/linker"
 	"github.com/edulinker/backend/internal/plugins/messenger"
 	"github.com/edulinker/backend/internal/plugins/pcinfo"
+	"github.com/edulinker/backend/internal/plugins/resourcemgmt"
+	"github.com/edulinker/backend/internal/plugins/schooladmin"
 	"github.com/edulinker/backend/internal/plugins/schoolevents"
 	"github.com/edulinker/backend/internal/plugins/sendoc"
 	"github.com/edulinker/backend/internal/plugins/studentalert"
@@ -42,7 +46,10 @@ import (
 
 func main() {
 	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("❌ Configuration load failed: %v", err)
+	}
 
 	// Connect to database
 	db, err := database.Connect(cfg.Database)
@@ -96,23 +103,29 @@ func main() {
 	// Initialize AI Gateway (Proxy to local Ollama)
 	aiSvc := aigateway.NewService("http://localhost:11434")
 
+	// Initialize RAG Service
+	ragSvc := rag.NewService(db, aiSvc)
+
 	// Initialize plugin manager & register Phase 1 plugins
 	pluginMgr := registry.NewManager()
 
 	msgPlugin := messenger.New(db, wsHub)
 	todoPlugin := todo.New(db)
-	annPlugin := announcement.New(db, notifySvc)
+	annPlugin := announcement.New(db, notifySvc, ragSvc)
 	alertPlugin := studentalert.New(db, notifySvc)
 	attnPlugin := attendance.New(db, notifySvc)
-	gatongPlugin := gatong.New(db, notifySvc)
+	gatongPlugin := gatong.New(db, notifySvc, ragSvc)
 	sendocPlugin := sendoc.New(db)
 	smPlugin := studentmgmt.New(db)
-	curriculumPlugin := curriculum.New(db)
+	curriculumPlugin := curriculum.New(db, ragSvc)
 	aiPlugin := aianalysis.New(db)
-	eventsPlugin := schoolevents.New(db)
+	eventsPlugin := schoolevents.New(db, ragSvc)
 	linkerPlugin := linker.New(db)
 	pcPlugin := pcinfo.New(db)
 	screenPlugin := teacherscreen.New(db)
+	classPlugin := classmgmt.New(db, ragSvc)
+	resourcePlugin := resourcemgmt.New(db)
+	adminPlugin := schooladmin.New(db)
 
 	pluginMgr.Register(msgPlugin)
 	pluginMgr.Register(todoPlugin)
@@ -128,6 +141,9 @@ func main() {
 	pluginMgr.Register(linkerPlugin)
 	pluginMgr.Register(pcPlugin)
 	pluginMgr.Register(screenPlugin)
+	pluginMgr.Register(classPlugin)
+	pluginMgr.Register(resourcePlugin)
+	pluginMgr.Register(adminPlugin)
 
 	// Initialize SyncAgent (Bridge to Cloud)
 	syncURL := os.Getenv("SYNC_SERVER_URL")
@@ -225,29 +241,26 @@ func main() {
 
 	// --- Public parent routes (no auth) ---
 	parentHandler := handlers.NewParentHandler(db)
+	ragHandler := handlers.NewRAGHandler(db, ragSvc)
 	parentRoutes := api.Group("/parent")
 	parentRoutes.Get("/students/search", parentHandler.SearchStudents)
 	parentRoutes.Post("/link", parentHandler.LinkParent)
-
-	// --- Public file access (no auth req for viewing images) ---
-	if fileGW != nil {
-		fileHandler := handlers.NewFileHandler(fileGW)
-		api.Get("/core/files/:id", fileHandler.Download)
-	}
-
-	// --- Public linker route (no auth) ---
-	publicLinker := api.Group("/public/linker")
-	linkerPlugin.RegisterPublicRoutes(publicLinker)
-
-	// --- Public sendoc route (no auth) ---
-	publicSendoc := api.Group("/public/sendoc")
-	sendocPlugin.RegisterPublicRoutes(publicSendoc)
 
 	// --- Protected routes (require auth) ---
 	protected := api.Group("", middleware.AuthMiddleware(authSvc))
 	protected.Get("/auth/me", authHandler.Me)
 	protected.Get("/parent/my-students", parentHandler.GetLinkedStudents)
 	protected.Get("/parent/student-links", parentHandler.GetStudentParentStatus)
+	protected.Post("/parent/auto-link", parentHandler.AutoLinkStudents)
+	protected.Post("/parent/ai/query", ragHandler.Query)
+	protected.Get("/parent/ai/history", ragHandler.GetHistory)
+
+	// --- Device management ---
+	deviceHandler := handlers.NewDeviceHandler(db)
+	deviceRoutes := protected.Group("/core/devices", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin))
+	deviceRoutes.Post("/register", deviceHandler.RegisterDevice)
+	deviceRoutes.Get("/", deviceHandler.ListDevices)
+	deviceRoutes.Delete("/:id", deviceHandler.DeactivateDevice)
 
 	// Mount AI Gateway under protected group
 	aiSvc.RegisterRoutes(protected.Group("/core"))

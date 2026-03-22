@@ -35,17 +35,19 @@ type CreateUserRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Name       string  `json:"name,omitempty"`
-	Phone      string  `json:"phone,omitempty"`
-	ClassPhone string  `json:"class_phone,omitempty"`
-	Email      string  `json:"email,omitempty"`
-	IsActive   *bool   `json:"is_active,omitempty"`
-	Grade      *int    `json:"grade,omitempty"`
-	ClassNum   *int    `json:"class_num,omitempty"`
-	Department *string `json:"department,omitempty"`
-	TaskName   *string `json:"task_name,omitempty"`
-	Gender     *string `json:"gender,omitempty"`
-	Number     *int    `json:"number,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	Phone       string  `json:"phone,omitempty"`
+	ClassPhone  string  `json:"class_phone,omitempty"`
+	Email       string  `json:"email,omitempty"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+	Grade       *int    `json:"grade,omitempty"`
+	ClassNum    *int    `json:"class_num,omitempty"`
+	Department  *string `json:"department,omitempty"`
+	TaskName    *string `json:"task_name,omitempty"`
+	Gender      *string `json:"gender,omitempty"`
+	Number      *int    `json:"number,omitempty"`
+	PIN         *string `json:"pin,omitempty"`
+	ParentPhone *string `json:"parent_phone,omitempty"`
 }
 
 type UserListResponse struct {
@@ -63,10 +65,12 @@ type ImportStudentResult struct {
 }
 
 type AddStudentRequest struct {
-	Grade    int    `json:"grade"`
-	ClassNum int    `json:"class_num"`
-	Number   int    `json:"number"`
-	Name     string `json:"name"`
+	Grade       int    `json:"grade"`
+	ClassNum    int    `json:"class_num"`
+	Number      int    `json:"number"`
+	Name        string `json:"name"`
+	PIN         string `json:"pin,omitempty"`
+	ParentPhone string `json:"parent_phone,omitempty"`
 }
 
 // ── Handlers ──
@@ -264,6 +268,12 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	if req.Number != nil {
 		user.Number = *req.Number
 	}
+	if req.PIN != nil {
+		user.PIN = *req.PIN
+	}
+	if req.ParentPhone != nil {
+		user.ParentPhone = *req.ParentPhone
+	}
 
 	h.db.Save(&user)
 	h.db.Preload("School").First(&user, "id = ?", user.ID)
@@ -362,13 +372,15 @@ func (h *UserHandler) AddStudent(c *fiber.Ctx) error {
 	}
 
 	student := models.User{
-		SchoolID: schoolID,
-		Name:     req.Name,
-		Role:     models.RoleStudent,
-		Grade:    req.Grade,
-		Class:    req.ClassNum,
-		Number:   req.Number,
-		IsActive: true,
+		SchoolID:    schoolID,
+		Name:        req.Name,
+		Role:        models.RoleStudent,
+		Grade:       req.Grade,
+		Class:       req.ClassNum,
+		Number:      req.Number,
+		PIN:         req.PIN,
+		ParentPhone: req.ParentPhone,
+		IsActive:    true,
 	}
 
 	if err := h.db.Create(&student).Error; err != nil {
@@ -419,7 +431,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 
 	// Detect column indices from header row
 	header := rows[0]
-	gradeCol, classCol, numCol, nameCol, genderCol := -1, -1, -1, -1, -1
+	gradeCol, classCol, numCol, nameCol, genderCol, parentPhoneCol, pinCol := -1, -1, -1, -1, -1, -1, -1
 	for i, cell := range header {
 		cell = strings.TrimSpace(cell)
 		switch {
@@ -433,6 +445,10 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			nameCol = i
 		case strings.Contains(cell, "성별") || strings.Contains(cell, "gender"):
 			genderCol = i
+		case strings.Contains(cell, "학부모"):
+			parentPhoneCol = i
+		case strings.Contains(cell, "PIN"):
+			pinCol = i
 		}
 	}
 
@@ -489,11 +505,21 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			continue
 		}
 
+		parentPhone := ""
+		if parentPhoneCol >= 0 && parentPhoneCol < len(row) {
+			parentPhone = strings.TrimSpace(row[parentPhoneCol])
+		}
+
+		pin := ""
+		if pinCol >= 0 && pinCol < len(row) {
+			pin = strings.TrimSpace(row[pinCol])
+		}
+
 		// Check if student already exists (same school + grade + class + number)
 		var existing models.User
 		if h.db.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ? AND number = ?",
 			schoolID, models.RoleStudent, grade, classNum, number).First(&existing).Error == nil {
-			// Update name/gender if changed
+			// Update name/gender/phone/pin if changed
 			updated := false
 			if existing.Name != name {
 				existing.Name = name
@@ -501,6 +527,14 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			}
 			if gender != "" && existing.Gender != gender {
 				existing.Gender = gender
+				updated = true
+			}
+			if parentPhone != "" && existing.ParentPhone != parentPhone {
+				existing.ParentPhone = parentPhone
+				updated = true
+			}
+			if pin != "" && existing.PIN != pin {
+				existing.PIN = pin
 				updated = true
 			}
 			if updated {
@@ -512,14 +546,16 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 
 		// Create student
 		student := models.User{
-			SchoolID: schoolID,
-			Name:     name,
-			Role:     models.RoleStudent,
-			Grade:    grade,
-			Class:    classNum,
-			Number:   number,
-			Gender:   gender,
-			IsActive: true,
+			SchoolID:    schoolID,
+			Name:        name,
+			Role:        models.RoleStudent,
+			Grade:       grade,
+			Class:       classNum,
+			Number:      number,
+			Gender:      gender,
+			ParentPhone: parentPhone,
+			PIN:         pin,
+			IsActive:    true,
 		}
 
 		if err := h.db.Create(&student).Error; err != nil {
@@ -541,7 +577,7 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	f.SetSheetName("Sheet1", sheet)
 
 	// Header row with style
-	headers := []string{"학년", "반", "번호", "이름", "성별"}
+	headers := []string{"학년", "반", "번호", "이름", "성별", "학부모 전화번호", "PIN"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
@@ -549,8 +585,8 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 
 	// Sample rows
 	samples := [][]interface{}{
-		{3, 2, 1, "홍길동", "남"},
-		{3, 2, 2, "김영희", "여"},
+		{3, 2, 1, "홍길동", "남", "010-1234-5678", "1234"},
+		{3, 2, 2, "김영희", "여", "010-9876-5432", "5678"},
 	}
 	for r, row := range samples {
 		for col, val := range row {
@@ -560,11 +596,14 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	}
 
 	// Column widths
-	f.SetColWidth(sheet, "A", "D", 10)
-	f.SetColWidth(sheet, "E", "E", 8)
+	f.SetColWidth(sheet, "A", "C", 8)
+	f.SetColWidth(sheet, "D", "E", 10)
+	f.SetColWidth(sheet, "F", "F", 15)
+	f.SetColWidth(sheet, "G", "G", 10)
 
 	// Add note row
 	f.SetCellValue(sheet, "A5", "※ 성별 입력: 남 또는 여")
+	f.SetCellValue(sheet, "A6", "※ PIN: 학생이 지정된 기기에서 로그인할 때 사용하는 비밀번호입니다 (숫자 4~6자 권장)")
 
 	// Write to buffer
 	buf, err := f.WriteToBuffer()

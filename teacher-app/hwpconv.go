@@ -50,16 +50,17 @@ func (a *App) startHwpWorker() {
 
 func (a *App) enforceHwpProcessLimit(maxCount int) {
 	// PowerShell script to forcefully kill the oldest HWP processes if the count exceeds maxCount
-	psCmd := fmt.Sprintf(`
+	psCmd := `
+param([int]$MaxCount)
 $procs = @(Get-Process -Name "Hwp" -ErrorAction SilentlyContinue)
-if ($procs.Count -gt %d) {
-    $toKill = $procs | Sort-Object StartTime | Select-Object -First ($procs.Count - %d)
+if ($procs.Count -gt $MaxCount) {
+    $toKill = $procs | Sort-Object StartTime | Select-Object -First ($procs.Count - $MaxCount)
     foreach ($p in $toKill) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
     }
 }
-`, maxCount, maxCount)
-	exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Run()
+`
+	exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd, "-MaxCount", fmt.Sprintf("%d", maxCount)).Run()
 }
 
 func (a *App) ensureHwpObject() error {
@@ -374,10 +375,12 @@ func (a *App) QuitHwp() {
 }
 
 func (a *App) ConvertHwp(inputName string, inputBase64 string, outputType string) HwpConvertResult {
+	// Sanitize inputName to prevent path traversal/injection
+	safeInputName := filepath.Base(inputName)
 	hwpData, _ := base64.StdEncoding.DecodeString(inputBase64)
 	tmpDir, _ := os.MkdirTemp("", "hwp_")
 	defer os.RemoveAll(tmpDir)
-	inputPath := filepath.Join(tmpDir, inputName)
+	inputPath := filepath.Join(tmpDir, safeInputName)
 	os.WriteFile(inputPath, hwpData, 0644)
 
 	ext := ".pdf"
@@ -484,6 +487,8 @@ type HwpPagesResult struct {
 // ConvertHwpToPages converts HWP/HWPX to per-page PNG images (one image per page).
 // Uses HWP→PDF→per-page PNG pipeline to avoid facing-pages merging issue.
 func (a *App) ConvertHwpToPages(inputName string, inputBase64 string) HwpPagesResult {
+	// Sanitize inputName
+	safeInputName := filepath.Base(inputName)
 	hwpData, err := base64.StdEncoding.DecodeString(inputBase64)
 	if err != nil {
 		return HwpPagesResult{Error: "데이터 디코딩 실패"}
@@ -495,7 +500,7 @@ func (a *App) ConvertHwpToPages(inputName string, inputBase64 string) HwpPagesRe
 	}
 	defer os.RemoveAll(tmpDir)
 
-	inputPath := filepath.Join(tmpDir, inputName)
+	inputPath := filepath.Join(tmpDir, safeInputName)
 	os.WriteFile(inputPath, hwpData, 0644)
 
 	imgDir := filepath.Join(tmpDir, "pages")
