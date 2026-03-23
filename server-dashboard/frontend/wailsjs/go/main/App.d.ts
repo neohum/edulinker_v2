@@ -30,4 +30,6 @@ export function StartServer():Promise<void>;
 
 export function StopServer():Promise<void>;
 
+export function UpdateDBUserPosition(arg1:string,arg2:string):Promise<void>;
+
 export function UpdateDBUserRole(arg1:string,arg2:string):Promise<void>;

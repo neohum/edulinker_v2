@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 import { getToken } from '../api'
 import { GetAIBenchmark } from '../../wailsjs/go/main/App'
 import type { UserInfo } from '../App'
@@ -24,6 +25,7 @@ interface PCRecord {
 }
 
 interface ExtendedSpecs {
+  hostname?: string
   ip_address: string
   mac_address: string
   cpu_name: string
@@ -50,6 +52,14 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
 
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm])
 
   const [formData, setFormData] = useState({
     id: '',
@@ -201,11 +211,67 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
     }
   }
 
+  const handleExportExcel = () => {
+    if (records.length === 0) {
+      toast.error('내보낼 데이터가 없습니다.')
+      return
+    }
+
+    const excelData = records.map(r => ({
+      '학년/부서': r.grade > 0 ? `${r.grade}학년 ${r.class_num}반` : (r.department || '—'),
+      '사용자': r.user_name || '—',
+      '프린터 정보': r.printers || '없음',
+      '모니터 정보': r.monitors || '없음',
+      'IP 주소': r.ip_address,
+      'MAC 주소': r.mac_address,
+      'CPU': r.cpu || '—',
+      '메모리 (RAM)': r.ram || '—',
+      '위치': r.location || '—',
+      '라벨': r.label || '—',
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(excelData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "자산관리현황")
+
+    // Adjust column widths
+    const colWidths = [
+      { wch: 15 }, // 학년/부서
+      { wch: 12 }, // 사용자
+      { wch: 30 }, // 프린터
+      { wch: 30 }, // 모니터
+      { wch: 15 }, // IP
+      { wch: 20 }, // MAC
+      { wch: 35 }, // CPU
+      { wch: 15 }, // RAM
+      { wch: 15 }, // 위치
+      { wch: 15 }, // 라벨
+    ];
+    ws['!cols'] = colWidths;
+
+    XLSX.writeFile(wb, `교내_PC_자산관리현황_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
+  const filteredRecords = records.filter(r =>
+    (r.hostname || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.user_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.department || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.ip_address || '').includes(searchTerm) ||
+    (r.mac_address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.label || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.location || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.printers || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (r.monitors || '').toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const totalPages = Math.ceil(filteredRecords.length / itemsPerPage)
+  const currentRecords = filteredRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+
   const fillWithCurrentPC = () => {
     if (!mySpecs) return
     setFormData({
       id: '',
-      hostname: '현재 PC (교사)',
+      hostname: mySpecs.hostname || '현재 PC (교사)',
       ip_address: mySpecs.ip_address || '',
       mac_address: mySpecs.mac_address || '',
       os: 'Windows 10/11',
@@ -292,7 +358,20 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
             교내 PC 자산 관리 현황
           </h3>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => { setFormData({ id: '', hostname: '', ip_address: '', mac_address: '', os: '', cpu: '', ram: '', location: '', label: '', grade: 0, class_num: 0, department: '', user_name: '', printers: '', monitors: '' }); setShowAddModal(true); }} 
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <i className="fi fi-rr-search" style={{ position: 'absolute', left: 12, color: '#94a3b8', fontSize: 14 }} />
+              <input
+                type="text"
+                placeholder="검색어 입력..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ padding: '8px 12px 8px 32px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, width: 200, outline: 'none' }}
+              />
+            </div>
+            <button onClick={handleExportExcel} style={{ background: 'white', color: '#10b981', padding: '8px 16px', borderRadius: 8, border: '1px solid #10b981', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className="fi fi-rr-download" /> 엑셀 다운로드
+            </button>
+            <button onClick={() => { setFormData({ id: '', hostname: '', ip_address: '', mac_address: '', os: '', cpu: '', ram: '', location: '', label: '', grade: 0, class_num: 0, department: '', user_name: '', printers: '', monitors: '' }); setShowAddModal(true); }}
               style={{ background: 'white', color: '#2563eb', padding: '8px 16px', borderRadius: 8, border: '1px solid #2563eb', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
               수동 등록
             </button>
@@ -309,13 +388,13 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
                 <th style={{ padding: '12px 16px' }}>학년/반/부서</th>
                 <th style={{ padding: '12px 16px' }}>사용자</th>
                 <th style={{ padding: '12px 16px' }}>장치 정보 (프린터/모니터)</th>
-                <th style={{ padding: '12px 16px' }}>IP/MAC</th>
+                <th style={{ padding: '12px 16px' }}>네트워크 / 사양</th>
                 <th style={{ padding: '12px 16px' }}>위치/라벨</th>
                 <th style={{ padding: '12px 16px' }}>관리</th>
               </tr>
             </thead>
             <tbody>
-              {records.map(r => (
+              {currentRecords.map(r => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ fontWeight: 700, color: r.grade > 0 ? '#4f46e5' : '#475569' }}>
@@ -324,12 +403,30 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
                   </td>
                   <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.user_name || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>🖨️ {r.printers || '없음'}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>🖥️ {r.monitors || '없음'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-primary)', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      <span>🖨️</span>
+                      {!r.printers || r.printers === '없음' ? '없음' : r.printers.split(',').map((p, i, arr) => {
+                        const q = p.trim().replace(/\s*\(\d+인치\)/, '');
+                        return <span key={i}><a href={`https://search.naver.com/search.naver?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'} onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'} title={`${q} 검색`}>{p.trim()}</a>{i < arr.length - 1 ? ', ' : ''}</span>
+                      })}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      <span>🖥️</span>
+                      {!r.monitors || r.monitors === '없음' ? '없음' : r.monitors.split(',').map((m, i, arr) => {
+                        const q = m.trim().replace(/\s*\(\d+인치\)/, '');
+                        return <span key={i}><a href={`https://search.naver.com/search.naver?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer" style={{ color: '#2563eb', textDecoration: 'none' }} onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'} onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'} title={`${q} 검색`}>{m.trim()}</a>{i < arr.length - 1 ? ', ' : ''}</span>
+                      })}
+                    </div>
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                    <div>{r.ip_address}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>{r.mac_address}</div>
+                    <div><span style={{ color: '#94a3b8', fontSize: 11 }}>IP </span>{r.ip_address}</div>
+                    <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}><span style={{ color: '#94a3b8', fontSize: 11 }}>MAC </span>{r.mac_address}</div>
+                    {(r.cpu || r.ram) && (
+                      <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed #e2e8f0' }}>
+                        {r.cpu && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}><span style={{ color: '#94a3b8', fontSize: 11 }}>CPU </span>{r.cpu}</div>}
+                        {r.ram && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}><span style={{ color: '#94a3b8', fontSize: 11 }}>RAM </span>{r.ram}</div>}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div>{r.location || '—'}</div>
@@ -343,8 +440,80 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
                   </td>
                 </tr>
               ))}
+              {currentRecords.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                    {searchTerm ? '검색 결과가 없습니다.' : '등록된 자산이 없습니다.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+
+          {totalPages > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 13, color: '#64748b' }}>
+                총 <span style={{ fontWeight: 600, color: '#0f172a' }}>{filteredRecords.length}</span>개 중 {(currentPage - 1) * itemsPerPage + 1}-{(currentPage - 1) * itemsPerPage + currentRecords.length}
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid var(--border)',
+                    background: currentPage === 1 ? '#f8fafc' : 'white',
+                    color: currentPage === 1 ? '#cbd5e1' : '#475569',
+                    borderRadius: 6,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 13
+                  }}
+                >
+                  이전
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                  // Show current page, edges, and +-2 from current
+                  if (page === 1 || page === totalPages || (page >= currentPage - 2 && page <= currentPage + 2)) {
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        style={{
+                          padding: '6px 12px',
+                          border: page === currentPage ? '1px solid #2563eb' : '1px solid var(--border)',
+                          background: page === currentPage ? '#2563eb' : 'white',
+                          color: page === currentPage ? 'white' : '#475569',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          fontSize: 13
+                        }}
+                      >
+                        {page}
+                      </button>
+                    )
+                  } else if (page === currentPage - 3 || page === currentPage + 3) {
+                    return <span key={page} style={{ padding: '6px 4px', color: '#94a3b8' }}>...</span>
+                  }
+                  return null;
+                })}
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 12px',
+                    border: '1px solid var(--border)',
+                    background: currentPage === totalPages ? '#f8fafc' : 'white',
+                    color: currentPage === totalPages ? '#cbd5e1' : '#475569',
+                    borderRadius: 6,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                    fontSize: 13
+                  }}
+                >
+                  다음
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -353,21 +522,21 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: 'white', padding: 24, borderRadius: 16, width: '100%', maxWidth: 550, maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>{showEditModal ? '자산 정보 수정' : '새 자산 등록'}</h3>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
                 <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#1e293b' }}>👤 담당자 정보</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>교사 성함</label>
-                  <input value={formData.user_name} onChange={e => setFormData({ ...formData, user_name: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input value={formData.user_name} onChange={e => setFormData({ ...formData, user_name: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>소속 부서</label>
-                  <input value={formData.department} onChange={e => setFormData({ ...formData, department: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input value={formData.department} onChange={e => setFormData({ ...formData, department: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>담당 학년</label>
-                  <input type="number" value={formData.grade || ''} onChange={e => setFormData({ ...formData, grade: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input type="number" value={formData.grade || ''} onChange={e => setFormData({ ...formData, grade: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>담당 반</label>
-                  <input type="number" value={formData.class_num || ''} onChange={e => setFormData({ ...formData, class_num: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input type="number" value={formData.class_num || ''} onChange={e => setFormData({ ...formData, class_num: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                 </div>
               </div>
 
@@ -389,19 +558,26 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
                 <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>💻 기기 정보</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>호스트명 *</label>
-                  <input value={formData.hostname} onChange={e => setFormData({ ...formData, hostname: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input value={formData.hostname} onChange={e => setFormData({ ...formData, hostname: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                   <div><label style={{ fontSize: 12, fontWeight: 600 }}>IP 주소</label>
-                  <input value={formData.ip_address} onChange={e => setFormData({ ...formData, ip_address: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                    <input value={formData.ip_address} onChange={e => setFormData({ ...formData, ip_address: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                 </div>
                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>MAC 주소 *</label>
-                <input value={formData.mac_address} disabled={showEditModal} onChange={e => setFormData({ ...formData, mac_address: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)', background: showEditModal ? '#f1f5f9' : 'white' }} /></div>
+                  <input value={formData.mac_address} disabled={showEditModal} onChange={e => setFormData({ ...formData, mac_address: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)', background: showEditModal ? '#f1f5f9' : 'white' }} /></div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                  <div><label style={{ fontSize: 12, fontWeight: 600 }}>CPU</label>
+                    <input value={formData.cpu} onChange={e => setFormData({ ...formData, cpu: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                  <div><label style={{ fontSize: 12, fontWeight: 600 }}>메모리 (RAM)</label>
+                    <input value={formData.ram} onChange={e => setFormData({ ...formData, ram: e.target.value })} placeholder="예: 16 GB" style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>설치 위치</label>
-                <input value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                  <input value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>관리 라벨</label>
-                <input value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
+                  <input value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)' }} /></div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>

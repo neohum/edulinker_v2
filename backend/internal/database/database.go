@@ -1,20 +1,61 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/edulinker/backend/internal/config"
 	"github.com/edulinker/backend/internal/core/filegateway"
 	"github.com/edulinker/backend/internal/core/notify"
 	"github.com/edulinker/backend/internal/database/models"
+	_ "github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
+// ensureDBExists connects to the default postgres database to create the target role and database if they don't exist.
+func ensureDBExists(cfg config.DatabaseConfig) error {
+	// Construct a DSN for the default 'postgres' database and 'postgres' user
+	defaultDSN := fmt.Sprintf("host=%s user=postgres password=postgres dbname=postgres port=%s sslmode=%s",
+		cfg.Host, cfg.Port, cfg.SSLMode)
+
+	db, err := sql.Open("postgres", defaultDSN)
+	if err != nil {
+		log.Printf("[WARN] Failed to connect to default postgres db (is it running?): %v", err)
+		return nil // We won't strictly fail here; let the main gorm.Open handle the connection error if it's really down
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		log.Printf("[WARN] Failed to ping default postgres db: %v", err)
+		return nil
+	}
+
+	// 1. Create Role
+	createRoleQuery := fmt.Sprintf("CREATE ROLE %s WITH LOGIN PASSWORD '%s';", cfg.User, cfg.Password)
+	_, err = db.Exec(createRoleQuery)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Printf("[WARN] Failed to create role %s: %v", cfg.User, err)
+	}
+
+	// 2. Create Database
+	createDBQuery := fmt.Sprintf("CREATE DATABASE %s OWNER %s;", cfg.DBName, cfg.User)
+	_, err = db.Exec(createDBQuery)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Printf("[WARN] Failed to create database %s: %v", cfg.DBName, err)
+	}
+
+	return nil
+}
+
 // Connect establishes a connection to PostgreSQL and runs auto-migration.
 func Connect(cfg config.DatabaseConfig) (*gorm.DB, error) {
+	// Ensure DB and Role exist before connecting
+	ensureDBExists(cfg)
+
 	db, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})

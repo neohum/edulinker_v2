@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 type DBUser = {
   id: string; name: string; phone: string; role: string;
   grade: number; class_num: number; number: number; gender: string; student_name: string;
-  school_name: string; is_active: boolean; created_at: string;
+  school_name: string; is_active: boolean; created_at: string; position?: string;
 };
 
 export default function UserManagement() {
@@ -144,6 +144,29 @@ export default function UserManagement() {
     ));
   };
 
+  const handleEditPosition = (id: string, currentPosition?: string) => {
+    toast.custom((t) => (
+      <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-[320px]">
+        <h3 className="font-bold mb-2">직위 / 직책 설정</h3>
+        <p className="text-xs text-slate-500 mb-3">사용자에게 교장, 교감 등의 직위를 부여합니다.</p>
+        <div className="flex gap-2">
+          <input id={`pos-${id}`} type="text" placeholder="예: 교장, 교감, 부장교사" defaultValue={currentPosition || ''}
+            className="flex-1 w-full px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <button onClick={async () => {
+            const el = document.getElementById(`pos-${id}`) as HTMLInputElement;
+            try {
+              await (window as any).go.main.App.UpdateDBUserPosition(id, el.value);
+              toast.success('직위가 변경되었습니다.');
+              toast.dismiss(t);
+              fetchUsers();
+            } catch (err: any) { toast.error(`변경 실패: ${err.message || err}`); }
+          }} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg transition-colors">저장</button>
+          <button onClick={() => toast.dismiss(t)} className="px-3 py-1.5 bg-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-300">취소</button>
+        </div>
+      </div>
+    ));
+  };
+
   /* ── filter logic ── */
   const applyFilters = (list: DBUser[]) => list.filter(u => {
     if (searchName && !u.name.includes(searchName)) return false;
@@ -256,13 +279,19 @@ export default function UserManagement() {
                     ) : u.role === 'parent' ? (
                       u.grade ? `${u.grade}학년 ${u.class_num}반 ${u.number}번 (${u.student_name || '자녀 미연동'})` : '-'
                     ) : (
-                      u.grade ? `${u.grade}학년 ${u.class_num}반` : '-'
+                      (u.grade ? `${u.grade}학년 ${u.class_num}반 ` : '') + (u.position ? `[${u.position}]` : '') || '-'
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-500 tabular-nums">{u.phone}</td>
                   <td className="px-4 py-3 text-right flex justify-end gap-1">
                     {tab === 'active' ? (
                       <>
+                        {u.role === 'teacher' && (
+                          <button onClick={() => handleEditPosition(u.id, u.position)}
+                            className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-600 dark:bg-blue-900/10 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded font-medium transition-colors">
+                            직위
+                          </button>
+                        )}
                         <button onClick={() => handleResetPassword(u.id)}
                           className="text-xs px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded font-medium transition-colors">
                           비밀번호

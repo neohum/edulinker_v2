@@ -61,9 +61,10 @@ type User struct {
 	Gender       string    `json:"gender,omitempty" gorm:"type:varchar(10);default:''"`
 	Department   string    `json:"department,omitempty" gorm:"type:varchar(50)"`
 	TaskName     string    `json:"task_name,omitempty" gorm:"type:varchar(50)"`
+	Position     string    `json:"position,omitempty" gorm:"type:varchar(50)"`
 	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`
 	PasswordHash string    `json:"-" gorm:"type:varchar(255)"`
-	PIN          string    `json:"-" gorm:"type:varchar(20)"`                // For student login
+	PIN          string    `json:"-" gorm:"type:varchar(20)"`                            // For student login
 	ParentPhone  string    `json:"parent_phone,omitempty" gorm:"type:varchar(20);index"` // For parent auto-linking
 	IsActive     bool      `json:"is_active" gorm:"default:true"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`

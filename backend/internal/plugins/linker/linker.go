@@ -11,17 +11,20 @@ import (
 // ── Models ──
 
 type Bookmark struct {
-	ID         uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SchoolID   uuid.UUID `json:"school_id" gorm:"type:uuid;index"`
-	UserID     uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
-	Title      string    `json:"title" gorm:"type:varchar(100);not null"`
-	URL        string    `json:"url" gorm:"type:varchar(500);not null"`
-	StudentURL string    `json:"student_url" gorm:"type:varchar(500);default:''"` // separate URL shown to students
-	Icon       string    `json:"icon,omitempty" gorm:"type:varchar(100)"`
-	Category   string    `json:"category" gorm:"type:varchar(50);default:'general'"`
-	SortOrder  int       `json:"sort_order" gorm:"default:0"`
-	IsShared   bool      `json:"is_shared" gorm:"default:false"` // shared with students
-	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID            uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SchoolID      uuid.UUID `json:"school_id" gorm:"type:uuid;index"`
+	UserID        uuid.UUID `json:"user_id" gorm:"type:uuid;index"`
+	Title         string    `json:"title" gorm:"type:varchar(100);not null"`
+	URL           string    `json:"url" gorm:"type:varchar(500);not null"`
+	StudentURL    string    `json:"student_url" gorm:"type:varchar(500);default:''"` // separate URL shown to students
+	Icon          string    `json:"icon,omitempty" gorm:"type:varchar(100)"`
+	Category      string    `json:"category" gorm:"type:varchar(50);default:'general'"`
+	SortOrder     int       `json:"sort_order" gorm:"default:0"`
+	IsShared      bool      `json:"is_shared" gorm:"default:false"` // legacy shared with everyone
+	ShareTeachers bool      `json:"share_teachers" gorm:"default:false"`
+	ShareClass    bool      `json:"share_class" gorm:"default:false"`
+	TargetIDs     string    `json:"target_ids" gorm:"type:text;default:''"`
+	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 // ── Plugin ──
@@ -64,7 +67,8 @@ func (p *Plugin) list(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
 	var bookmarks []Bookmark
-	p.db.Where("user_id = ? OR (school_id = ? AND is_shared = true)", userID, schoolID).
+	targetLike := "%" + userID.String() + "%"
+	p.db.Where("user_id = ? OR (school_id = ? AND (is_shared = true OR share_teachers = true OR target_ids LIKE ?))", userID, schoolID, targetLike).
 		Order("sort_order ASC").Find(&bookmarks)
 
 	result := make([]BookmarkWithOwner, len(bookmarks))
@@ -74,12 +78,15 @@ func (p *Plugin) list(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
-// listSharedPublic returns all is_shared bookmarks for a school, identified by school code
 func (p *Plugin) listSharedPublic(c *fiber.Ctx) error {
 	schoolCode := c.Params("schoolCode")
 	if schoolCode == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "school code required"})
 	}
+	studentID := c.Query("student_id")
+	grade := c.QueryInt("grade")
+	classNum := c.QueryInt("class_num")
+
 	// Find school by code
 	var school struct {
 		ID uuid.UUID
@@ -87,8 +94,27 @@ func (p *Plugin) listSharedPublic(c *fiber.Ctx) error {
 	if err := p.db.Table("schools").Select("id").Where("code = ?", schoolCode).First(&school).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "school not found"})
 	}
+
 	var bookmarks []Bookmark
-	p.db.Where("school_id = ? AND is_shared = true", school.ID).Order("sort_order ASC").Find(&bookmarks)
+	targetLike := ""
+	if studentID != "" {
+		targetLike = "%" + studentID + "%"
+	}
+
+	query := p.db.Table("bookmarks").
+		Select("bookmarks.*").
+		Joins("LEFT JOIN users ON users.id = bookmarks.user_id").
+		Where("bookmarks.school_id = ?", school.ID)
+
+	if studentID != "" || grade > 0 || classNum > 0 {
+		query = query.Where("bookmarks.is_shared = true OR "+
+			"(bookmarks.share_class = true AND users.grade = ? AND users.class_num = ?) OR "+
+			"(bookmarks.target_ids != '' AND bookmarks.target_ids LIKE ?)", grade, classNum, targetLike)
+	} else {
+		query = query.Where("bookmarks.is_shared = true")
+	}
+
+	query.Order("bookmarks.sort_order ASC").Find(&bookmarks)
 	return c.JSON(bookmarks)
 }
 

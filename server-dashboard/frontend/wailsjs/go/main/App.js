@@ -58,6 +58,10 @@ export function StopServer() {
   return window['go']['main']['App']['StopServer']();
 }
 
+export function UpdateDBUserPosition(arg1, arg2) {
+  return window['go']['main']['App']['UpdateDBUserPosition'](arg1, arg2);
+}
+
 export function UpdateDBUserRole(arg1, arg2) {
   return window['go']['main']['App']['UpdateDBUserRole'](arg1, arg2);
 }

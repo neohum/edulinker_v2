@@ -16,11 +16,12 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "edulinker — 교사용",
-		Width:     1280,
-		Height:    800,
-		MinWidth:  900,
-		MinHeight: 600,
+		Title:             "edulinker — 교사용",
+		Width:             1280,
+		Height:            800,
+		MinWidth:          900,
+		MinHeight:         600,
+		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

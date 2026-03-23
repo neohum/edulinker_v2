@@ -43,7 +43,7 @@ const pluginGroupC: NavItem[] = [
 const pluginGroupD: NavItem[] = [
   { id: 'studentmgmt', label: '학생관리', icon: 'fi fi-rr-graduation-cap' },
   { id: 'counseling', label: '상담', icon: 'fi fi-rr-comments' },
-  { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users-class' },
+  { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users' },
 ]
 
 const pluginGroupE: NavItem[] = [
@@ -70,7 +70,7 @@ const systemItems: NavItem[] = [
 
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
-  
+
   // Load saved group states or default to all closed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('sidebar_open_groups')
@@ -202,23 +202,23 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
         {renderItems(pluginGroupB, 'groupB')}
 
         {/* Group D */}
-        {renderGroupTitle('groupD', 'D · 학생관리')}
+        {renderGroupTitle('groupD', 'C · 학생관리')}
         {renderItems(pluginGroupD, 'groupD')}
 
         {/* Group E */}
-        {renderGroupTitle('groupE', 'E · 수업·평가')}
+        {renderGroupTitle('groupE', 'D · 수업·평가')}
         {renderItems(pluginGroupE, 'groupE')}
 
         {/* Group G */}
-        {renderGroupTitle('groupG', 'G · AI 문서 생성')}
+        {renderGroupTitle('groupG', 'E · AI 문서 생성')}
         {renderItems(pluginGroupG, 'groupG')}
 
         {/* Group H */}
-        {renderGroupTitle('groupH', 'H · 학교행사·투표')}
+        {renderGroupTitle('groupH', 'F · 학교행사·투표')}
         {renderItems(pluginGroupH, 'groupH')}
 
         {/* Group I */}
-        {renderGroupTitle('groupI', 'I · 인프라·도구')}
+        {renderGroupTitle('groupI', 'G · 인프라·도구')}
         {renderItems(pluginGroupI, 'groupI')}
 
         {/* System */}

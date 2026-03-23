@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"net"
 	"os"
@@ -18,8 +19,13 @@ import (
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/getlantern/systray"
+
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed build/windows/icon.ico
+var trayIcon []byte
 
 // App struct
 type App struct {
@@ -53,6 +59,38 @@ func (a *App) startup(ctx context.Context) {
 	go func() {
 		killPort5200()
 	}()
+
+	// Start system tray in goroutine (safe on Windows, blocking main thread usually needed only for specific OS like macOS but Wails owns main thread)
+	go systray.Run(a.onTrayReady, a.onTrayExit)
+}
+
+func (a *App) onTrayReady() {
+	systray.SetIcon(trayIcon)
+	systray.SetTitle("edulinker")
+	systray.SetTooltip("edulinker 서버 대시보드")
+
+	mShow := systray.AddMenuItem("대시보드 열기", "숨겨진 대시보드 화면을 엽니다")
+	mQuit := systray.AddMenuItem("완전 종료", "대시보드와 서버를 완전히 종료합니다")
+
+	go func() {
+		for {
+			select {
+			case <-mShow.ClickedCh:
+				if a.ctx != nil {
+					wailsRuntime.WindowShow(a.ctx)
+				}
+			case <-mQuit.ClickedCh:
+				a.StopServer()
+				systray.Quit()
+			}
+		}
+	}()
+}
+
+func (a *App) onTrayExit() {
+	if a.ctx != nil {
+		wailsRuntime.Quit(a.ctx)
+	}
 }
 
 // killPort5200 kills any process occupying port 5200 concurrently
@@ -503,6 +541,7 @@ type DBUser struct {
 	ClassNum    int    `json:"class_num"`
 	Number      int    `json:"number"`
 	Gender      string `json:"gender"`
+	Position    string `json:"position"`
 	StudentName string `json:"student_name"`
 	IsActive    bool   `json:"is_active"`
 	CreatedAt   string `json:"created_at"`
@@ -525,7 +564,7 @@ func (a *App) GetDBUsers() ([]DBUser, error) {
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.grade FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.grade END as grade,
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.class_num FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.class_num END as class_num,
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.number FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE COALESCE(u.number, 0) END as number,
-               COALESCE(u.gender, '') as gender,
+               COALESCE(u.gender, '') as gender, COALESCE(u.position, '') as position,
                (SELECT student.name FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1) as student_name,
                u.is_active, u.created_at
 		FROM users u
@@ -545,8 +584,9 @@ func (a *App) GetDBUsers() ([]DBUser, error) {
 		var schoolID sql.NullString
 		var number sql.NullInt64
 		var gender sql.NullString
+		var position sql.NullString
 		var studentName sql.NullString
-		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &studentName, &u.IsActive, &created); err != nil {
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &position, &studentName, &u.IsActive, &created); err != nil {
 			return nil, err
 		}
 		if schoolID.Valid {
@@ -590,7 +630,7 @@ func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.grade FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.grade END as grade,
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.class_num FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE u.class_num END as class_num,
                CASE WHEN u.role = 'parent' THEN COALESCE((SELECT student.number FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1), 0) ELSE COALESCE(u.number, 0) END as number,
-               COALESCE(u.gender, '') as gender,
+               COALESCE(u.gender, '') as gender, COALESCE(u.position, '') as position,
                (SELECT student.name FROM parent_students ps JOIN users student ON ps.student_id = student.id WHERE ps.parent_id = u.id LIMIT 1) as student_name,
                u.is_active, u.created_at
 		FROM users u
@@ -610,8 +650,9 @@ func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
 		var schoolID sql.NullString
 		var number sql.NullInt64
 		var gender sql.NullString
+		var position sql.NullString
 		var studentName sql.NullString
-		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &studentName, &u.IsActive, &created); err != nil {
+		if err := rows.Scan(&u.ID, &schoolID, &u.SchoolName, &u.Name, &u.Phone, &u.Role, &u.Grade, &u.ClassNum, &number, &gender, &position, &studentName, &u.IsActive, &created); err != nil {
 			return nil, err
 		}
 		if schoolID.Valid {
@@ -622,6 +663,9 @@ func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
 		}
 		if gender.Valid {
 			u.Gender = gender.String
+		}
+		if position.Valid {
+			u.Position = position.String
 		}
 		if studentName.Valid {
 			u.StudentName = studentName.String
@@ -711,6 +755,17 @@ func (a *App) ResetDBUserPassword(id string, newPassword string) error {
 	}
 
 	_, err = db.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", string(hash), id)
+	return err
+}
+
+func (a *App) UpdateDBUserPosition(id string, position string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE users SET position = $1 WHERE id = $2", position, id)
 	return err
 }
 

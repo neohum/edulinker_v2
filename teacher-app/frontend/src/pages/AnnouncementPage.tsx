@@ -21,6 +21,8 @@ export default function AnnouncementPage() {
   const [showModal, setShowModal] = useState(false)
   const [formTitle, setFormTitle] = useState('')
   const [formContent, setFormContent] = useState('')
+  const [formType, setFormType] = useState('simple')
+  const [formFiles, setFormFiles] = useState<File[]>([])
 
   useEffect(() => {
     fetchAnnouncements()
@@ -47,21 +49,38 @@ export default function AnnouncementPage() {
     if (!formTitle.trim()) { toast.warning('제목을 입력하세요'); return }
     try {
       const token = await getToken()
+      let body: any;
+      let headers: HeadersInit = {
+        'Authorization': `Bearer ${token}`
+      };
+
+      if (formFiles.length > 0) {
+        const formData = new FormData()
+        formData.append('title', formTitle)
+        formData.append('content', formContent)
+        formData.append('type', formType)
+        formData.append('is_urgent', 'false')
+        formFiles.forEach(f => formData.append('files', f))
+        body = formData
+      } else {
+        headers['Content-Type'] = 'application/json'
+        body = JSON.stringify({
+          title: formTitle, content: formContent, type: formType, is_urgent: false
+        })
+      }
+
       const res = await fetch('http://localhost:5200/api/plugins/announcement', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title: formTitle, content: formContent, type: 'simple', is_urgent: false
-        })
+        headers,
+        body
       })
       if (res.ok) {
         toast.success('공문이 등록되었습니다.')
         setShowModal(false)
         setFormTitle('')
         setFormContent('')
+        setFormType('simple')
+        setFormFiles([])
         fetchAnnouncements()
       } else {
         toast.error('공문 등록에 실패했습니다.')
@@ -86,19 +105,19 @@ export default function AnnouncementPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h3 style={{ fontSize: 20, fontWeight: 700 }}><i className="fi fi-rr-document" style={{ marginRight: 8 }} />교내 공문 전달망</h3>
         <button onClick={() => setShowModal(true)} style={{ background: '#4f46e5', color: 'white', padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-          + 공문 기안 작성
+          + 공문 공유
         </button>
       </div>
 
       <div style={{ marginBottom: 24, display: 'flex', gap: 12 }}>
-        {['', 'simple', 'confirm', 'apply', 'todo'].map(t => (
+        {['', 'simple', 'confirm', 'apply'].map(t => (
           <button
             key={t}
             onClick={() => setFilterType(t)}
             style={{
-              padding: '6px 12px', borderRadius: 20, border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-              background: filterType === t ? 'var(--primary)' : 'white',
-              color: filterType === t ? 'white' : 'var(--text-secondary)'
+              padding: '6px 12px', borderRadius: 20, border: filterType === t ? '1px solid var(--primary)' : '1px solid var(--border)', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+              background: filterType === t ? '#eef2ff' : 'white',
+              color: filterType === t ? 'var(--primary)' : 'var(--text-secondary)'
             }}
           >
             {t === '' ? '전체보기' : getTypeStyle(t).label}
@@ -141,8 +160,20 @@ export default function AnnouncementPage() {
           zIndex: 100
         }}>
           <div style={{ background: 'white', padding: 24, borderRadius: 16, width: '100%', maxWidth: 500 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>공문 기안 작성</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>공문 공유</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>공문 형식</label>
+                <select
+                  value={formType}
+                  onChange={e => setFormType(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
+                >
+                  <option value="simple">단순전달</option>
+                  <option value="confirm">열람확인</option>
+                  <option value="apply">신청필요</option>
+                </select>
+              </div>
               <div>
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>제목</label>
                 <input
@@ -163,8 +194,57 @@ export default function AnnouncementPage() {
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
                 />
               </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>첨부파일 (선택)</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <label style={{
+                    cursor: 'pointer',
+                    background: '#f8fafc',
+                    border: '1px solid var(--border)',
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#475569',
+                    width: 'fit-content'
+                  }}>
+                    <i className="fi fi-rr-clip" /> {formFiles.length > 0 ? '파일 추가' : '파일 선택'}
+                    <input
+                      type="file"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        if (e.target.files) {
+                          setFormFiles(prev => [...prev, ...Array.from(e.target.files!)])
+                        }
+                      }}
+                    />
+                  </label>
+                  {formFiles.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {formFiles.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#f1f5f9', borderRadius: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0f172a' }}>
+                            <i className="fi fi-rr-document" style={{ color: '#64748b' }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }}>{f.name}</span>
+                            <span style={{ color: '#94a3b8', fontSize: 11 }}>({Math.round(f.size / 1024)}KB)</span>
+                          </div>
+                          <button type="button" onClick={() => setFormFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="fi fi-rr-cross-circle" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>선택된 파일이 없습니다</div>
+                  )}
+                </div>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button type="button" onClick={() => { setShowModal(false); setFormTitle(''); setFormContent('') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>취소</button>
+                <button type="button" onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>취소</button>
                 <button type="button" onClick={handleCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--primary)', color: 'white', fontWeight: 600, cursor: 'pointer' }}>등록</button>
               </div>
             </div>

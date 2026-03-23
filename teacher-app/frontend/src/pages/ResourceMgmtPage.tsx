@@ -25,10 +25,10 @@ export default function ResourceMgmtPage() {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [isAddingFacility, setIsAddingFacility] = useState(false)
   const [isReserving, setIsReserving] = useState(false)
-  
+
   // New Facility Form
   const [newFacility, setNewFacility] = useState({ name: '', location: '', description: '' })
-  
+
   // New Reservation Form
   const [newRes, setNewRes] = useState({ facility_id: '', start_time: '', end_time: '', purpose: '' })
 
@@ -88,9 +88,14 @@ export default function ResourceMgmtPage() {
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>학교 내 시설 예약 현황을 확인하고 새로운 예약을 등록합니다.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-outline" onClick={() => setIsAddingFacility(true)}>시설 등록</button>
-          <button className="btn btn-primary" onClick={() => setIsReserving(true)}>
-            <i className="fi fi-rr-calendar-plus" style={{ marginRight: 8 }} />
+          <button onClick={() => setIsAddingFacility(true)}
+            style={{ background: 'white', color: '#334155', padding: '8px 16px', borderRadius: 8, border: '1px solid #cbd5e1', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            <i className="fi fi-rr-building" />
+            시설 등록
+          </button>
+          <button onClick={() => setIsReserving(true)}
+            style={{ background: '#2563eb', color: 'white', padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(37,99,235,0.2)' }}>
+            <i className="fi fi-rr-calendar-plus" />
             예약하기
           </button>
         </div>
@@ -152,14 +157,15 @@ export default function ResourceMgmtPage() {
             <h4>신규 시설 등록</h4>
             <div style={{ marginTop: 16 }}>
               <label className="form-label">시설 이름</label>
-              <input className="form-input" placeholder="예: 제1컴퓨터실" value={newFacility.name} onChange={e => setNewFacility({...newFacility, name: e.target.value})} />
+              <input className="form-input" placeholder="예: 제1컴퓨터실" value={newFacility.name} onChange={e => setNewFacility({ ...newFacility, name: e.target.value })} />
             </div>
             <div style={{ marginTop: 12 }}>
               <label className="form-label">위치</label>
-              <input className="form-input" placeholder="예: 본관 3층" value={newFacility.location} onChange={e => setNewFacility({...newFacility, location: e.target.value})} />
+              <input className="form-input" placeholder="예: 본관 3층" value={newFacility.location} onChange={e => setNewFacility({ ...newFacility, location: e.target.value })} />
             </div>
             <div className="modal-footer" style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setIsAddingFacility(false)}>취소</button>
+              <button onClick={() => setIsAddingFacility(false)}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontWeight: 600, color: '#475569' }}>취소</button>
               <button className="btn btn-primary" onClick={handleAddFacility}>등록하기</button>
             </div>
           </div>
@@ -173,21 +179,22 @@ export default function ResourceMgmtPage() {
             <h4>시설 예약 신청</h4>
             <div style={{ marginTop: 16 }}>
               <label className="form-label">시설 선택</label>
-              <select className="form-input" value={newRes.facility_id} onChange={e => setNewRes({...newRes, facility_id: e.target.value})}>
+              <select className="form-input" value={newRes.facility_id} onChange={e => setNewRes({ ...newRes, facility_id: e.target.value })}>
                 <option value="">시설을 선택하세요</option>
                 {facilities.map(f => <option key={f.id} value={f.id}>{f.name} ({f.location})</option>)}
               </select>
             </div>
             <div style={{ marginTop: 12 }}>
               <label className="form-label">시작 시간</label>
-              <input type="datetime-local" className="form-input" value={newRes.start_time} onChange={e => setNewRes({...newRes, start_time: e.target.value})} />
+              <input type="datetime-local" className="form-input" value={newRes.start_time} onChange={e => setNewRes({ ...newRes, start_time: e.target.value })} />
             </div>
             <div style={{ marginTop: 12 }}>
               <label className="form-label">사용 목적</label>
-              <input className="form-input" placeholder="예: 3학년 2반 정보 수업" value={newRes.purpose} onChange={e => setNewRes({...newRes, purpose: e.target.value})} />
+              <input className="form-input" placeholder="예: 3학년 2반 정보 수업" value={newRes.purpose} onChange={e => setNewRes({ ...newRes, purpose: e.target.value })} />
             </div>
             <div className="modal-footer" style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setIsReserving(false)}>취소</button>
+              <button onClick={() => setIsReserving(false)}
+                style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontWeight: 600, color: '#475569' }}>취소</button>
               <button className="btn btn-primary" onClick={handleReserve}>예약 확정</button>
             </div>
           </div>

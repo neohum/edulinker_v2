@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,9 +20,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getlantern/systray"
 	"github.com/go-ole/go-ole"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed build/windows/icon.ico
+var trayIcon []byte
 
 // httpClient with generous timeout for large file uploads.
 var httpClient = &http.Client{
@@ -65,6 +70,36 @@ func (a *App) startup(ctx context.Context) {
 	a.hwpWorkerOnce.Do(func() {
 		go a.startHwpWorker()
 	})
+
+	go systray.Run(a.onTrayReady, a.onTrayExit)
+}
+
+func (a *App) onTrayReady() {
+	systray.SetIcon(trayIcon)
+	systray.SetTitle("edulinker")
+	systray.SetTooltip("edulinker 교사용 앱")
+
+	mShow := systray.AddMenuItem("열기", "앱 화면을 엽니다")
+	mQuit := systray.AddMenuItem("완전 종료", "앱을 완전히 종료합니다")
+
+	go func() {
+		for {
+			select {
+			case <-mShow.ClickedCh:
+				if a.ctx != nil {
+					wailsRuntime.WindowShow(a.ctx)
+				}
+			case <-mQuit.ClickedCh:
+				systray.Quit()
+			}
+		}
+	}()
+}
+
+func (a *App) onTrayExit() {
+	if a.ctx != nil {
+		wailsRuntime.Quit(a.ctx)
+	}
 }
 
 // --- Auth ---
@@ -358,6 +393,7 @@ func (a *App) GetSystemInfo() SystemInfo {
 // AIBenchmark contains hardware info and AI readiness score.
 type AIBenchmark struct {
 	// Hardware info
+	Hostname    string  `json:"hostname"`
 	IPAddress   string  `json:"ip_address"`
 	CPUName     string  `json:"cpu_name"`
 	CPUCores    int     `json:"cpu_cores"`
@@ -389,6 +425,13 @@ type AIBenchmark struct {
 // GetAIBenchmark gathers hardware info and calculates AI readiness.
 func (a *App) GetAIBenchmark() AIBenchmark {
 	b := AIBenchmark{}
+
+	// Hostname
+	if host, err := os.Hostname(); err == nil {
+		b.Hostname = host
+	} else {
+		b.Hostname = "알 수 없음"
+	}
 
 	// IP Address
 	b.IPAddress = getIPAddress()
@@ -522,9 +565,8 @@ func (a *App) GetAIBenchmark() AIBenchmark {
 // --- Hardware detection helpers ---
 
 func getPrinterInfo() []string {
-	// Force UTF-8 output and get clear printer product names, filtering virtual ones
-	psCmd := `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance Win32_Printer | Where-Object { $_.Network -or $_.Local } | Where-Object { $_.Name -notmatch 'PDF|OneNote|XPS|Fax|Send To|Microsoft|Root' } | Select-Object -ExpandProperty Name`
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", psCmd).Output()
+	encodedCmd := "WwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwAgAD0AIABbAFMAeQBzAHQAZQBtAC4AVABlAHgAdAAuAEUAbgBjAG8AZABpAG4AZwBdADoAOgBVAFQARgA4ADsAIAAKAAkARwBlAHQALQBDAGkAbQBJAG4AcwB0AGEAbgBjAGUAIABXAGkAbgAzADIAXwBQAHIAaQBuAHQAZQByACAAfAAgAAoACQBXAGgAZQByAGUALQBPAGIAagBlAGMAdAAgAHsAIAAkAF8ALgBOAGUAdAB3AG8AcgBrACAALQBvAHIAIAAkAF8ALgBMAG8AYwBhAGwAIAB9ACAAfAAgAAoACQBXAGgAZQByAGUALQBPAGIAagBlAGMAdAAgAHsAIAAkAF8ALgBOAGEAbQBlACAALQBuAG8AdABtAGEAdABjAGgAIAAnAFAARABGAHwATwBuAGUATgBvAHQAZQB8AFgAUABTAHwARgBhAHgAfABTAGUAbgBkACAAVABvAHwATQBpAGMAcgBvAHMAbwBmAHQAfABSAG8AbwB0AHwAUwBvAGYAdAB3AGEAcgBlACcAIAAtAGEAbgBkACAAJABfAC4ARAByAGkAdgBlAHIATgBhAG0AZQAgAC0AbgBvAHQAbQBhAHQAYwBoACAAJwBQAEQARgB8AE8AbgBlAE4AbwB0AGUAfABYAFAAUwB8AEYAYQB4AHwAUwBlAG4AZAAgAFQAbwB8AE0AaQBjAHIAbwBzAG8AZgB0AHwAUgBvAG8AdAB8AFMAbwBmAHQAdwBhAHIAZQAnACAAfQAgAHwAIAAKAAkARgBvAHIARQBhAGMAaAAtAE8AYgBqAGUAYwB0ACAAewAKAAkACQAkAG4AYQBtAGUAIAA9ACAAJABfAC4ATgBhAG0AZQAKAAkACQAkAGQAcgBpAHYAZQByACAAPQAgACQAXwAuAEQAcgBpAHYAZQByAE4AYQBtAGUACgAJAAkAaQBmACAAKABbAHMAdAByAGkAbgBnAF0AOgA6AEkAcwBOAHUAbABsAE8AcgBFAG0AcAB0AHkAKAAkAGQAcgBpAHYAZQByACkAIAAtAG8AcgAgACQAbgBhAG0AZQAgAC0AZQBxACAAJABkAHIAaQB2AGUAcgApACAAewAKAAkACQAJACQAbgBhAG0AZQAKAAkACQB9ACAAZQBsAHMAZQAgAHsACgAJAAkACQAkAGQAcgBpAHYAZQByAAoACQAJAH0ACgAJAH0AIAB8ACAAUwBlAGwAZQBjAHQALQBPAGIAagBlAGMAdAAgAC0AVQBuAGkAcQB1AGUA"
+	out, err := exec.Command("powershell", "-NoProfile", "-EncodedCommand", encodedCmd).Output()
 	if err != nil {
 		return nil
 	}
@@ -532,27 +574,12 @@ func getPrinterInfo() []string {
 }
 
 func getMonitorInfo() []string {
-	// Calculate monitor size in inches using physical dimensions from EDID
-	psCmd := `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; 
-	$monitors = Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorBasicDisplayParams;
-	foreach ($m in $monitors) {
-		$diagCm = [Math]::Sqrt([Math]::Pow($m.MaxHorizontalImageSize, 2) + [Math]::Pow($m.MaxVerticalImageSize, 2));
-		$inches = [Math]::Round($diagCm / 2.54, 0);
-		if ($inches -gt 0) { "$inches인치 모니터" }
-	}`
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", psCmd).Output()
+	encodedCmd := "WwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwAgAD0AIABbAFMAeQBzAHQAZQBtAC4AVABlAHgAdAAuAEUAbgBjAG8AZABpAG4AZwBdADoAOgBVAFQARgA4ADsACgAJACQAcgBlAHMAIAA9ACAAQAAoACkAOwAKAAkAdAByAHkAIAB7AAoACQAJACQAbQBvAG4AaQB0AG8AcgBzAEkAZAAgAD0AIABHAGUAdAAtAEMAaQBtAEkAbgBzAHQAYQBuAGMAZQAgAC0ATgBhAG0AZQBzAHAAYQBjAGUAIAByAG8AbwB0AFwAdwBtAGkAIAAtAEMAbABhAHMAcwBOAGEAbQBlACAAVwBtAGkATQBvAG4AaQB0AG8AcgBJAEQAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUAOwAKAAkACQAkAG0AbwBuAGkAdABvAHIAcwBQAGEAcgBhAG0AcwAgAD0AIABHAGUAdAAtAEMAaQBtAEkAbgBzAHQAYQBuAGMAZQAgAC0ATgBhAG0AZQBzAHAAYQBjAGUAIAByAG8AbwB0AFwAdwBtAGkAIAAtAEMAbABhAHMAcwBOAGEAbQBlACAAVwBtAGkATQBvAG4AaQB0AG8AcgBCAGEAcwBpAGMARABpAHMAcABsAGEAeQBQAGEAcgBhAG0AcwAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQA7AAoACgAJAAkAaQBmACAAKAAkAG0AbwBuAGkAdABvAHIAcwBJAGQAIAAtAGkAcwBuAG8AdAAgAFsAYQByAHIAYQB5AF0AKQAgAHsAIAAkAG0AbwBuAGkAdABvAHIAcwBJAGQAIAA9ACAAQAAoACQAbQBvAG4AaQB0AG8AcgBzAEkAZAApACAAfQAKAAkACQBpAGYAIAAoACQAbQBvAG4AaQB0AG8AcgBzAFAAYQByAGEAbQBzACAALQBpAHMAbgBvAHQAIABbAGEAcgByAGEAeQBdACkAIAB7ACAAJABtAG8AbgBpAHQAbwByAHMAUABhAHIAYQBtAHMAIAA9ACAAQAAoACQAbQBvAG4AaQB0AG8AcgBzAFAAYQByAGEAbQBzACkAIAB9AAoACgAJAAkAZgBvAHIAZQBhAGMAaAAgACgAJABtACAAaQBuACAAJABtAG8AbgBpAHQAbwByAHMASQBkACkAIAB7AAoACQAJAAkAJABuAGEAbQBlACAAPQAgACIAIgA7AAoACQAJAAkAaQBmACAAKAAkAG0ALgBVAHMAZQByAEYAcgBpAGUAbgBkAGwAeQBOAGEAbQBlACAALQBuAGUAIAAkAG4AdQBsAGwAKQAgAHsACgAJAAkACQAJACQAbgBhAG0AZQBTAHQAcgAgAD0AIAAoACQAbQAuAFUAcwBlAHIARgByAGkAZQBuAGQAbAB5AE4AYQBtAGUAIAB8ACAAVwBoAGUAcgBlAC0ATwBiAGoAZQBjAHQAIAB7ACQAXwAgAC0AbgBlACAAMAB9ACAAfAAgAEYAbwByAEUAYQBjAGgALQBPAGIAagBlAGMAdAAgAHsAWwBjAGgAYQByAF0AJABfAH0AKQAgAC0AagBvAGkAbgAgACcAJwA7AAoACQAJAAkACQAkAG4AYQBtAGUAIAA9ACAAJABuAGEAbQBlAFMAdAByAC4AVAByAGkAbQAoACkAOwAKAAkACQAJAH0ACgAJAAkACQBpAGYAIAAoACQAbgBhAG0AZQAgAC0AZQBxACAAIgAiACkAIAB7ACAAJABuAGEAbQBlACAAPQAgACIAfMcYvCAAqLrIsjDRIgAgAH0ACgAKAAkACQAJACQAaQBuAGMAaABlAHMAIAA9ACAAMAA7AAoACQAJAAkAZgBvAHIAZQBhAGMAaAAgACgAJABwACAAaQBuACAAJABtAG8AbgBpAHQAbwByAHMAUABhAHIAYQBtAHMAKQAgAHsACgAJAAkACQAJAGkAZgAgACgAJABwAC4ASQBuAHMAdABhAG4AYwBlAE4AYQBtAGUAIAAtAGUAcQAgACQAbQAuAEkAbgBzAHQAYQBuAGMAZQBOAGEAbQBlACkAIAB7AAoACQAJAAkACQAJAGkAZgAgACgAJABwAC4ATQBhAHgASABvAHIAaQB6AG8AbgB0AGEAbABJAG0AYQBnAGUAUwBpAHoAZQAgAC0AZwB0ACAAMAApACAAewAKAAkACQAJAAkACQAJACQAZABpAGEAZwBDAG0AIAA9ACAAWwBNAGEAdABoAF0AOgA6AFMAcQByAHQAKABbAE0AYQB0AGgAXQA6ADoAUABvAHcAKAAkAHAALgBNAGEAeABIAG8AcgBpAHoAbwBuAHQAYQBsAEkAbQBhAGcAZQBTAGkAegBlACwAIAAyACkAIAArACAAWwBNAGEAdABoAF0AOgA6AFAAbwB3ACgAJABwAC4ATQBhAHgAVgBlAHIAdABpAGMAYQBsAEkAbQBhAGcAZQBTAGkAegBlACwAIAAyACkAKQA7AAoACQAJAAkACQAJAAkAJABpAG4AYwBoAGUAcwAgAD0AIABbAE0AYQB0AGgAXQA6ADoAUgBvAHUAbgBkACgAJABkAGkAYQBnAEMAbQAgAC8AIAAyAC4ANQA0ACwAIAAwACkAOwAKAAkACQAJAAkACQB9AAoACQAJAAkACQAJAGIAcgBlAGEAawA7AAoACQAJAAkACQB9AAoACQAJAAkAfQAKAAoACQAJAAkAaQBmACAAKAAkAGkAbgBjAGgAZQBzACAALQBnAHQAIAAwACkAIAB7AAoACQAJAAkACQAkAHIAZQBzACAAKwA9ACAAIgAkAG4AYQBtAGUAIAAoACQAKAAkAGkAbgBjAGgAZQBzACkAeMdYzikAIgA7AAoACQAJAAkAfQAgAGUAbABzAGUAIAB7AAoACQAJAAkACQAkAHIAZQBzACAAKwA9ACAAJABuAGEAbQBlADsACgAJAAkACQB9AAoACQAJAH0ACgAJAH0AIABjAGEAdABjAGgAIAB7AH0ACgAKAAkAaQBmACAAKAAkAHIAZQBzAC4AQwBvAHUAbgB0ACAALQBnAHQAIAAwACkAIAB7AAoACQAJACQAcgBlAHMAOwAKAAkAfQAgAGUAbABzAGUAIAB7AAoACQAJAEcAZQB0AC0AQwBpAG0ASQBuAHMAdABhAG4AYwBlACAAVwBpAG4AMwAyAF8ARABlAHMAawB0AG8AcABNAG8AbgBpAHQAbwByACAAfAAgAFMAZQBsAGUAYwB0AC0ATwBiAGoAZQBjAHQAIAAtAEUAeABwAGEAbgBkAFAAcgBvAHAAZQByAHQAeQAgAE4AYQBtAGUAOwAKAAkAfQA="
+	out, err := exec.Command("powershell", "-NoProfile", "-EncodedCommand", encodedCmd).Output()
 	if err != nil {
 		return nil
 	}
-	list := cleanOutput(out)
-
-	if len(list) == 0 {
-		// Fallback to basic monitor name if size calculation fails
-		psCmdRes := `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance Win32_DesktopMonitor | Select-Object -ExpandProperty Name`
-		outRes, _ := exec.Command("powershell", "-NoProfile", "-Command", psCmdRes).Output()
-		list = cleanOutput(outRes)
-	}
-	return list
+	return cleanOutput(out)
 }
 
 func cleanOutput(out []byte) []string {

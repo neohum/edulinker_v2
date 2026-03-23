@@ -1,6 +1,7 @@
 export namespace main {
 	
 	export class AIBenchmark {
+	    hostname: string;
 	    ip_address: string;
 	    cpu_name: string;
 	    cpu_cores: number;
@@ -28,6 +29,7 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hostname = source["hostname"];
 	        this.ip_address = source["ip_address"];
 	        this.cpu_name = source["cpu_name"];
 	        this.cpu_cores = source["cpu_cores"];

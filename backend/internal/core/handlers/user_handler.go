@@ -31,6 +31,7 @@ type CreateUserRequest struct {
 	Phone    string      `json:"phone"`
 	Email    string      `json:"email,omitempty"`
 	Role     models.Role `json:"role"`
+	Position string      `json:"position,omitempty"`
 	Password string      `json:"password"`
 }
 
@@ -44,6 +45,7 @@ type UpdateUserRequest struct {
 	ClassNum    *int    `json:"class_num,omitempty"`
 	Department  *string `json:"department,omitempty"`
 	TaskName    *string `json:"task_name,omitempty"`
+	Position    *string `json:"position,omitempty"`
 	Gender      *string `json:"gender,omitempty"`
 	Number      *int    `json:"number,omitempty"`
 	PIN         *string `json:"pin,omitempty"`
@@ -122,6 +124,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 		Phone:        req.Phone,
 		Email:        req.Email,
 		Role:         req.Role,
+		Position:     req.Position,
 		PasswordHash: string(hash),
 		IsActive:     true,
 	}
@@ -261,6 +264,9 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	}
 	if req.TaskName != nil {
 		user.TaskName = *req.TaskName
+	}
+	if req.Position != nil {
+		user.Position = *req.Position
 	}
 	if req.Gender != nil {
 		user.Gender = *req.Gender
@@ -439,16 +445,16 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			gradeCol = i
 		case strings.Contains(cell, "반"):
 			classCol = i
-		case strings.Contains(cell, "번호") || strings.Contains(cell, "번"):
-			numCol = i
 		case strings.Contains(cell, "이름") || strings.Contains(cell, "성명"):
 			nameCol = i
 		case strings.Contains(cell, "성별") || strings.Contains(cell, "gender"):
 			genderCol = i
-		case strings.Contains(cell, "학부모"):
+		case strings.Contains(cell, "학부모") || strings.Contains(cell, "전화") || strings.Contains(cell, "연락"):
 			parentPhoneCol = i
-		case strings.Contains(cell, "PIN"):
+		case strings.Contains(cell, "PIN") || strings.Contains(cell, "비밀"):
 			pinCol = i
+		case strings.Contains(cell, "번호") || strings.Contains(cell, "번"):
+			numCol = i
 		}
 	}
 

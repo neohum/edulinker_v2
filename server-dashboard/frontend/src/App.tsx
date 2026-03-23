@@ -13,9 +13,11 @@ function App() {
   const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn'>('all');
   const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false });
   const [isStartingInfra, setIsStartingInfra] = useState(false);
+  const [bootSequenceActive, setBootSequenceActive] = useState(false);
+  const [bootStep, setBootStep] = useState<number>(0);
   const [localIP, setLocalIP] = useState('');
-  const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') === 'true');
-  const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') === 'true');
+  const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') !== 'false');
+  const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') !== 'false');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => localStorage.getItem('sidebar_open') !== 'false');
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +46,7 @@ function App() {
         ready = true;
         setDependencies(currentDeps);
         if (attempts > 0) toast.success("대기열 처리 완료: 필수 인프라가 모두 성공적으로 구동되었습니다!");
+        setTimeout(() => setBootStep(2), 500);
         break;
       }
 
@@ -71,32 +74,63 @@ function App() {
     const bootSequence = async () => {
       try {
         GetLocalIP().then(setLocalIP).catch(console.error);
-
-        // 1. Check & start infrastructure if needed
-        let currentDeps = await CheckDependencies();
-        setDependencies(currentDeps);
-        const needsInfra = !currentDeps.postgres || !currentDeps.redis || !currentDeps.minio;
-
-        if (autoInfra && needsInfra) {
-          currentDeps = await waitForInfraQueue();
-        }
-
-        // 2. Check & start backend server if needed
         const statusResult = await GetStatus();
         setIsRunning(statusResult.isRunning);
         setUptime(statusResult.uptime);
 
-        if (autoStart && !statusResult.isRunning) {
-          // Double check if infra is actually ready before we fire the server start
+        if (statusResult.isRunning) return; // Already running, no boot sec needed
+
+        if (autoStart || autoInfra) {
+          setBootSequenceActive(true);
+          setBootStep(1); // Infra check
+        }
+
+        // 1. Wait for infrastructure to be ready
+        let ready = false;
+        let currentDeps = { postgres: false, redis: false, minio: false };
+
+        // Give local infra a chance to boot (up to 60 seconds) if we are auto-starting
+        for (let i = 0; i < 60; i++) {
+          currentDeps = await CheckDependencies();
+          setDependencies(currentDeps);
           if (currentDeps.postgres && currentDeps.redis && currentDeps.minio) {
-            await handleStartCore();
-          } else {
-            toast.error("인프라가 완벽히 로딩되지 않아 서버 자동 구동을 보류했습니다.");
+            ready = true;
+            break;
           }
+
+          if (!autoInfra && !autoStart) break; // Don't wait if not auto-starting
+
+          if (autoInfra && i === 2 && !ready) {
+            // After 2 seconds of waiting, if autoInfra is true, try to install/start via scoop
+            toast.info("인프라 구동 스크립트를 시도합니다... (표시되지 않더라도 백그라운드에서 진행 중입니다)");
+            InstallAndStartWithScoop().catch(console.error);
+          }
+
+          await new Promise(res => setTimeout(res, 1000));
+        }
+
+        if (autoStart || autoInfra) {
+          setBootStep(2);
+          await new Promise(res => setTimeout(res, 500)); // UI delay
+        }
+
+        // 2. Check & start backend server if needed (including DB Auto-setup)
+        if (autoStart) {
+          if (ready) {
+            await handleStartCore();
+            setBootStep(3);
+            setTimeout(() => setBootSequenceActive(false), 2000);
+          } else {
+            toast.error("인프라(DB/Redis/MinIO)가 준비되지 않아 서버 자동 구동을 실패했습니다.");
+            setBootSequenceActive(false);
+          }
+        } else {
+          setBootSequenceActive(false);
         }
       } catch (err) {
         console.error("Boot sequence error:", err);
         toast.error("시작 중 시스템 수준 오류 발생: " + err);
+        setBootSequenceActive(false);
       }
     };
 
@@ -160,8 +194,12 @@ function App() {
   };
 
   const handleStartInfra = async () => {
+    setBootSequenceActive(true);
+    setBootStep(1);
     await handleStartInfraCore();
     await fetchStatus();
+    setBootStep(2);
+    setTimeout(() => { setBootSequenceActive(false); }, 1500);
   };
 
   const handleStartCore = async () => {
@@ -177,8 +215,12 @@ function App() {
   };
 
   const handleStart = async () => {
+    setBootSequenceActive(true);
+    setBootStep(2);
     await handleStartCore();
     await fetchStatus();
+    setBootStep(3);
+    setTimeout(() => { setBootSequenceActive(false); }, 1500);
   };
 
   const handleStop = async () => {
@@ -200,6 +242,50 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-200">
       <Toaster richColors position="top-center" />
+
+      {/* Boot Sequence Overlay */}
+      {bootSequenceActive && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800">
+            <h2 className="text-xl font-bold mb-6 flex items-center gap-3">
+              <i className="fi fi-rr-rocket text-indigo-500" />
+              자동 초기화 시퀀스
+            </h2>
+            <div className="space-y-4">
+              <div className={`flex items-center gap-4 ${bootStep >= 1 ? 'opacity-100' : 'opacity-40'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bootStep > 1 ? 'bg-emerald-100 text-emerald-600' : bootStep === 1 ? 'bg-indigo-100 text-indigo-600 animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+                  {bootStep > 1 ? <i className="fi fi-rr-check" /> : <span className="font-bold text-sm">1</span>}
+                </div>
+                <div>
+                  <div className="font-bold">인프라 모니터링 및 설치</div>
+                  <div className="text-xs text-slate-500">PostgreSQL, Redis, MinIO 상태 확인 및 대기</div>
+                </div>
+              </div>
+              <div className="ml-4 border-l-2 border-slate-100 dark:border-slate-800 h-4"></div>
+              <div className={`flex items-center gap-4 ${bootStep >= 2 ? 'opacity-100' : 'opacity-40'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bootStep > 2 ? 'bg-emerald-100 text-emerald-600' : bootStep === 2 ? 'bg-indigo-100 text-indigo-600 animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+                  {bootStep > 2 ? <i className="fi fi-rr-check" /> : <span className="font-bold text-sm">2</span>}
+                </div>
+                <div>
+                  <div className="font-bold">DB 자동 구성 및 마이그레이션</div>
+                  <div className="text-xs text-slate-500">데이터베이스 롤/스키마 구성 및 서버 시작</div>
+                </div>
+              </div>
+              <div className="ml-4 border-l-2 border-slate-100 dark:border-slate-800 h-4"></div>
+              <div className={`flex items-center gap-4 ${bootStep >= 3 ? 'opacity-100' : 'opacity-40'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bootStep >= 3 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                  {bootStep >= 3 ? <i className="fi fi-rr-check" /> : <span className="font-bold text-sm">3</span>}
+                </div>
+                <div>
+                  <div className="font-bold">서비스 활성화 완료</div>
+                  <div className="text-xs text-slate-500">대시보드 모니터링 시작</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <div className={`relative transition-all duration-300 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center py-8 shrink-0 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <button
