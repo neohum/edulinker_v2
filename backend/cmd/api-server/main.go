@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +12,7 @@ import (
 	"github.com/edulinker/backend/internal/core/auth"
 	"github.com/edulinker/backend/internal/core/filegateway"
 	"github.com/edulinker/backend/internal/core/handlers"
+	applogger "github.com/edulinker/backend/internal/core/logger"
 	"github.com/edulinker/backend/internal/core/middleware"
 	"github.com/edulinker/backend/internal/core/notify"
 	"github.com/edulinker/backend/internal/core/rag"
@@ -26,6 +26,7 @@ import (
 	"github.com/edulinker/backend/internal/plugins/classmgmt"
 	"github.com/edulinker/backend/internal/plugins/curriculum"
 	"github.com/edulinker/backend/internal/plugins/gatong"
+	"github.com/edulinker/backend/internal/plugins/knowledge"
 	"github.com/edulinker/backend/internal/plugins/linker"
 	"github.com/edulinker/backend/internal/plugins/messenger"
 	"github.com/edulinker/backend/internal/plugins/pcinfo"
@@ -39,7 +40,6 @@ import (
 	"github.com/edulinker/backend/internal/plugins/todo"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/websocket/v2"
 )
@@ -48,29 +48,35 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("❌ Configuration load failed: %v", err)
+		fmt.Fprintf(os.Stderr, "Configuration load failed: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Initialize structured logger
+	isPretty := cfg.LogLevel == "debug" || os.Getenv("ENV") != "production"
+	applogger.Init(cfg.LogLevel, isPretty)
+	log := &applogger.Log
 
 	// Connect to database
 	db, err := database.Connect(cfg.Database)
 	if err != nil {
-		log.Fatalf("❌ Database connection failed: %v", err)
+		log.Fatal().Err(err).Msg("Database connection failed")
 	}
 
 	// Run migrations (includes Notification and FileRecord tables)
 	if err := database.AutoMigrate(db); err != nil {
-		log.Fatalf("❌ Migration failed: %v", err)
+		log.Fatal().Err(err).Msg("Migration failed")
 	}
 
 	// Seed phase 1 plugins
 	if err := database.SeedPlugins(db); err != nil {
-		log.Fatalf("❌ Seed failed: %v", err)
+		log.Fatal().Err(err).Msg("Seed failed")
 	}
 
 	// Connect to Redis
 	rdb, err := database.ConnectRedis(cfg.Redis)
 	if err != nil {
-		log.Printf("⚠️ Redis connection failed (non-fatal): %v", err)
+		log.Warn().Err(err).Msg("Redis connection failed (non-fatal)")
 	}
 
 	// Initialize services
@@ -97,7 +103,7 @@ func main() {
 		WasabiRegion:    cfg.Wasabi.Region,
 	})
 	if err != nil {
-		log.Printf("⚠️ File Gateway initialization failed (non-fatal): %v", err)
+		log.Warn().Err(err).Msg("File Gateway initialization failed (non-fatal)")
 	}
 
 	// Initialize AI Gateway (Proxy to local Ollama)
@@ -126,6 +132,7 @@ func main() {
 	classPlugin := classmgmt.New(db, ragSvc)
 	resourcePlugin := resourcemgmt.New(db)
 	adminPlugin := schooladmin.New(db)
+	knowledgePlugin := knowledge.New(db)
 
 	pluginMgr.Register(msgPlugin)
 	pluginMgr.Register(todoPlugin)
@@ -144,6 +151,7 @@ func main() {
 	pluginMgr.Register(classPlugin)
 	pluginMgr.Register(resourcePlugin)
 	pluginMgr.Register(adminPlugin)
+	pluginMgr.Register(knowledgePlugin)
 
 	// Initialize SyncAgent (Bridge to Cloud)
 	syncURL := os.Getenv("SYNC_SERVER_URL")
@@ -173,13 +181,16 @@ func main() {
 
 	// Global middleware
 	app.Use(recover.New())
-	app.Use(logger.New(logger.Config{
-		Format: "${time} | ${status} | ${latency} | ${method} ${path}\n",
-	}))
+	app.Use(middleware.SecurityHeaders())
+	app.Use(applogger.RequestIDMiddleware())
+	app.Use(applogger.RequestLoggerMiddleware())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
+		AllowOriginsFunc: func(origin string) bool {
+			return true // Allow all origins including Wails desktop webview (wails://, http://wails.localhost)
+		},
+		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Device-ID",
+		AllowCredentials: true,
 	}))
 
 	// --- Health check ---
@@ -232,7 +243,7 @@ func main() {
 	schoolHandler := handlers.NewSchoolHandler(db)
 	api := app.Group("/api")
 
-	authRoutes := api.Group("/auth")
+	authRoutes := api.Group("/auth", middleware.AuthRateLimiter(cfg.RateLimit.AuthPerMin))
 	authRoutes.Post("/login", authHandler.Login)
 	authRoutes.Post("/student-login", authHandler.StudentLogin)
 	authRoutes.Post("/refresh", authHandler.Refresh)
@@ -304,7 +315,7 @@ func main() {
 	// --- File management ---
 	if fileGW != nil {
 		fileHandler := handlers.NewFileHandler(fileGW)
-		fileRoutes := coreRoutes.Group("/files")
+		fileRoutes := coreRoutes.Group("/files", middleware.UploadRateLimiter(cfg.RateLimit.UploadPerMin))
 		fileRoutes.Post("/upload", fileHandler.Upload)
 		fileRoutes.Get("/", fileHandler.ListFiles)
 		fileRoutes.Get("/:id", fileHandler.Download)
@@ -316,7 +327,7 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("🚀 edulinker API server starting on %s", addr)
+	log.Info().Str("addr", addr).Msg("edulinker API server starting")
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -324,17 +335,17 @@ func main() {
 
 	go func() {
 		if err := app.Listen(addr); err != nil {
-			log.Fatalf("❌ Server failed: %v", err)
+			log.Fatal().Err(err).Msg("Server failed")
 		}
 	}()
 
 	<-quit
-	log.Println("🛑 Shutting down server...")
+	log.Info().Msg("Shutting down server...")
 	wsHub.Stop()
 	if err := app.Shutdown(); err != nil {
-		log.Fatalf("❌ Server shutdown failed: %v", err)
+		log.Fatal().Err(err).Msg("Server shutdown failed")
 	}
-	log.Println("👋 Server stopped")
+	log.Info().Msg("Server stopped")
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {

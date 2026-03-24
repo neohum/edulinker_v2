@@ -286,17 +286,43 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
   // Polling: refresh chat list every 5s, messages every 3s when a chat is open
   useEffect(() => {
     const chatListInterval = setInterval(() => {
-      fetchChatsRef.current()
+      if (document.visibilityState !== 'hidden') {
+        fetchChatsRef.current()
+      }
     }, 5000)
-    return () => clearInterval(chatListInterval)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchChatsRef.current()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(chatListInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {
     if (!selectedChat) return
     const msgInterval = setInterval(() => {
-      fetchMessagesRef.current(selectedChat.id)
+      if (document.visibilityState !== 'hidden') {
+        fetchMessagesRef.current(selectedChat.id)
+      }
     }, 3000)
-    return () => clearInterval(msgInterval)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMessagesRef.current(selectedChat.id)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(msgInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [selectedChat])
 
   const fetchChats = async () => {

@@ -1,0 +1,45 @@
+-- Migration: initial_schema (rollback)
+-- Drops all tables in reverse dependency order.
+
+DROP TABLE IF EXISTS screen_configs CASCADE;
+DROP TABLE IF EXISTS bookmarks CASCADE;
+DROP TABLE IF EXISTS pc_records CASCADE;
+DROP TABLE IF EXISTS attendance_records CASCADE;
+DROP TABLE IF EXISTS alerts CASCADE;
+DROP TABLE IF EXISTS todos CASCADE;
+DROP TABLE IF EXISTS message_read_receipts CASCADE;
+DROP TABLE IF EXISTS messages CASCADE;
+DROP TABLE IF EXISTS chat_members CASCADE;
+DROP TABLE IF EXISTS chats CASCADE;
+DROP TABLE IF EXISTS announcement_reads CASCADE;
+DROP TABLE IF EXISTS announcements CASCADE;
+DROP TABLE IF EXISTS multi_evaluations CASCADE;
+DROP TABLE IF EXISTS task_handovers CASCADE;
+DROP TABLE IF EXISTS facility_reservations CASCADE;
+DROP TABLE IF EXISTS facilities CASCADE;
+DROP TABLE IF EXISTS parent_class_requests CASCADE;
+DROP TABLE IF EXISTS class_assignment_sessions CASCADE;
+DROP TABLE IF EXISTS school_ai_chats CASCADE;
+DROP TABLE IF EXISTS school_document_chunks CASCADE;
+DROP TABLE IF EXISTS parent_students CASCADE;
+DROP TABLE IF EXISTS event_records CASCADE;
+DROP TABLE IF EXISTS school_votings CASCADE;
+DROP TABLE IF EXISTS evaluation_records CASCADE;
+DROP TABLE IF EXISTS weekly_study_plans CASCADE;
+DROP TABLE IF EXISTS ai_analysis_logs CASCADE;
+DROP TABLE IF EXISTS student_absences CASCADE;
+DROP TABLE IF EXISTS student_counselings CASCADE;
+DROP TABLE IF EXISTS teacher_leave_records CASCADE;
+DROP TABLE IF EXISTS sendoc_recipients CASCADE;
+DROP TABLE IF EXISTS sendocs CASCADE;
+DROP TABLE IF EXISTS gatong_responses CASCADE;
+DROP TABLE IF EXISTS gatong_targets CASCADE;
+DROP TABLE IF EXISTS gatongs CASCADE;
+DROP TABLE IF EXISTS file_records CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS plugin_permissions CASCADE;
+DROP TABLE IF EXISTS school_plugins CASCADE;
+DROP TABLE IF EXISTS plugins CASCADE;
+DROP TABLE IF EXISTS registered_devices CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS schools CASCADE;

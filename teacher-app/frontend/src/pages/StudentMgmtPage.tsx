@@ -45,7 +45,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   // Add student modal state
   const [showAddModal, setShowAddModal] = useState(false)
-  const [addForm, setAddForm] = useState({ grade: '', classNum: '', number: '', name: '' })
+  const [addForm, setAddForm] = useState({ grade: '', classNum: '', number: '', name: '', gender: '' })
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -186,7 +186,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const handleAddStudent = async () => {
     setAddError('')
-    const { grade, classNum, number, name } = addForm
+    const { grade, classNum, number, name, gender } = addForm
     if (!grade || grade === '0' || !classNum || classNum === '0' || !number || !name.trim()) {
       setAddError('학년, 반, 번호, 이름을 모두 입력해주세요.'); return
     }
@@ -198,12 +198,12 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
       }
       const res = await apiFetch('/api/core/users/add-student', {
         method: 'POST',
-        body: JSON.stringify({ grade: g, class_num: c, number: n, name: name.trim() })
+        body: JSON.stringify({ grade: g, class_num: c, number: n, name: name.trim(), gender })
       })
       const data = await res.json()
       if (!res.ok) { setAddError(data.error || '학생 등록에 실패했습니다.'); return }
       setShowAddModal(false)
-      setAddForm({ grade: '', classNum: '', number: '', name: '' })
+      setAddForm({ grade: '', classNum: '', number: '', name: '', gender: '' })
       fetchStudents()
     } catch (err) {
       setAddError('서버에 연결할 수 없습니다.')
@@ -300,7 +300,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
               if (!isProfileSet) { toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.'); return }
               setShowAddModal(true)
               setAddError('')
-              setAddForm({ grade: String(user.grade), classNum: String(user.classNum), number: '', name: '' })
+              setAddForm({ grade: String(user.grade), classNum: String(user.classNum), number: '', name: '', gender: '' })
             }}
             style={{
               background: isProfileSet ? 'var(--accent-green)' : '#9ca3af', color: 'white',
@@ -479,12 +479,23 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
               </div>
             </div>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>이름</label>
-              <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddStudent() }}
-                placeholder="학생 이름"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>이름</label>
+                <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddStudent() }}
+                  placeholder="학생 이름"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>성별</label>
+                <select value={addForm.gender} onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
+                  <option value="">알 수 없음/미지정</option>
+                  <option value="남">남</option>
+                  <option value="여">여</option>
+                </select>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowAddModal(false)}

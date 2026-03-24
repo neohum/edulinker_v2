@@ -22,6 +22,7 @@ import (
 
 	"github.com/getlantern/systray"
 	"github.com/go-ole/go-ole"
+	"github.com/ledongthuc/pdf"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -100,6 +101,65 @@ func (a *App) onTrayExit() {
 	if a.ctx != nil {
 		wailsRuntime.Quit(a.ctx)
 	}
+}
+
+// --- Text Extraction ---
+
+// ConvertToMarkdownResult is returned from ConvertToMarkdown.
+type ConvertToMarkdownResult struct {
+	Success bool   `json:"success"`
+	Text    string `json:"text"`
+	Error   string `json:"error,omitempty"`
+}
+
+// ConvertToMarkdown converts HWP/HWPX/TXT files into text format (Markdown) for AI processing.
+func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownResult {
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	if ext == ".hwp" || ext == ".hwpx" {
+		res := a.ConvertHwpToText(filename, base64data)
+		if !res.Success {
+			return ConvertToMarkdownResult{Error: res.Error}
+		}
+		return ConvertToMarkdownResult{Success: true, Text: res.Text}
+	} else if ext == ".txt" || ext == ".md" || ext == ".csv" {
+		data, err := base64.StdEncoding.DecodeString(base64data)
+		if err != nil {
+			return ConvertToMarkdownResult{Error: "디코딩 실패"}
+		}
+		return ConvertToMarkdownResult{Success: true, Text: string(data)}
+	} else if ext == ".pdf" {
+		// Native PDF Text Extraction via ledongthuc/pdf
+		res := a.ConvertPdfToText(base64data)
+		if !res.Success {
+			return ConvertToMarkdownResult{Error: res.Error}
+		}
+		return ConvertToMarkdownResult{Success: true, Text: res.Text}
+	}
+
+	return ConvertToMarkdownResult{Error: "지원하지 않는 파일 형식입니다: " + ext}
+}
+
+// ConvertPdfToText extracts raw text from a PDF securely via Go bytes.
+func (a *App) ConvertPdfToText(base64data string) ConvertToMarkdownResult {
+	pdfData, err := base64.StdEncoding.DecodeString(base64data)
+	if err != nil {
+		return ConvertToMarkdownResult{Error: "PDF 데이터 디코딩 실패"}
+	}
+
+	r, err := pdf.NewReader(bytes.NewReader(pdfData), int64(len(pdfData)))
+	if err != nil {
+		return ConvertToMarkdownResult{Error: "PDF 리더를 초기화할 수 없습니다."}
+	}
+
+	var buf bytes.Buffer
+	b, err := r.GetPlainText()
+	if err != nil {
+		return ConvertToMarkdownResult{Error: "PDF 텍스트를 추출하는 중 오류가 발생했습니다."}
+	}
+	buf.ReadFrom(b)
+
+	return ConvertToMarkdownResult{Success: true, Text: buf.String()}
 }
 
 // --- Auth ---

@@ -39,7 +39,10 @@
       "Bash(ls 'C:/Program Files \\(x86\\)/HNC/Office 2024/HOffice130/')",
       "Bash(ls 'C:/Program Files \\(x86\\)/HNC/Office 2024/HOffice130/Bin/')",
       "Bash(tasklist:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(python -c \":*)",
+      "Bash(find /d/works/edulinker_v2/backend/internal/plugins -type f -name \"*.go\" -exec head -60 {} +)",
+      "Bash(go test:*)"
     ]
   }
 }

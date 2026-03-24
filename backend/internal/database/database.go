@@ -100,6 +100,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.FacilityReservation{},
 		&models.TaskHandover{},
 		&models.MultiEvaluation{},
+		&models.KnowledgeDoc{},
+		&models.KnowledgeChunk{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto-migrate: %w", err)
@@ -122,6 +124,7 @@ func SeedPlugins(db *gorm.DB) error {
 		{ID: "student-alert", GroupCode: "A", Name: "학생 알림 서비스", Description: "교사→학생 단방향 알림, 디지털 기기 자동 표시", Version: "1.0.0", Status: models.PluginStatusActive},
 		{ID: "attendance", GroupCode: "A", Name: "지각·결석 원터치", Description: "학부모 원터치 선택+사유→교사 알림→출결 반영", Version: "1.0.0", Status: models.PluginStatusActive},
 		{ID: "gatong", GroupCode: "A", Name: "가정통신문(가통)", Description: "가정통신문·알림·설문·동의서 종합 알림장", Version: "1.0.0", Status: models.PluginStatusActive},
+		{ID: "knowledge", GroupCode: "A", Name: "업무 규칙/정보", Description: "RAG 기반 채팅 검색 및 학교 규정 문서 관리", Version: "1.0.0", Status: models.PluginStatusActive},
 		// Group B — 문서·전자서명
 		{ID: "sendoc", GroupCode: "B", Name: "전자문서·서명", Description: "sign-school 연동, 동의서, 서명 및 PDF 결과물 변환", Version: "1.0.0", Status: models.PluginStatusActive},
 		// Group D — 학생 관리
@@ -168,6 +171,8 @@ func SeedPlugins(db *gorm.DB) error {
 		{PluginID: "sendoc", Role: models.RoleTeacher, AccessLevel: models.AccessWrite},
 		{PluginID: "sendoc", Role: models.RoleParent, AccessLevel: models.AccessWrite},  // Can sign documents
 		{PluginID: "sendoc", Role: models.RoleStudent, AccessLevel: models.AccessWrite}, // Can sign documents
+		// Knowledge
+		{PluginID: "knowledge", Role: models.RoleTeacher, AccessLevel: models.AccessWrite},
 		// Student Management
 		{PluginID: "studentmgmt", Role: models.RoleTeacher, AccessLevel: models.AccessWrite},
 		// Curriculum

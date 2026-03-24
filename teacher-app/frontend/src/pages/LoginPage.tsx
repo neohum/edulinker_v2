@@ -53,7 +53,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
   const [autoLogin, setAutoLogin] = useState(false)
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false)
 
-  // Check connection status when serverIP changes
+  // Check connection status when serverIP changes (and poll in real-time)
   useEffect(() => {
     let ip = serverIP || 'localhost'
     ip = ip.split(':')[0].replace(/https?:\/\//, '')
@@ -66,13 +66,20 @@ function LoginPage({ onLogin }: LoginPageProps) {
           headers: { 'Accept': 'application/json' },
         })
         setServerStatus('connected')
+        window.dispatchEvent(new Event('server-online'))
       } catch (err) {
         setServerStatus('error')
+        window.dispatchEvent(new Event('server-offline'))
       }
     }
 
     const timer = setTimeout(checkConn, 500)
-    return () => clearTimeout(timer)
+    const interval = setInterval(checkConn, 5000) // 실시간 연결 상태 폴링
+
+    return () => {
+      clearTimeout(timer)
+      clearInterval(interval)
+    }
   }, [serverIP])
 
   useEffect(() => {

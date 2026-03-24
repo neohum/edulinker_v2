@@ -1,0 +1,40 @@
+run:
+  timeout: 5m
+  go: '1.23'
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - bodyclose
+    - misspell
+    - unconvert
+    - gocritic
+
+linters-settings:
+  gosec:
+    severity: medium
+    confidence: medium
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+  errcheck:
+    check-type-assertions: true
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+    - path: cmd/
+      linters:
+        - gocritic
+  max-issues-per-linter: 50
+  max-same-issues: 5

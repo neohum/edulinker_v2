@@ -30,8 +30,20 @@ export function ConvertHwpToPages(arg1, arg2) {
   return window['go']['main']['App']['ConvertHwpToPages'](arg1, arg2);
 }
 
+export function ConvertHwpToText(arg1, arg2) {
+  return window['go']['main']['App']['ConvertHwpToText'](arg1, arg2);
+}
+
+export function ConvertPdfToText(arg1) {
+  return window['go']['main']['App']['ConvertPdfToText'](arg1);
+}
+
 export function ConvertPptToPdf(arg1, arg2) {
   return window['go']['main']['App']['ConvertPptToPdf'](arg1, arg2);
+}
+
+export function ConvertToMarkdown(arg1, arg2) {
+  return window['go']['main']['App']['ConvertToMarkdown'](arg1, arg2);
 }
 
 export function ConvertToPdfAndImages(arg1, arg2) {

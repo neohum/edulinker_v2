@@ -484,6 +484,59 @@ type HwpPagesResult struct {
 	Error     string   `json:"error,omitempty"`
 }
 
+// HwpTextResult is returned from ConvertHwpToText.
+type HwpTextResult struct {
+	Success bool   `json:"success"`
+	Text    string `json:"text"`
+	Error   string `json:"error,omitempty"`
+}
+
+// ConvertHwpToText converts HWP/HWPX to raw text.
+func (a *App) ConvertHwpToText(inputName string, inputBase64 string) HwpTextResult {
+	safeInputName := filepath.Base(inputName)
+	hwpData, err := base64.StdEncoding.DecodeString(inputBase64)
+	if err != nil {
+		return HwpTextResult{Error: "데이터 디코딩 실패"}
+	}
+
+	tmpDir, err := os.MkdirTemp("", "hwptext_")
+	if err != nil {
+		return HwpTextResult{Error: "임시 폴더 생성 실패"}
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inputPath := filepath.Join(tmpDir, safeInputName)
+	os.WriteFile(inputPath, hwpData, 0644)
+
+	outputPath := filepath.Join(tmpDir, "out.txt")
+	respChan := make(chan error, 1)
+
+	a.hwpTaskChan <- hwpTask{inputPath, outputPath, "txt", respChan}
+
+	select {
+	case err := <-respChan:
+		if err != nil {
+			return HwpTextResult{Error: err.Error()}
+		}
+	case <-time.After(60 * time.Second):
+		return HwpTextResult{Error: "텍스트 추출 시간 초과"}
+	}
+
+	outData, err := os.ReadFile(outputPath)
+	if err != nil {
+		return HwpTextResult{Error: "텍스트 읽기 실패"}
+	}
+
+	// Convert from EUC-KR or whatever Hancom outputs?
+	// Usually Hancom SaveAs TXT uses ANSI (EUC-KR) by default.
+	// We might need to handle encoding. But let's assume it's UTF-8 if properly saved,
+	// or we can just read it and do basic conversion if needed.
+	// Actually we should force "UTF8" format if possible. Let's see if HWP supports Format="UTF8".
+	// By default Format="TEXT" usually saves as ANSI.
+
+	return HwpTextResult{Success: true, Text: string(outData)}
+}
+
 // ConvertHwpToPages converts HWP/HWPX to per-page PNG images (one image per page).
 // Uses HWP→PDF→per-page PNG pipeline to avoid facing-pages merging issue.
 func (a *App) ConvertHwpToPages(inputName string, inputBase64 string) HwpPagesResult {

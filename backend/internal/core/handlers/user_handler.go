@@ -71,6 +71,7 @@ type AddStudentRequest struct {
 	ClassNum    int    `json:"class_num"`
 	Number      int    `json:"number"`
 	Name        string `json:"name"`
+	Gender      string `json:"gender,omitempty"`
 	PIN         string `json:"pin,omitempty"`
 	ParentPhone string `json:"parent_phone,omitempty"`
 }
@@ -384,6 +385,7 @@ func (h *UserHandler) AddStudent(c *fiber.Ctx) error {
 		Grade:       req.Grade,
 		Class:       req.ClassNum,
 		Number:      req.Number,
+		Gender:      req.Gender,
 		PIN:         req.PIN,
 		ParentPhone: req.ParentPhone,
 		IsActive:    true,

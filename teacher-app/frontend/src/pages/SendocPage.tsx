@@ -159,7 +159,11 @@ export default function SendocPage({ user }: SendocPageProps) {
   // Auto save effect
   useEffect(() => {
     if (viewMode !== 'signer' || !activeDoc) return
-    const interval = setInterval(() => handleSaveDraft(true), 30000)
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        handleSaveDraft(true)
+      }
+    }, 30000)
     return () => clearInterval(interval)
   }, [viewMode, activeDoc, fields])
 

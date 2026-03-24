@@ -3,18 +3,32 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
 
 // Config holds all application configuration.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	MinIO    MinIOConfig
-	Wasabi   WasabiConfig
-	JWT      JWTConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	MinIO     MinIOConfig
+	Wasabi    WasabiConfig
+	JWT       JWTConfig
+	CORS      CORSConfig
+	RateLimit RateLimitConfig
+	LogLevel  string
+}
+
+type CORSConfig struct {
+	Origins string
+}
+
+type RateLimitConfig struct {
+	AuthPerMin   int
+	APIPerMin    int
+	UploadPerMin int
 }
 
 type ServerConfig struct {
@@ -119,9 +133,18 @@ func Load() (*Config, error) {
 		},
 		JWT: JWTConfig{
 			Secret:          os.Getenv("JWT_SECRET"),
-			ExpiryHours:     24,
-			RefreshExpiryHr: 168, // 7 days
+			ExpiryHours:     getEnvInt("JWT_EXPIRY_HOURS", 1),
+			RefreshExpiryHr: getEnvInt("JWT_REFRESH_EXPIRY_HOURS", 168),
 		},
+		CORS: CORSConfig{
+			Origins: getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:8080"),
+		},
+		RateLimit: RateLimitConfig{
+			AuthPerMin:   getEnvInt("RATE_LIMIT_AUTH", 5),
+			APIPerMin:    getEnvInt("RATE_LIMIT_API", 60),
+			UploadPerMin: getEnvInt("RATE_LIMIT_UPLOAD", 10),
+		},
+		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
 
 	return cfg, nil
@@ -130,6 +153,15 @@ func Load() (*Config, error) {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
 	}
 	return fallback
 }

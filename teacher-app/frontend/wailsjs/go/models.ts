@@ -52,6 +52,22 @@ export namespace main {
 	        this.monitors = source["monitors"];
 	    }
 	}
+	export class ConvertToMarkdownResult {
+	    success: boolean;
+	    text: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConvertToMarkdownResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.text = source["text"];
+	        this.error = source["error"];
+	    }
+	}
 	export class DownloadFileResult {
 	    success: boolean;
 	    file_path?: string;
@@ -103,6 +119,22 @@ export namespace main {
 	        this.success = source["success"];
 	        this.pages = source["pages"];
 	        this.page_count = source["page_count"];
+	        this.error = source["error"];
+	    }
+	}
+	export class HwpTextResult {
+	    success: boolean;
+	    text: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new HwpTextResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.text = source["text"];
 	        this.error = source["error"];
 	    }
 	}

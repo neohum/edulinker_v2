@@ -16,7 +16,13 @@ export function ConvertHwp(arg1:string,arg2:string,arg3:string):Promise<main.Hwp
 
 export function ConvertHwpToPages(arg1:string,arg2:string):Promise<main.HwpPagesResult>;
 
+export function ConvertHwpToText(arg1:string,arg2:string):Promise<main.HwpTextResult>;
+
+export function ConvertPdfToText(arg1:string):Promise<main.ConvertToMarkdownResult>;
+
 export function ConvertPptToPdf(arg1:string,arg2:string):Promise<main.OfficeConvertResult>;
+
+export function ConvertToMarkdown(arg1:string,arg2:string):Promise<main.ConvertToMarkdownResult>;
 
 export function ConvertToPdfAndImages(arg1:string,arg2:string):Promise<main.PdfConvertResult>;
 

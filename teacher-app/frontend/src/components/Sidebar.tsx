@@ -29,6 +29,7 @@ const pluginGroupA: NavItem[] = [
   { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
   { id: 'attendance', label: '지각·결석', icon: 'fi fi-rr-alarm-clock' },
   { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open', priceType: 'paid' },
+  { id: 'knowledge', label: '업무 규칙/정보', icon: 'fi fi-rr-book-bookmark' },
 ]
 
 const pluginGroupB: NavItem[] = [
