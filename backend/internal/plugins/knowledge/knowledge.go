@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
@@ -54,6 +56,7 @@ func (p *Plugin) OnDisable(schoolID uuid.UUID) error { return nil }
 
 func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Get("/docs", p.listDocs)
+	r.Get("/sync", p.syncDocs)
 	r.Post("/docs", p.createDoc)
 	r.Delete("/docs/:id", p.deleteDoc)
 	r.Post("/query", p.queryChat)
@@ -65,12 +68,37 @@ func (p *Plugin) listDocs(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
 	var docs []models.KnowledgeDoc
-	p.db.Select("id", "school_id", "title", "source_type", "original_filename", "created_by", "created_at").
+	p.db.Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id", "name", "grade", "class_num")
+	}).Select("id", "school_id", "title", "source_type", "original_filename", "file_url", "markdown_content", "created_by", "created_at").
 		Where("school_id = ?", schoolID).
 		Order("created_at DESC").
 		Find(&docs)
 
 	return c.JSON(docs)
+}
+
+func (p *Plugin) syncDocs(c *fiber.Ctx) error {
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	sinceParam := c.Query("since")
+
+	var allIDs []string
+	p.db.Model(&models.KnowledgeDoc{}).Where("school_id = ?", schoolID).Pluck("id", &allIDs) // fetch only IDs to detect deletions
+
+	var updatedDocs []models.KnowledgeDoc
+	query := p.db.Where("school_id = ?", schoolID)
+
+	if sinceParam != "" {
+		if sinceTime, err := time.Parse(time.RFC3339, sinceParam); err == nil {
+			query = query.Where("created_at > ?", sinceTime)
+		}
+	}
+	query.Order("created_at DESC").Find(&updatedDocs)
+
+	return c.JSON(fiber.Map{
+		"all_ids":      allIDs,
+		"updated_docs": updatedDocs,
+	})
 }
 
 func (p *Plugin) deleteDoc(c *fiber.Ctx) error {
@@ -89,14 +117,17 @@ func (p *Plugin) createDoc(c *fiber.Ctx) error {
 
 	var req DocumentRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		// Fallback to form-data (for file uploads)
+		req.Title = c.FormValue("title")
+		req.SourceType = c.FormValue("source_type")
+		req.OriginalFilename = c.FormValue("original_filename")
+		req.Content = c.FormValue("content")
 	}
 
 	if req.Content == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "content is empty"})
 	}
 
-	// 1. Create document
 	doc := models.KnowledgeDoc{
 		SchoolID:         schoolID,
 		Title:            req.Title,
@@ -104,6 +135,22 @@ func (p *Plugin) createDoc(c *fiber.Ctx) error {
 		OriginalFilename: req.OriginalFilename,
 		MarkdownContent:  req.Content,
 		CreatedBy:        userID,
+	}
+
+	// Handle file upload
+	if fileHeader, err := c.FormFile("file"); err == nil {
+		uploadDir := fmt.Sprintf("./uploads/knowledge/%s", schoolID.String())
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to create upload directory"})
+		}
+		// ensure filename is safe or use uuid + orig ext
+		safeName := uuid.New().String() + "-" + fileHeader.Filename
+		filePath := fmt.Sprintf("%s/%s", uploadDir, safeName)
+		if err := c.SaveFile(fileHeader, filePath); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to save file"})
+		}
+		// Update URL
+		doc.FileURL = fmt.Sprintf("/uploads/knowledge/%s/%s", schoolID.String(), safeName)
 	}
 
 	if err := p.db.Create(&doc).Error; err != nil {

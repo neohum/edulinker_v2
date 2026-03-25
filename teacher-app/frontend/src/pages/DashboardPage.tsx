@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import type { UserInfo } from '../App'
-import { apiFetch } from '../api'
+import { apiFetch, API_BASE } from '../api'
 import Sidebar from '../components/Sidebar'
 import GatongPage from './GatongPage'
 import SendocPage from './SendocPage'
@@ -72,18 +73,29 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
       />
 
       <div className="main-content">
-        <header className="main-header">
-          <h2 className="main-header-title">{getPageTitle(currentPage)}</h2>
+        <header className="main-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 16 }}>
+          <h2 className="main-header-title" style={{ margin: 0 }}>{getPageTitle(currentPage)}</h2>
+          {currentPage === 'dashboard' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                안녕하세요, {user?.name || '선생님'} <i className="fi fi-rr-hand-wave" style={{ color: '#f59e0b', marginLeft: 4 }} />
+              </span>
+              <span style={{ color: 'var(--border)' }}>|</span>
+              <span>
+                {user?.school || '학교'} · {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
+              </span>
+            </div>
+          )}
         </header>
 
-        <div className="main-body">
+        <div className="main-body" style={currentPage === 'dashboard' ? { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}}>
           {currentPage === 'dashboard' && <DashboardView user={user} />}
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
           {currentPage === 'counseling' && <CounselingPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage user={user} />}
-          {currentPage === 'aianalysis' && <AIAnalysisPage onNavigate={(p) => setCurrentPage(p as PageView)} />}
+          {currentPage === 'aianalysis' && <AIAnalysisPage user={user} onNavigate={(p) => setCurrentPage(p as PageView)} />}
           {currentPage === 'schoolevents' && <SchoolEventsPage />}
           {currentPage === 'classmgmt' && <ClassMgmtPage />}
           {currentPage === 'resourcemgmt' && <ResourceMgmtPage />}
@@ -95,7 +107,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
 
           {currentPage === 'announcement' && <AnnouncementPage />}
           {currentPage === 'todo' && <TodoPage />}
-          {currentPage === 'attendance' && <AttendancePage />}
+          {currentPage === 'attendance' && <AttendancePage user={user} />}
           {currentPage === 'student-alert' && <StudentAlertPage />}
           {currentPage === 'linker' && <LinkerPage />}
           {currentPage === 'pcinfo' && <PcInfoPage user={user} />}
@@ -116,28 +128,9 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
 
 function DashboardView({ user }: { user: UserInfo }) {
   return (
-    <>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 600 }}>
-          안녕하세요, {user.name} 선생님 <i className="fi fi-rr-hand-wave" />
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', marginTop: 4, fontSize: 14 }}>
-          {user.school} · {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
-        </p>
-      </div>
-
-      <div className="dashboard-grid">
-        <StatCard icon="fi fi-rr-comment" label="읽지 않은 메시지" value="—" color="blue" />
-        <StatCard icon="fi fi-rr-document" label="미확인 공문" value="—" color="orange" />
-        <StatCard icon="fi fi-rr-checkbox" label="오늘 할 일" value="—" color="green" />
-        <StatCard icon="fi fi-rr-bell" label="알림" value="—" color="purple" />
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <KnowledgeChatWidget />
-      </div>
-
-    </>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <KnowledgeSearchWidget isExpanded={true} />
+    </div>
   )
 }
 
@@ -155,116 +148,602 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
   )
 }
 
-function KnowledgeChatWidget() {
-  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  references?: { doc: any; matchSnippet: string }[];
+  isGenerating?: boolean;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+
+function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean }) {
+  const [docs, setDocs] = useState<any[]>([])
   const [query, setQuery] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
+  const [expandedRefs, setExpandedRefs] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const startNewSession = () => {
+    setActiveSessionId(null);
+    setMessages([{
+      id: 'welcome',
+      role: 'assistant',
+      content: '무엇이든 물어보세요. 내장된 로컬 AI 리소스와 연동된 규정 문서를 통해 빠르게 안내해 드립니다.'
+    }]);
+  };
+
+  const [sharingMsgId, setSharingMsgId] = useState<string | null>(null);
+
+  const shareQA = async (msg: ChatMessage) => {
+    const idx = messages.findIndex(m => m.id === msg.id);
+    const userMsg = messages[idx - 1];
+    if (!userMsg || userMsg.role !== 'user') return;
+
+    setSharingMsgId(msg.id);
+    try {
+      const payload = {
+        title: `[자주 묻는 질문] ${userMsg.content.length > 25 ? userMsg.content.substring(0, 25) + '...' : userMsg.content}`,
+        source_type: 'qa',
+        original_filename: 'ai_qa_history.md',
+        content: `**질문:**\n${userMsg.content}\n\n**AI 규정 요약:**\n${msg.content}`
+      };
+
+      const res = await apiFetch('/api/plugins/knowledge/docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        toast.success("질의응답이 공유 지식베이스에 등록되었습니다!", {
+          description: "다른 선생님들도 비슷한 질문 시 이 답변을 참조하게 됩니다."
+        });
+      } else {
+        const errorText = await res.text();
+        toast.error(`지식베이스 공유에 실패했습니다: ${errorText}`);
+      }
+    } catch (e: any) {
+      toast.error(`서버 오류가 발생했습니다: ${e.message}`);
+    } finally {
+      setSharingMsgId(null);
+    }
+  };
+
+  useEffect(() => {
+    const stored = localStorage.getItem('knowledge_chat_sessions');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSessions(parsed);
+          if (parsed.length > 0) {
+            setActiveSessionId(parsed[0].id);
+            setMessages(parsed[0].messages);
+          } else {
+            startNewSession();
+          }
+        }
+      } catch (e) {
+        startNewSession();
+      }
+    } else {
+      startNewSession();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeSessionId || messages.length === 0) return;
+    setSessions(prev => {
+      const idx = prev.findIndex(s => s.id === activeSessionId);
+      if (idx !== -1) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], messages, updatedAt: new Date().toISOString() };
+        localStorage.setItem('knowledge_chat_sessions', JSON.stringify(updated));
+        return updated;
+      }
+      return prev;
+    });
+  }, [messages, activeSessionId]);
+
+  useEffect(() => {
+    // Incremental sync of knowledge documents
+    const syncDocs = async () => {
+      try {
+        const lastSyncStr = localStorage.getItem('knowledge_last_sync')
+        const cachedDocsStr = localStorage.getItem('knowledge_cache')
+        let cachedDocs: any[] = cachedDocsStr ? JSON.parse(cachedDocsStr) : []
+
+        if (cachedDocs.length > 0) setDocs(cachedDocs)
+
+        const url = lastSyncStr
+          ? `/api/plugins/knowledge/sync?since=${encodeURIComponent(lastSyncStr)}`
+          : '/api/plugins/knowledge/sync'
+
+        const res = await apiFetch(url)
+        if (res.ok) {
+          const data = await res.json()
+          const allIds = data.all_ids || []
+          const updatedDocs = data.updated_docs || []
+
+          let merged = cachedDocs.filter(d => allIds.includes(d.id))
+          updatedDocs.forEach((newDoc: any) => {
+            const idx = merged.findIndex(d => d.id === newDoc.id)
+            if (idx >= 0) merged[idx] = newDoc
+            else merged.push(newDoc)
+          })
+
+          setDocs(merged)
+          localStorage.setItem('knowledge_cache', JSON.stringify(merged))
+          localStorage.setItem('knowledge_last_sync', new Date().toISOString())
+        }
+      } catch (e) {
+        console.error('Failed to sync knowledge docs', e)
+      }
+    }
+    syncDocs()
+
+    // Wails Events for AI
+    const wails = (window as any).runtime;
+    if (!wails) return;
+
+    wails.EventsOn("ai:chunk", (chunk: string) => {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'assistant' && last.isGenerating) {
+          const updated = [...prev];
+          updated[updated.length - 1] = { ...last, content: last.content + chunk };
+          return updated;
+        }
+        return prev;
+      });
+    });
+
+    wails.EventsOn("ai:done", () => {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'assistant' && last.isGenerating) {
+          const updated = [...prev];
+          updated[updated.length - 1] = { ...last, isGenerating: false };
+          return updated;
+        }
+        return prev;
+      });
+      setIsSearching(false);
+    });
+
+    wails.EventsOn("ai:error", (msg: string) => {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === 'assistant' && last.isGenerating) {
+          const updated = [...prev];
+          let errorText = `[오류 발생: ${msg}]`
+          if (msg.includes('메모리')) {
+            errorText = `⚠️ **메모리 부족 안내**\n현재 데스크톱의 메모리로 실행하기엔 AI 모델이 너무 무겁습니다.\n[설정] 탭의 로컬 AI 관리에서 시스템에 맞는 '가벼운 모델(EXAONE 3.5 등)'을 다운로드 받아주세요.`
+          } else if (msg.includes('not found') || msg.includes('404')) {
+            errorText = `⚠️ **AI 모델 미설치 안내**\n로컬 AI 모델을 찾을 수 없습니다. [설정] 탭의 '로컬 AI 관리' 단추를 눌러 기본 모델(gemma3 등)을 설치해주세요.`
+          }
+          updated[updated.length - 1] = { ...last, content: last.content + "\n\n" + errorText, isGenerating: false };
+          return updated;
+        }
+        return prev;
+      });
+      setIsSearching(false);
+    });
+
+    return () => {
+      wails.EventsOff("ai:chunk");
+      wails.EventsOff("ai:done");
+      wails.EventsOff("ai:error");
+    };
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages])
+  }, [messages]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!query.trim() || isTyping) return
+    if (!query.trim() || isSearching) return
 
-    const userMsg = query.trim()
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }])
-    setQuery('')
-    setIsTyping(true)
+    const userQuery = query.trim();
+    setQuery('');
+    setIsSearching(true);
 
-    try {
-      const res = await apiFetch('/api/plugins/knowledge/ask', {
-        method: 'POST',
-        body: JSON.stringify({ query: userMsg })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setMessages(prev => [...prev, { role: 'assistant', content: data.answer }])
+    const keywords = userQuery.toLowerCase().split(/[\s,?\.:]+/).filter(k => k.length > 1);
+    const validKeywords = keywords.length > 0 ? keywords : [userQuery.toLowerCase()];
+
+    const scoredDocs = docs.map(doc => {
+      const titleLower = doc.title.toLowerCase()
+      const contentLower = doc.markdown_content?.toLowerCase() || ''
+      let score = 0;
+      let firstMatchIdx = -1;
+
+      validKeywords.forEach(k => {
+        if (titleLower.includes(k)) score += 10;
+        const idx = contentLower.indexOf(k);
+        if (idx !== -1) {
+          score += 2;
+          // 텍스트 내 등장 횟수만큼 추가 점수 (최대 5번)
+          const count = (contentLower.match(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+          score += Math.min(count, 5);
+
+          if (firstMatchIdx === -1 || idx < firstMatchIdx) firstMatchIdx = idx;
+        }
+      });
+      return { doc, score, firstMatchIdx };
+    }).filter(d => d.score > 0).sort((a, b) => b.score - a.score);
+
+    const matches: { doc: any; matchSnippet: string; firstMatchIdx?: number }[] = scoredDocs.slice(0, 5).map(d => {
+      let snippet = '';
+      if (d.firstMatchIdx === -1) {
+        let summary = d.doc.markdown_content ? d.doc.markdown_content.substring(0, 100).replace(/\n/g, ' ') : '';
+        if (d.doc.markdown_content && d.doc.markdown_content.length > 100) summary += '...';
+        snippet = `[제목 일치] ${summary}`;
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: '검색 중 오류가 발생했습니다.' }])
+        const contentLower = d.doc.markdown_content || '';
+        const start = Math.max(0, d.firstMatchIdx - 40);
+        const end = Math.min(contentLower.length, d.firstMatchIdx + 80);
+        let s = contentLower.substring(start, end).replace(/\n/g, ' ');
+        if (start > 0) s = '...' + s;
+        if (end < contentLower.length) s = s + '...';
+        snippet = s;
       }
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '네트워크 연결 오류입니다.' }])
-    } finally {
-      setIsTyping(false)
+      return { doc: d.doc, matchSnippet: snippet, firstMatchIdx: d.firstMatchIdx };
+    });
+
+    const newMsgs: ChatMessage[] = [
+      ...messages,
+      { id: Date.now().toString() + '_u', role: 'user', content: userQuery }
+    ];
+
+    const aiMsgId = Date.now().toString() + '_a';
+    newMsgs.push({
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      references: matches.length > 0 ? matches : undefined,
+      isGenerating: true
+    });
+
+    let currentSessionId = activeSessionId;
+    if (!currentSessionId) {
+      currentSessionId = Date.now().toString();
+      const titleText = userQuery.length > 20 ? userQuery.substring(0, 20) + '...' : userQuery;
+      const newSession: ChatSession = {
+        id: currentSessionId,
+        title: titleText,
+        updatedAt: new Date().toISOString(),
+        messages: newMsgs
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(currentSessionId);
     }
+
+    setMessages(newMsgs);
+
+    const matchContext = matches.slice(0, 3).map(m => {
+      const fullText = m.doc.markdown_content || '';
+      const idx = m.firstMatchIdx !== undefined && m.firstMatchIdx > -1 ? m.firstMatchIdx : 0;
+
+      let start = Math.max(0, idx - 300);
+      let end = Math.min(fullText.length, idx + 1200);
+      if (start === 0) end = Math.min(fullText.length, 1500);
+
+      let textToFeed = fullText.substring(start, end);
+      if (start > 0) textToFeed = '...' + textToFeed;
+      if (end < fullText.length) textToFeed = textToFeed + '...';
+
+      return `### 문서 제목: ${m.doc.title}\n${textToFeed}`;
+    }).join('\n\n');
+
+    const systemPrompt = `당신은 학교 업무 규정을 안내하는 엄격하고 정확한 AI 어시스턴트입니다. 
+아래 제공된 [참고 문서] 내용을 최우선으로 분석하여 사용자의 질문에 정확하게 답변하세요. 
+[참고 문서]에 명시되지 않은 내용은 절대 임의로 지어내거나 추측해서 대답하지 마세요. 
+특히 결재, 복무 위반, 처벌 등과 관련된 핵심 규정이나 절차는 단어 하나하나 꼼꼼하게 확인하여 누락 없이 반드시 포함해야 합니다.
+
+[참고 문서]
+${matchContext || '관련 문서 없음'}`;
+
+    setTimeout(async () => {
+      if ((window as any).go?.main?.App?.GenerateAIStream) {
+        let selectedModel = "gemma3:4b"; // default fallback
+        try {
+          const wailsApp = (window as any).go?.main?.App;
+          if (wailsApp?.GetLocalModels) {
+            const models = await wailsApp.GetLocalModels();
+            if (models && models.length > 0) {
+              const gemma = models.find((m: string) => m.includes('gemma'));
+              selectedModel = gemma || models[0];
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch local AI models safely via Wails", e);
+        }
+
+        (window as any).go.main.App.GenerateAIStream(selectedModel, systemPrompt, userQuery);
+      } else {
+        setIsSearching(false);
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1].content = "AI 스트리밍 엔진에 연결할 수 없습니다. (Wails 환경인지 확인하세요)";
+          updated[updated.length - 1].isGenerating = false;
+          return updated;
+        });
+      }
+    }, 50);
   }
 
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 400 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-blue)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <i className="fi fi-rr-robot" />
+    <>
+      <div className="card" style={{ display: 'flex', flexDirection: 'row', height: isExpanded ? '100%' : 'calc(100vh - 320px)', minHeight: 400, padding: 0, overflow: 'hidden', border: isExpanded ? 'none' : undefined, borderRadius: isExpanded ? 0 : undefined, transition: 'height 0.2s ease-out' }}>
+
+        {/* Left Pane (Main Chat) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-blue)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="fi fi-rr-search-alt" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 600 }}>업무 규정(지식베이스) 통합 검색</h3>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>동기화된 문서 수: <b>{docs.length}</b>건</p>
+            </div>
+          </div>
+
+          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {messages.map((msg, idx) => (
+              <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '85%',
+                  padding: '16px',
+                  borderRadius: 16,
+                  borderTopLeftRadius: msg.role === 'assistant' ? 4 : 16,
+                  borderBottomRightRadius: msg.role === 'user' ? 4 : 16,
+                  background: msg.role === 'user' ? 'var(--accent-blue)' : 'var(--bg-secondary)',
+                  color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                  border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)'
+                }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13, fontWeight: 600, color: 'var(--accent-blue)' }}>
+                      <i className="fi fi-rr-robot" /> AI 규정 어시스턴트
+                      {msg.isGenerating && <span style={{ fontSize: 11, opacity: 0.7 }}>답변 작성 중...</span>}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {msg.content}
+                  </div>
+                  {msg.role === 'assistant' && !msg.isGenerating && msg.content && msg.id !== 'welcome' && (
+                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => shareQA(msg)}
+                        disabled={sharingMsgId === msg.id}
+                        className="btn-secondary"
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 16, background: 'rgba(59, 130, 246, 0.08)', color: 'var(--accent-blue)', border: '1px solid currentColor', display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        {sharingMsgId === msg.id ? (
+                          <><i className="fi fi-rr-spinner fi-spin" /> 공유 중...</>
+                        ) : (
+                          <><i className="fi fi-rr-share" /> 💡 이 질의응답을 공유 지식베이스에 추가하기</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {msg.references && msg.references.length > 0 && (
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4, paddingLeft: 8 }}>
+                    <div
+                      onClick={() => setExpandedRefs(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                      style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none' }}
+                    >
+                      <i className={`fi ${expandedRefs[msg.id] ? 'fi-rr-angle-small-down' : 'fi-rr-angle-small-right'}`} />
+                      참고 규정 문서 ({msg.references.length}건)
+                    </div>
+                    {expandedRefs[msg.id] && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8, animation: 'fadeIn 0.2s ease-out' }}>
+                        {msg.references.map((res, i) => (
+                          <div key={i} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <i className={`fi ${res.doc.source_type === 'file' ? 'fi-rr-file-hwp' : res.doc.source_type === 'qa' ? 'fi-rr-comment-alt' : 'fi-rr-document'}`} style={{ color: res.doc.source_type === 'qa' ? '#f59e0b' : 'var(--accent-blue)' }} />
+                                {res.doc.title}
+                              </div>
+                              <button onClick={() => setSelectedDoc(res.doc)} className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, margin: 0, flexShrink: 0 }}>문서 보기</button>
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              {res.matchSnippet}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)' }}>
+            <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                lang="ko"
+                className="form-input"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="단어로 검색하세요"
+                style={{ flex: 1, borderRadius: 24, paddingLeft: 20, imeMode: 'active' } as React.CSSProperties}
+                disabled={isSearching}
+              />
+              {isSearching ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if ((window as any).go?.main?.App?.CancelAIGenerate) {
+                      (window as any).go.main.App.CancelAIGenerate();
+                    }
+                    setIsSearching(false);
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last && last.isGenerating) {
+                        last.isGenerating = false;
+                        last.content += '\n\n*(답변 생성이 중단되었습니다)*';
+                      }
+                      return updated;
+                    });
+                  }}
+                  className="btn-secondary"
+                  style={{ borderRadius: 24, padding: '0 16px', height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', border: '1px solid currentColor', background: 'transparent' }}
+                >
+                  <i className="fi fi-rr-stop" style={{ marginRight: 6 }} /> 중지
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={!query.trim()}
+                  style={{ borderRadius: 24, width: 44, height: 44, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <i className="fi fi-rr-search" />
+                </button>
+              )}
+            </form>
+          </div>
         </div>
-        <div>
-          <h3 style={{ fontSize: 15, fontWeight: 600 }}>업무 규칙 AI 어시스턴트</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>학교 규정 및 매뉴얼 내용을 질문해보세요.</p>
+
+        {/* Right Pane (Sidebar) */}
+        <div style={{ width: 280, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+          <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
+            <button
+              onClick={startNewSession}
+              className="btn-primary"
+              style={{ width: '100%', padding: '10px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13 }}
+            >
+              <i className="fi fi-rr-plus" /> 새 문의하기
+            </button>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, paddingLeft: 4 }}>이전 문의 내역</div>
+            {sessions.map(s => (
+              <div
+                key={s.id}
+                onClick={() => { setActiveSessionId(s.id); setMessages(s.messages); }}
+                style={{
+                  padding: '12px',
+                  borderRadius: 8,
+                  marginBottom: 8,
+                  cursor: 'pointer',
+                  background: s.id === activeSessionId ? 'var(--bg-primary)' : 'transparent',
+                  border: '1px solid',
+                  borderColor: s.id === activeSessionId ? 'var(--accent-blue)' : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: s.id === activeSessionId ? 600 : 400, color: s.id === activeSessionId ? 'var(--accent-blue)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: 200 }} title={s.title}>
+                  <i className="fi fi-rr-comment-alt" style={{ marginRight: 6, opacity: 0.7 }} />
+                  {s.title}
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newSessions = sessions.filter(x => x.id !== s.id);
+                    setSessions(newSessions);
+                    localStorage.setItem('knowledge_chat_sessions', JSON.stringify(newSessions));
+                    if (activeSessionId === s.id) startNewSession();
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}
+                  onMouseOver={(e) => e.currentTarget.style.color = '#ef4444'}
+                  onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                  title="삭제"
+                >
+                  <i className="fi fi-rr-trash" />
+                </button>
+              </div>
+            ))}
+            {sessions.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                이전 검색 내역이 없습니다.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {messages.length === 0 ? (
-          <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
-            <i className="fi fi-rr-sparkles" style={{ fontSize: 32, opacity: 0.5, marginBottom: 12, display: 'block' }} />
-            <p style={{ fontSize: 14 }}>"휴직 처리 절차가 어떻게 되나요?"<br />"생활기록부 정정 방법 알려주세요." 등<br />결재, 복무, 규정에 대해 질문해보세요.</p>
-          </div>
-        ) : (
-          messages.map((msg, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: msg.role === 'user' ? 'var(--accent-blue)' : 'rgba(59, 130, 246, 0.1)', color: msg.role === 'user' ? 'white' : 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <i className={`fi ${msg.role === 'user' ? 'fi-rr-user' : 'fi-rr-robot'}`} style={{ fontSize: 13 }} />
+      {selectedDoc && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: 800, maxWidth: '90%', height: '80vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', background: 'var(--bg-primary)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                <i className={`fi ${selectedDoc.source_type === 'file' ? 'fi-rr-file-hwp' : 'fi-rr-text'}`} style={{ color: 'var(--accent-blue)' }} />
+                {selectedDoc.title}
+              </h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {selectedDoc.file_url ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const a = document.createElement('a')
+                      a.href = `${API_BASE}${selectedDoc.file_url}`
+                      a.download = selectedDoc.original_filename || 'download'
+                      a.target = '_blank'
+                      a.click()
+                    }}
+                    className="btn-primary"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 13, borderRadius: 6, margin: 0 }}
+                  >
+                    <i className="fi fi-rr-download" /> 원본 다운로드
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const blob = new Blob([selectedDoc.markdown_content], { type: 'text/markdown;charset=utf-8;' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      const dlName = selectedDoc.original_filename ? `${selectedDoc.original_filename}.txt` : `${selectedDoc.title}.txt`
+                      a.download = dlName
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    className="btn-secondary"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 13, borderRadius: 6, margin: 0 }}
+                  >
+                    <i className="fi fi-rr-download" /> 텍스트 다운로드
+                  </button>
+                )}
+                <button type="button" onClick={() => setSelectedDoc(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-secondary)', padding: '0 0 0 8px' }}>
+                  <i className="fi fi-rr-cross-small" />
+                </button>
               </div>
-              <div style={{
-                maxWidth: '75%', padding: '12px 16px', borderRadius: 16, fontSize: 14, lineHeight: 1.5,
-                background: msg.role === 'user' ? 'var(--accent-blue)' : 'var(--bg-secondary)',
-                color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
-                border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)',
-                borderTopRightRadius: msg.role === 'user' ? 4 : 16,
-                borderTopLeftRadius: msg.role === 'assistant' ? 4 : 16,
-              }}>
-                {msg.content}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
+              {selectedDoc.markdown_content}
+            </div>
+            {selectedDoc.original_filename && (
+              <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>원본 파일: {selectedDoc.original_filename} (서버에는 최적화를 위해 추출된 텍스트만 보관됩니다)</span>
               </div>
-            </div>
-          ))
-        )}
-        {isTyping && (
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <i className="fi fi-rr-robot" style={{ fontSize: 13 }} />
-            </div>
-            <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTopLeftRadius: 4 }}>
-              <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-            </div>
+            )}
           </div>
-        )}
-      </div>
-
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="text"
-            className="form-input"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="규칙이나 규정을 검색해보세요..."
-            style={{ flex: 1, borderRadius: 24, paddingLeft: 20 }}
-            disabled={isTyping}
-          />
-          <button
-            type="submit"
-            className="btn-primary"
-            disabled={isTyping || !query.trim()}
-            style={{ borderRadius: 24, width: 44, height: 44, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <i className="fi fi-rr-paper-plane" />
-          </button>
-        </form>
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -285,7 +764,7 @@ function getPageTitle(page: string): string {
     announcement: '공문전달',
     todo: '투두리스트',
     'student-alert': '학생 알림',
-    attendance: '지각·결석',
+    attendance: '출결',
     gatong: '가정통신문',
     sendoc: '전자문서/서명',
     studentmgmt: '학생관리',

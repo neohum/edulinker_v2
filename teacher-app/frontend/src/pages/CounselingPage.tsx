@@ -15,11 +15,9 @@ interface CounselingRecord {
   id: string
   student_id: string
   student_name?: string
-  date: string
+  counseling_date: string
   category: string
   content: string
-  result: string
-  follow_up: string
   created_at: string
 }
 
@@ -40,8 +38,6 @@ export default function CounselingPage({ user }: CounselingPageProps) {
     date: new Date().toISOString().slice(0, 10),
     category: '학업',
     content: '',
-    result: '',
-    follow_up: '',
   })
 
   useEffect(() => { fetchStudents() }, [])
@@ -67,7 +63,7 @@ export default function CounselingPage({ user }: CounselingPageProps) {
 
   const fetchRecords = async (studentId: string) => {
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/counseling?student_id=${studentId}`)
+      const res = await apiFetch(`/api/plugins/studentmgmt/students/${studentId}/counseling`)
       if (res.ok) {
         const data = await res.json()
         setRecords(data || [])
@@ -80,14 +76,19 @@ export default function CounselingPage({ user }: CounselingPageProps) {
     if (!form.content.trim()) { toast.error('상담 내용을 입력해주세요.'); return }
     setSubmitting(true)
     try {
-      const res = await apiFetch('/api/plugins/studentmgmt/counseling', {
+      const res = await apiFetch(`/api/plugins/studentmgmt/students/${selectedStudent.id}/counseling`, {
         method: 'POST',
-        body: JSON.stringify({ student_id: selectedStudent.id, ...form })
+        body: JSON.stringify({
+          student_id: selectedStudent.id,
+          counseling_date: new Date(form.date).toISOString(),
+          category: form.category,
+          content: form.content
+        })
       })
       if (res.ok) {
         toast.success('상담 기록이 저장되었습니다.')
         setShowForm(false)
-        setForm({ date: new Date().toISOString().slice(0, 10), category: '학업', content: '', result: '', follow_up: '' })
+        setForm({ date: new Date().toISOString().slice(0, 10), category: '학업', content: '' })
         fetchRecords(selectedStudent.id)
       } else {
         const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.')
@@ -99,10 +100,10 @@ export default function CounselingPage({ user }: CounselingPageProps) {
   const handleDelete = async (id: string) => {
     if (!confirm('이 상담 기록을 삭제하시겠습니까?')) return
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/counseling/${id}`, { method: 'DELETE' })
-      if (res.ok) { toast.success('삭제되었습니다.'); if (selectedStudent) fetchRecords(selectedStudent.id) }
-      else toast.error('삭제에 실패했습니다.')
-    } catch (e) { toast.error('서버에 연결할 수 없습니다.') }
+      // NOTE: backend does not actually expose DELETE /students/:id/counseling/:id currently, 
+      // but if we had it, this would be the correct place. Handled as is for frontend.
+      toast.error('삭제 기능은 백엔드에서 지원하지 않습니다.')
+    } catch (e) { }
   }
 
   const categoryColor: Record<string, string> = {
@@ -190,23 +191,9 @@ export default function CounselingPage({ user }: CounselingPageProps) {
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>상담 내용 *</label>
-                  <textarea rows={4} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-                    placeholder="상담 내용을 입력하세요..."
+                  <textarea rows={6} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+                    placeholder="상담 내용, 상담 결과, 및 후속 조치 사항 등을 자유롭게 입력하세요..."
                     style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, resize: 'vertical' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>상담 결과</label>
-                    <textarea rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))}
-                      placeholder="상담 결과 및 학생 반응..."
-                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, resize: 'vertical' }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>후속 조치</label>
-                    <textarea rows={2} value={form.follow_up} onChange={e => setForm(f => ({ ...f, follow_up: e.target.value }))}
-                      placeholder="추후 확인 및 조치 사항..."
-                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, resize: 'vertical' }} />
-                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button onClick={() => setShowForm(false)} style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontSize: 14 }}>취소</button>
@@ -228,29 +215,13 @@ export default function CounselingPage({ user }: CounselingPageProps) {
                 <div key={r.id} style={{ background: 'white', padding: 20, borderRadius: 14, border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${categoryColor[r.category] || '#64748b'}18`, color: categoryColor[r.category] || '#64748b' }}>{r.category}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{r.date}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{new Date(r.counseling_date || r.created_at).toLocaleDateString('ko-KR')}</span>
                     <button onClick={() => handleDelete(r.id)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}
                       onMouseOver={e => (e.currentTarget.style.color = '#ef4444')} onMouseOut={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
                       <i className="fi fi-rr-trash" /> 삭제
                     </button>
                   </div>
-                  <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', marginBottom: r.result || r.follow_up ? 10 : 0 }}>{r.content}</div>
-                  {(r.result || r.follow_up) && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                      {r.result && (
-                        <div style={{ background: 'var(--bg-primary)', borderRadius: 8, padding: '10px 12px' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>상담 결과</div>
-                          <div style={{ fontSize: 13 }}>{r.result}</div>
-                        </div>
-                      )}
-                      {r.follow_up && (
-                        <div style={{ background: 'var(--bg-primary)', borderRadius: 8, padding: '10px 12px' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>후속 조치</div>
-                          <div style={{ fontSize: 13 }}>{r.follow_up}</div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', marginBottom: 0 }}>{r.content}</div>
                 </div>
               ))
             )}

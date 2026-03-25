@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -221,9 +222,14 @@ func (s *Service) pullModel(c *fiber.Ctx) error {
 }
 
 func (s *Service) deleteModel(c *fiber.Ctx) error {
-	name := c.Params("name")
-	if name == "" {
+	nameParam := c.Params("name")
+	if nameParam == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "모델명 필요"})
+	}
+
+	name, err := url.QueryUnescape(nameParam)
+	if err != nil {
+		name = nameParam // fallback
 	}
 
 	ollamaReq := map[string]interface{}{"name": name}
@@ -235,9 +241,16 @@ func (s *Service) deleteModel(c *fiber.Ctx) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("[AIGW] Ollama delete connection failed: %v", err)
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Ollama 연결 실패"})
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[AIGW] Ollama delete failed for %s. Code: %d, Body: %s", name, resp.StatusCode, string(body))
+		return c.Status(resp.StatusCode).JSON(fiber.Map{"error": "모델 삭제 실패"})
+	}
 
 	return c.JSON(fiber.Map{"status": "success"})
 }

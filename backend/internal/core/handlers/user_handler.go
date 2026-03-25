@@ -158,13 +158,18 @@ func (h *UserHandler) ListUsers(c *fiber.Ctx) error {
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
+	if pageSize < 1 || pageSize > 1000 {
+		pageSize = 1000
 	}
 
 	query := h.db.Where("school_id = ? AND is_active = ?", schoolID, true)
 	if roleFilter != "" {
-		query = query.Where("role = ?", roleFilter)
+		roles := strings.Split(roleFilter, ",")
+		if len(roles) == 1 {
+			query = query.Where("role = ?", roles[0])
+		} else {
+			query = query.Where("role IN ?", roles)
+		}
 	}
 	if gradeFilter > 0 {
 		query = query.Where("grade = ?", gradeFilter)

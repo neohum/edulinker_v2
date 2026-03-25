@@ -206,6 +206,30 @@ body {
   text-align: center;
 }
 
+.sidebar-fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--border-light);
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.sidebar-fav-btn:hover {
+  color: var(--text-muted);
+  transform: scale(1.1);
+}
+
+.sidebar-fav-btn.active {
+  color: var(--accent-orange);
+}
+
+.sidebar-fav-btn.active:hover {
+  color: #fbbf24;
+}
+
 .sidebar-price-badge {
   font-size: 10px;
   font-weight: 700;

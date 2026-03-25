@@ -15,11 +15,9 @@ interface EvalRecord {
   id: string
   student_id: string
   subject: string
-  title: string
+  evaluation_type: string
   score: number
-  max_score: number
-  memo: string
-  eval_date: string
+  feedback: string
   created_at: string
 }
 
@@ -38,8 +36,7 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
-    subject: '국어', title: '', score: '', max_score: '100', memo: '',
-    eval_date: new Date().toISOString().slice(0, 10)
+    subject: '국어', title: '', score: '', memo: ''
   })
 
   useEffect(() => { fetchStudents() }, [])
@@ -65,9 +62,13 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const fetchEvalRecords = async (studentId: string) => {
     setEvalLoading(true)
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation?student_id=${studentId}`)
-      if (res.ok) { const d = await res.json(); setEvalRecords(d || []) }
-      else setEvalRecords([])
+      const res = await apiFetch(`/api/plugins/curriculum/evaluations`)
+      if (res.ok) {
+        const d = await res.json();
+        setEvalRecords((d || []).filter((r: any) => r.student_id === studentId))
+      } else {
+        setEvalRecords([])
+      }
     } catch { setEvalRecords([]) } finally { setEvalLoading(false) }
   }
 
@@ -76,18 +77,17 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
     if (!form.title.trim() || !form.score) { toast.error('평가명과 점수를 입력해주세요.'); return }
     setSubmitting(true)
     try {
-      const res = await apiFetch('/api/plugins/studentmgmt/evaluation', {
+      const res = await apiFetch('/api/plugins/curriculum/evaluations', {
         method: 'POST',
         body: JSON.stringify({
-          student_id: selectedStudent.id, subject: form.subject, title: form.title.trim(),
-          score: Number(form.score), max_score: Number(form.max_score) || 100,
-          memo: form.memo, eval_date: form.eval_date
+          student_id: selectedStudent.id, subject: form.subject, evaluation_type: form.title.trim(),
+          score: Number(form.score), feedback: form.memo
         })
       })
       if (res.ok) {
         toast.success('수행평가 기록이 저장되었습니다.')
         setShowForm(false)
-        setForm({ subject: '국어', title: '', score: '', max_score: '100', memo: '', eval_date: new Date().toISOString().slice(0, 10) })
+        setForm({ subject: '국어', title: '', score: '', memo: '' })
         fetchEvalRecords(selectedStudent.id)
       } else { const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.') }
     } catch { toast.error('서버에 연결할 수 없습니다.') } finally { setSubmitting(false) }
@@ -96,7 +96,7 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const handleDelete = async (id: string) => {
     if (!confirm('이 수행평가 기록을 삭제하시겠습니까?')) return
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/evaluation/${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/plugins/curriculum/evaluations/${id}`, { method: 'DELETE' })
       if (res.ok) { toast.success('삭제되었습니다.'); if (selectedStudent) fetchEvalRecords(selectedStudent.id) }
       else toast.error('삭제에 실패했습니다.')
     } catch { toast.error('서버에 연결할 수 없습니다.') }
@@ -169,17 +169,9 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>평가 날짜</label>
-                    <input type="date" value={form.eval_date} onChange={e => setForm(f => ({ ...f, eval_date: e.target.value }))}
-                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>점수 / 만점</label>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>점수 (100점 만점)</label>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <input type="number" value={form.score} onChange={e => setForm(f => ({ ...f, score: e.target.value }))} placeholder="점수"
-                        style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
-                      <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
-                      <input type="number" value={form.max_score} onChange={e => setForm(f => ({ ...f, max_score: e.target.value }))} placeholder="만점"
                         style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
                     </div>
                   </div>
@@ -224,16 +216,16 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                   <tbody>
                     {evalRecords.map(r => (
                       <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{r.eval_date}</td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>{new Date(r.created_at).toLocaleDateString('ko-KR')}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <span style={{ padding: '3px 10px', borderRadius: 20, background: '#e0e7ff', color: '#4f46e5', fontWeight: 700, fontSize: 12 }}>{r.subject}</span>
                         </td>
-                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.title}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.evaluation_type}</td>
                         <td style={{ padding: '12px 16px' }}>
-                          <span style={{ fontWeight: 800, fontSize: 16, color: r.score >= r.max_score * 0.8 ? '#22c55e' : r.score >= r.max_score * 0.5 ? '#f59e0b' : '#ef4444' }}>{r.score}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> / {r.max_score}</span>
+                          <span style={{ fontWeight: 800, fontSize: 16, color: r.score >= 80 ? '#22c55e' : r.score >= 50 ? '#f59e0b' : '#ef4444' }}>{r.score}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> / 100</span>
                         </td>
-                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.memo}</td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.feedback}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <button onClick={() => handleDelete(r.id)}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 13 }}

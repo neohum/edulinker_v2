@@ -1241,7 +1241,21 @@ func (a *App) GenerateAIStream(model, systemPrompt, userMsg string) {
 
 		if resp.StatusCode != 200 {
 			body, _ := io.ReadAll(resp.Body)
-			wailsRuntime.EventsEmit(a.ctx, "ai:error", fmt.Sprintf("Ollama 오류 (%d): %s", resp.StatusCode, string(body)))
+			errMsg := string(body)
+
+			// Try to parse standard Ollama {"error": "..."} JSON
+			var errResp struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != "" {
+				errMsg = errResp.Error
+			}
+
+			if strings.Contains(errMsg, "requires more system memory") || strings.Contains(errMsg, "out of memory") {
+				errMsg = "컴퓨터의 메모리(RAM)가 부족하여 선택한 AI 모델을 실행할 수 없습니다. 더 작고 가벼운 모델(예: EXAONE, Gemma)을 사용해 보시거나 안 쓰는 프로그램을 종료해 주세요."
+			}
+
+			wailsRuntime.EventsEmit(a.ctx, "ai:error", fmt.Sprintf("Ollama 연결 오류 (%d): %s", resp.StatusCode, errMsg))
 			return
 		}
 
@@ -1270,6 +1284,31 @@ func (a *App) CancelAIGenerate() {
 		a.aiCancel()
 		a.aiCancel = nil
 	}
+}
+
+// GetLocalModels returns a list of installed models directly from local Ollama avoiding CORS.
+func (a *App) GetLocalModels() []string {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://localhost:11434/api/tags")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil
+	}
+
+	var names []string
+	for _, m := range data.Models {
+		names = append(names, m.Name)
+	}
+	return names
 }
 
 // PullModelResult is the result of a model pull operation.

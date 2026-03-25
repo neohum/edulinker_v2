@@ -221,6 +221,8 @@ func (a *App) executeHwpTask(inputPath, outputPath, outputType string) error {
 	var fmts []string
 	if outputType == "image" || outputType == "pages" {
 		fmts = []string{"PNG", "BMP", "JPG"}
+	} else if outputType == "txt" {
+		fmts = []string{"UTF8", "UNICODE", "TEXT"}
 	} else {
 		fmts = []string{"PDF"}
 	}
@@ -285,8 +287,21 @@ func (a *App) executeHwpTask(inputPath, outputPath, outputType string) error {
 			}
 		}
 
+		// ─── [GETTEXTFILE METHOD (For TXT)] ───
+		// GetTextFile is much faster and bypasses format/encoding guessing for .hwpx/.hwp
+		if outputType == "txt" && !saveSuccess {
+			res, err := oleutil.CallMethod(hwp, "GetTextFile", "TEXT", "")
+			if err == nil && res != nil && res.Value() != nil {
+				if s, ok := res.Value().(string); ok {
+					if err := os.WriteFile(absOutputPath, []byte(s), 0644); err == nil {
+						saveSuccess = true
+					}
+				}
+			}
+		}
+
 		// ─── [DEFAULT FILESAVEAS_S METHOD] ───
-		// Used for direct images, or if the Virtual Printer method failed
+		// Used for direct images, or if the Virtual Printer method failed (and GetTextFile failed)
 		if !saveSuccess {
 			hfos := comGetProp(hParamSet, "HFileOpenSave")
 			hSet := comGetProp(hfos, "HSet")
@@ -527,14 +542,22 @@ func (a *App) ConvertHwpToText(inputName string, inputBase64 string) HwpTextResu
 		return HwpTextResult{Error: "텍스트 읽기 실패"}
 	}
 
-	// Convert from EUC-KR or whatever Hancom outputs?
-	// Usually Hancom SaveAs TXT uses ANSI (EUC-KR) by default.
-	// We might need to handle encoding. But let's assume it's UTF-8 if properly saved,
-	// or we can just read it and do basic conversion if needed.
-	// Actually we should force "UTF8" format if possible. Let's see if HWP supports Format="UTF8".
-	// By default Format="TEXT" usually saves as ANSI.
+	// Detect encoding and strip BOM if needed
+	text := string(outData)
+	if len(outData) >= 2 && outData[0] == 0xFF && outData[1] == 0xFE {
+		// UTF-16LE BOM
+		runes := make([]rune, 0, (len(outData)-2)/2)
+		for i := 2; i < len(outData)-1; i += 2 {
+			r := rune(outData[i]) | (rune(outData[i+1]) << 8)
+			runes = append(runes, r)
+		}
+		text = string(runes)
+	} else if len(outData) >= 3 && outData[0] == 0xEF && outData[1] == 0xBB && outData[2] == 0xBF {
+		// UTF-8 BOM
+		text = string(outData[3:])
+	}
 
-	return HwpTextResult{Success: true, Text: string(outData)}
+	return HwpTextResult{Success: true, Text: text}
 }
 
 // ConvertHwpToPages converts HWP/HWPX to per-page PNG images (one image per page).

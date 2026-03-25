@@ -20,17 +20,21 @@ const (
 )
 
 type AttendanceRecord struct {
-	ID          uuid.UUID      `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SchoolID    uuid.UUID      `json:"school_id" gorm:"type:uuid;index"`
-	StudentID   uuid.UUID      `json:"student_id" gorm:"type:uuid;index"`
-	ReporterID  uuid.UUID      `json:"reporter_id" gorm:"type:uuid"` // parent or teacher
-	TeacherID   *uuid.UUID     `json:"teacher_id,omitempty" gorm:"type:uuid"`
-	Type        AttendanceType `json:"type" gorm:"type:varchar(20);not null"`
-	Reason      string         `json:"reason" gorm:"type:text"`
-	Date        time.Time      `json:"date" gorm:"type:date;index"`
-	IsConfirmed bool           `json:"is_confirmed" gorm:"default:false"`
-	ConfirmedAt *time.Time     `json:"confirmed_at,omitempty"`
-	CreatedAt   time.Time      `json:"created_at" gorm:"autoCreateTime"`
+	ID                uuid.UUID      `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SchoolID          uuid.UUID      `json:"school_id" gorm:"type:uuid;index"`
+	StudentID         uuid.UUID      `json:"student_id" gorm:"type:uuid;index"`
+	ReporterID        uuid.UUID      `json:"reporter_id" gorm:"type:uuid"` // parent or teacher
+	TeacherID         *uuid.UUID     `json:"teacher_id,omitempty" gorm:"type:uuid"`
+	Type              AttendanceType `json:"type" gorm:"type:varchar(20);not null"`
+	Reason            string         `json:"reason" gorm:"type:text"`
+	Date              time.Time      `json:"date" gorm:"type:date;index"`
+	IsConfirmed       bool           `json:"is_confirmed" gorm:"default:false"`
+	ConfirmedAt       *time.Time     `json:"confirmed_at,omitempty"`
+	StartDate         *time.Time     `json:"start_date,omitempty" gorm:"type:date"`
+	EndDate           *time.Time     `json:"end_date,omitempty" gorm:"type:date"`
+	AbsenceType       string         `json:"absence_type" gorm:"type:varchar(50)"`
+	DocumentSubmitted bool           `json:"document_submitted" gorm:"default:false"`
+	CreatedAt         time.Time      `json:"created_at" gorm:"autoCreateTime"`
 }
 
 // ── Plugin ──
@@ -64,22 +68,40 @@ func (p *Plugin) report(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
 	var req struct {
-		StudentID uuid.UUID      `json:"student_id"`
-		Type      AttendanceType `json:"type"`
-		Reason    string         `json:"reason"`
+		StudentID         uuid.UUID      `json:"student_id"`
+		Type              AttendanceType `json:"type"`
+		Reason            string         `json:"reason"`
+		StartDate         *time.Time     `json:"start_date"`
+		EndDate           *time.Time     `json:"end_date"`
+		AbsenceType       string         `json:"absence_type"`
+		DocumentSubmitted bool           `json:"document_submitted"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
 	record := AttendanceRecord{
-		SchoolID:   schoolID,
-		StudentID:  req.StudentID,
-		ReporterID: reporterID,
-		Type:       req.Type,
-		Reason:     req.Reason,
-		Date:       time.Now(),
+		SchoolID:          schoolID,
+		StudentID:         req.StudentID,
+		ReporterID:        reporterID,
+		Type:              req.Type,
+		Reason:            req.Reason,
+		Date:              time.Now(),
+		StartDate:         req.StartDate,
+		EndDate:           req.EndDate,
+		AbsenceType:       req.AbsenceType,
+		DocumentSubmitted: req.DocumentSubmitted,
 	}
+
+	// Assume requests with these detailed fields from a trusted frontend (teacher app)
+	// are already confirmed. For robust auth, you'd check roles.
+	if req.AbsenceType != "" || req.StartDate != nil {
+		record.IsConfirmed = true
+		now := time.Now()
+		record.ConfirmedAt = &now
+		record.TeacherID = &reporterID
+	}
+
 	p.db.Create(&record)
 
 	// Notify teacher
@@ -125,12 +147,36 @@ func (p *Plugin) confirm(c *fiber.Ctx) error {
 	id, _ := uuid.Parse(c.Params("id"))
 	teacherID, _ := c.Locals("userID").(uuid.UUID)
 
+	var req struct {
+		StartDate         *time.Time `json:"start_date"`
+		EndDate           *time.Time `json:"end_date"`
+		AbsenceType       string     `json:"absence_type"`
+		DocumentSubmitted bool       `json:"document_submitted"`
+	}
+
+	if err := c.BodyParser(&req); err != nil && string(c.Request().Body()) != "" {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+	}
+
 	now := time.Now()
-	p.db.Model(&AttendanceRecord{}).Where("id = ?", id).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"is_confirmed": true,
 		"confirmed_at": &now,
 		"teacher_id":   teacherID,
-	})
+	}
+
+	if req.StartDate != nil {
+		updates["start_date"] = req.StartDate
+	}
+	if req.EndDate != nil {
+		updates["end_date"] = req.EndDate
+	}
+	if req.AbsenceType != "" {
+		updates["absence_type"] = req.AbsenceType
+	}
+	updates["document_submitted"] = req.DocumentSubmitted
+
+	p.db.Model(&AttendanceRecord{}).Where("id = ?", id).Updates(updates)
 
 	return c.JSON(fiber.Map{"message": "confirmed"})
 }

@@ -34,6 +34,8 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetFileDataURL(arg1:string):Promise<string>;
 
+export function GetLocalModels():Promise<Array<string>>;
+
 export function GetPlugins():Promise<Array<main.PluginInfo>>;
 
 export function GetSystemInfo():Promise<main.SystemInfo>;

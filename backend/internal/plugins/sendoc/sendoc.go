@@ -132,11 +132,14 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	teacherAPI.Get("/", p.listDocuments)
 	teacherAPI.Get("/:id/signatures", p.getSignatures)
 	teacherAPI.Get("/:id/pdf", p.downloadPDF)
+	teacherAPI.Delete("/:id", p.deleteDocument)
+	teacherAPI.Put("/:id/recall", p.recallDocument)
 
 	// Signer endpoints (Read/Write access for Parents/Students) - view docs and submit signatures
 	signerAPI := router.Group("/sign", middleware.RoleMiddleware(models.RoleParent, models.RoleStudent, models.RoleTeacher))
 	signerAPI.Get("/", p.listPendingDocuments)
 	signerAPI.Post("/:id/submit", p.submitSignature)
+	signerAPI.Delete("/:id", p.deletePendingDocument)
 }
 
 func (p *Plugin) RegisterPublicRoutes(router fiber.Router) {
@@ -177,13 +180,19 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create document"})
 	}
 
-	// Create recipients
+	// Create recipients using Bulk Insert for maximum performance
+	var recipients []models.SendocRecipient
 	for _, targetID := range req.TargetUserIDs {
-		recipient := models.SendocRecipient{
+		recipients = append(recipients, models.SendocRecipient{
 			SendocID: doc.ID,
 			UserID:   targetID,
+		})
+	}
+
+	if len(recipients) > 0 {
+		if err := p.db.CreateInBatches(&recipients, 100).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to insert recipients"})
 		}
-		p.db.Create(&recipient)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(doc)
@@ -400,4 +409,61 @@ func (p *Plugin) downloadPDF(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", "attachment; filename=document_"+docID+".pdf")
 
 	return pdf.Output(c.Response().BodyWriter())
+}
+
+func (p *Plugin) deleteDocument(c *fiber.Ctx) error {
+	docID := c.Params("id")
+	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID := c.Locals("userID").(uuid.UUID)
+
+	var doc models.Sendoc
+	if err := p.db.Where("id = ? AND school_id = ? AND author_id = ?", docID, schoolID, userID).First(&doc).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found or permission denied"})
+	}
+
+	// Soft delete the document (and GORM will cascade if configured, but deleting parent hides it anyway)
+	if err := p.db.Delete(&doc).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete document"})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+func (p *Plugin) recallDocument(c *fiber.Ctx) error {
+	docID := c.Params("id")
+	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID := c.Locals("userID").(uuid.UUID)
+
+	var doc models.Sendoc
+	if err := p.db.Where("id = ? AND school_id = ? AND author_id = ?", docID, schoolID, userID).First(&doc).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found or permission denied"})
+	}
+
+	if doc.Status == "recalled" {
+		return c.JSON(fiber.Map{"status": "already_recalled"})
+	}
+
+	doc.Status = "recalled"
+	if err := p.db.Save(&doc).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to recall document"})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+func (p *Plugin) deletePendingDocument(c *fiber.Ctx) error {
+	docID := c.Params("id")
+	userID := c.Locals("userID").(uuid.UUID)
+
+	var recipient models.SendocRecipient
+	if err := p.db.Where("sendoc_id = ? AND user_id = ?", docID, userID).First(&recipient).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "recipient record not found"})
+	}
+
+	// Soft delete the recipient record so it disappears from their pending/received list
+	if err := p.db.Delete(&recipient).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete document from list"})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
 }

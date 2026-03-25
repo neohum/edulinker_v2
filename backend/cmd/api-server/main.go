@@ -193,6 +193,9 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	// --- Static files ---
+	app.Static("/uploads", "./uploads")
+
 	// --- Health check ---
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{

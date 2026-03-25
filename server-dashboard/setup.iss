@@ -1,21 +1,21 @@
-; edulinker 교사용 앱 — Inno Setup 설치 스크립트
-; 생성: 2026-03-20
+; edulinker 서버 대시보드 — Inno Setup 설치 스크립트
+; 생성: 2026-03-25
 
-#define MyAppName "edulinker 교사용"
+#define MyAppName "edulinker 서버 대시보드"
 #define MyAppVersion "0.0.0"
 #define MyAppPublisher "edulinker"
-#define MyAppExeName "teacher-app.exe"
+#define MyAppExeName "server-dashboard.exe"
 
 [Setup]
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF0123456789}
+AppId={{B2C3D4E5-F678-90AB-CDEF-0123456789AB}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\edulinker-teacher
+DefaultDirName={autopf}\edulinker-server-dashboard
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\installer
-OutputBaseFilename=edulinker-teacher-setup-v{#MyAppVersion}
+OutputBaseFilename=edulinker-server-dashboard-setup-v{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -35,6 +35,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "build\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "build\bin\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.map"
+Source: "..\backend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "tmp_build\*,uploads\*,api-server.exe,migrate.exe"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

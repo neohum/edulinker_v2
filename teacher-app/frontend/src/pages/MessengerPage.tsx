@@ -368,16 +368,12 @@ export default function MessengerPage({ user, isActive = true, onUnreadChange }:
   const fetchAllUsers = async () => {
     try {
       const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/core/users?page_size=500`, {
+      const res = await fetch(`http://localhost:5200/api/core/users?page_size=1000&role=teacher,admin`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
         const data = await res.json()
-        const userList = data.users || []
-        // Filter out students (allow current user for self-chat)
-        const teachers = userList.filter((u: UserEntry) =>
-          u.role !== 'student'
-        )
+        const teachers = data.users || []
         setAllUsers(teachers)
       }
     } catch (e) {

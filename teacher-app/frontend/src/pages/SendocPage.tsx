@@ -214,7 +214,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   const fetchUsers = async () => {
     try {
-      const res = await apiFetch('/api/core/users')
+      const res = await apiFetch('/api/core/users?page_size=1000')
       if (res.ok) {
         const data = await res.json()
         setAllUsers(data.users || [])
@@ -327,10 +327,8 @@ export default function SendocPage({ user }: SendocPageProps) {
                 pdfRes.pages[i] = await convertBase64ToWebP(pdfRes.pages[i])
               }
               pagesData = pdfRes.pages
-              // Upload first page WebP as background image
-              const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.webp'
-              const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, pdfRes.pages[0])
-              if (uploadRes.url) serverBg = uploadRes.url
+              // Save as Base64 to sync over the network
+              serverBg = JSON.stringify(pdfRes.pages.map((pg: string) => 'data:image/webp;base64,' + pg))
 
               const binaryStr = atob(pdfRes.pages[0])
               const bytes = new Uint8Array(binaryStr.length)
@@ -353,10 +351,8 @@ export default function SendocPage({ user }: SendocPageProps) {
           const webpData = await convertBase64ToWebP(convRes.data)
           pagesData = [webpData]
 
-          const imgName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.webp'
-          const uploadRes = await wailsApp.UploadFileFromBytes(imgName, webpData)
-          if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
-          serverBg = uploadRes.url
+          // Save as Base64 to sync over the network
+          serverBg = 'data:image/webp;base64,' + webpData
 
           const binaryStr = atob(webpData)
           const bytes = new Uint8Array(binaryStr.length)
@@ -381,11 +377,8 @@ export default function SendocPage({ user }: SendocPageProps) {
           pagesData[i] = await convertBase64ToWebP(pagesData[i])
         }
 
-        // Upload first page WebP as background image
-        const firstPageName = selectedFile.name.replace(/\.[^/.]+$/, '') + '_page1.webp'
-        const uploadRes = await wailsApp.UploadFileFromBytes(firstPageName, pagesData[0])
-        if (!uploadRes.url) throw new Error(uploadRes.error || '서버 업로드 실패')
-        serverBg = uploadRes.url
+        // Save as Base64 to sync over the network
+        serverBg = JSON.stringify(pagesData.map((pg: string) => 'data:image/webp;base64,' + pg))
 
         // Local blob from first page
         const binaryStr = atob(pagesData[0])
@@ -557,8 +550,22 @@ export default function SendocPage({ user }: SendocPageProps) {
     } catch { setFields([]) }
     setViewMode('signer')
     try {
-      const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
-      setBackgroundUrl(blobUrl)
+      let isMultiPage = false;
+      if (doc.background_url && doc.background_url.startsWith('[')) {
+        try {
+          const arr = JSON.parse(doc.background_url);
+          if (Array.isArray(arr) && arr.length > 0) {
+            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
+            isMultiPage = true;
+          }
+        } catch {}
+      }
+      
+      if (!isMultiPage) {
+        setPageImages([]);
+        const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
+        setBackgroundUrl(blobUrl)
+      }
     } catch {
       toast.error('문서를 불러올 수 없습니다.')
     }
@@ -584,8 +591,25 @@ export default function SendocPage({ user }: SendocPageProps) {
         }
         return f
       })
-      const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
-      setResultViewerData({ doc, fields: finalFields, bgUrl: blobUrl })
+
+      let isMultiPage = false;
+      if (doc.background_url && doc.background_url.startsWith('[')) {
+        try {
+          const arr = JSON.parse(doc.background_url);
+          if (Array.isArray(arr) && arr.length > 0) {
+            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
+            isMultiPage = true;
+          }
+        } catch {}
+      }
+      
+      if (!isMultiPage) {
+        setPageImages([]);
+        const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
+        setResultViewerData({ doc, fields: finalFields, bgUrl: blobUrl })
+      } else {
+        setResultViewerData({ doc, fields: finalFields, bgUrl: '' })
+      }
     } catch {
       toast.error('문서를 불러올 수 없습니다.')
     }
@@ -597,10 +621,20 @@ export default function SendocPage({ user }: SendocPageProps) {
     try {
       const res = await apiFetch('/api/plugins/sendoc', {
         method: 'POST',
-        body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl, fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
+        body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
       })
-      if (res.ok) { toast.success('발송 완료!'); setViewMode('list'); fetchDocs() }
-    } catch { toast.error('발송 실패') }
+      if (res.ok) { 
+        toast.success('발송 완료!')
+        setViewMode('list')
+        fetchDocs()
+        setShowRecipientModal(false) 
+      } else {
+        const errorData = await res.json().catch(() => ({}))
+        toast.error('발송 실패: ' + (errorData.error || res.statusText))
+      }
+    } catch (e: any) { 
+        toast.error('발송 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
+    }
   }
 
   const handleSubmitSignature = async () => {
@@ -640,6 +674,38 @@ export default function SendocPage({ user }: SendocPageProps) {
       }
     } catch (e: any) {
       toast.error('제출 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
+    }
+  }
+
+  const handleDeleteDoc = async (id: string, forTeacher: boolean) => {
+    if (!window.confirm('정말 이 문서를 삭제하시겠습니까?')) return
+    try {
+      const endpoint = forTeacher ? `/api/plugins/sendoc/${id}` : `/api/plugins/sendoc/sign/${id}`
+      const res = await apiFetch(endpoint, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('삭제되었습니다.')
+        if (forTeacher) fetchDocs()
+        else fetchPendingDocs()
+      } else {
+        toast.error('삭제 실패')
+      }
+    } catch {
+      toast.error('삭제 중 오류 발생')
+    }
+  }
+
+  const handleRecallDoc = async (id: string) => {
+    if (!window.confirm('문서를 회수하시겠습니까? 수신자가 더 이상 서명할 수 없게 됩니다.')) return
+    try {
+      const res = await apiFetch(`/api/plugins/sendoc/${id}/recall`, { method: 'PUT' })
+      if (res.ok) {
+        toast.success('문서가 회수되었습니다.')
+        fetchDocs()
+      } else {
+        toast.error('회수 실패: 이미 회수된 문서일 수 있습니다.')
+      }
+    } catch {
+      toast.error('회수 중 오류 발생')
     }
   }
 
@@ -716,7 +782,8 @@ export default function SendocPage({ user }: SendocPageProps) {
           <div style={{ display: 'flex', gap: 8 }}>
             {!isSigner && !isViewer && <button onClick={() => setShowRecipientModal(true)} className="btn-primary" style={{ padding: '8px 24px' }}>발송하기</button>}
             {isSigner && !activeDoc?.is_signed && <button onClick={() => handleSaveDraft(false)} className="btn-secondary" style={{ padding: '8px 16px' }}>임시 저장</button>}
-            {isSigner && <button onClick={handleSubmitSignature} className="btn-primary" style={{ padding: '8px 24px' }} disabled={activeDoc?.is_signed}>{activeDoc?.is_signed ? '이미 제출됨' : '작성 완료 및 제출'}</button>}
+            {isSigner && activeDoc?.is_signed && <button onClick={() => window.print()} className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}><i className="fi fi-rr-print" /> 출력하기</button>}
+            {isSigner && <button onClick={handleSubmitSignature} className="btn-primary" style={{ padding: '8px 24px' }} disabled={activeDoc?.is_signed}>{activeDoc?.is_signed ? '제출 완료됨' : '작성 완료 및 제출'}</button>}
           </div>
         </div>
 
@@ -724,6 +791,9 @@ export default function SendocPage({ user }: SendocPageProps) {
           {!isViewer && (
             <div style={{ width: 240, background: 'white', borderRight: '1px solid #e2e8f0', padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>도구 상자</div>
+              
+              {/* Hide Sidebar standard page navigation since we now scroll vertically */}
+              <div style={{ display: 'none' }}>
               {/* Page navigation when multi-page document */}
               {pageImages.length > 1 && (
                 <div>
@@ -756,6 +826,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                   <div style={{ height: 1, background: '#f1f5f9', marginTop: 12 }} />
                 </div>
               )}
+              </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 <button onClick={() => { setIsDrawingMode(false); addField('text') }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #eee', background: 'white', cursor: 'pointer' }}>
                   <i className="fi fi-rr-text-input" style={{ color: '#3b82f6' }} /> <span style={{ fontSize: 14 }}>텍스트 추가</span>
@@ -797,21 +868,37 @@ export default function SendocPage({ user }: SendocPageProps) {
             onMouseDown={handlePanStart} onMouseMove={handlePanMove} onMouseUp={handlePanEnd} onMouseLeave={handlePanEnd}
             style={{ flex: 1, overflow: 'auto', padding: 40, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', cursor: isDrawingMode ? 'default' : (zoom > 1 ? 'grab' : 'default') }}
           >
-            <div style={{ position: 'relative', width: 800 * zoom, height: 1131 * zoom }}>
-              <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: 800, height: 1131, transform: `scale(${zoom})`, transformOrigin: 'top left', background: 'white', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
-                {backgroundUrl ? (
-                  <img src={backgroundUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.') }} />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                    <div className="spinner" style={{ marginBottom: 16 }} />
-                    <p>문서를 불러오는 중...</p>
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #sendoc-print-area, #sendoc-print-area * { visibility: visible; }
+                #sendoc-print-area { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 100% !important; box-shadow: none !important; transform: none !important; }
+                @page { size: auto; margin: 0mm; }
+              }
+            `}</style>
+            <div style={{ position: 'relative', width: 800 * zoom, height: 1131 * Math.max(1, pageImages.length) * zoom }}>
+              <div id={isSigner && activeDoc?.is_signed ? "sendoc-print-area" : ""} ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: 800, height: 1131 * Math.max(1, pageImages.length), transform: `scale(${zoom})`, transformOrigin: 'top left', background: 'white', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
+                {pageImages.length > 0 ? (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {pageImages.map((pg, i) => (
+                      <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                    ))}
                   </div>
+                ) : (
+                  backgroundUrl || resultViewerData?.bgUrl ? (
+                    <img src={backgroundUrl || resultViewerData?.bgUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.') }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                      <div className="spinner" style={{ marginBottom: 16 }} />
+                      <p>문서를 불러오는 중...</p>
+                    </div>
+                  )
                 )}
 
                 {/* Free Drawing Canvas Layer */}
                 <canvas
                   ref={fullCanvasRef}
-                  width={1600} height={2262}
+                  width={1600} height={2262 * Math.max(1, pageImages.length)}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default' }}
                   onMouseDown={startFullDrawing} onMouseMove={drawFull} onMouseUp={stopFullDrawing} onMouseLeave={stopFullDrawing}
                 />
@@ -1046,11 +1133,15 @@ export default function SendocPage({ user }: SendocPageProps) {
                 {docs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((sentPage - 1) * ITEMS_PER_PAGE, sentPage * ITEMS_PER_PAGE).map(d => (
                   <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <span style={{ fontSize: 11, padding: '3px 10px', background: '#f1f5f9', borderRadius: 20 }}>{d.status}</span>
+                      <span style={{ fontSize: 11, padding: '3px 10px', background: d.status === 'recalled' ? '#fee2e2' : '#f1f5f9', color: d.status === 'recalled' ? '#ef4444' : '#475569', borderRadius: 20 }}>{d.status === 'recalled' ? '회수됨' : d.status}</span>
                       <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
                     </div>
                     <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
-                    <button onClick={() => fetchStatus(d)} className="btn-secondary" style={{ width: '100%', fontSize: 12, padding: '8px 0' }}>진행현황 보기</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => fetchStatus(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>진행현황 보기</button>
+                      {d.status !== 'recalled' && <button onClick={() => handleRecallDoc(d.id)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#f59e0b' }}>회수</button>}
+                      <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1074,13 +1165,19 @@ export default function SendocPage({ user }: SendocPageProps) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
               {pendingDocs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((receivedPage - 1) * ITEMS_PER_PAGE, receivedPage * ITEMS_PER_PAGE).map(d => (
-                <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+                <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', opacity: d.status === 'recalled' ? 0.7 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, padding: '3px 10px', background: d.is_signed ? '#f1f5f9' : '#fee2e2', color: d.is_signed ? '#475569' : '#ef4444', borderRadius: 20 }}>{d.is_signed ? '서명완료' : '서명필요'}</span>
+                    <span style={{ fontSize: 11, padding: '3px 10px', background: d.status === 'recalled' ? '#e5e7eb' : (d.is_signed ? '#f1f5f9' : '#fee2e2'), color: d.status === 'recalled' ? '#6b7280' : (d.is_signed ? '#475569' : '#ef4444'), borderRadius: 20 }}>{d.status === 'recalled' ? '발신자 회수' : (d.is_signed ? '서명완료' : '서명필요')}</span>
                     <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
                   </div>
                   <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
-                  <button onClick={() => openSignView(d)} className="btn-primary" style={{ width: '100%', fontSize: 12, padding: '8px 0' }}>{d.is_signed ? '작성 내용 확인' : '문서 확인 및 서명'}</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => {
+                      if (d.status === 'recalled') return toast.error('발신자가 회수한 문서입니다.');
+                      openSignView(d);
+                    }} className={d.status === 'recalled' ? "btn-secondary" : "btn-primary"} style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>{d.status === 'recalled' ? '회수됨' : (d.is_signed ? '작성 내용 확인' : '문서 확인 및 서명')}</button>
+                    <button onClick={() => handleDeleteDoc(d.id, false)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1126,10 +1223,21 @@ export default function SendocPage({ user }: SendocPageProps) {
           <div style={{ background: '#f1f5f9', borderRadius: 16, width: '90%', maxWidth: 1000, height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '16px 24px', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: 18, fontWeight: 700 }}>{resultViewerData.doc.title} - 결과 확인</h3>
-              <button onClick={() => setResultViewerData(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button onClick={() => window.print()} className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}><i className="fi fi-rr-print" /> 출력하기</button>
+                <button onClick={() => setResultViewerData(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
+              </div>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 24, display: 'flex', justifyContent: 'center' }}>
-              <div style={{ position: 'relative', width: 800, minHeight: 1131, background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+              <style>{`
+                @media print {
+                  body * { visibility: hidden; }
+                  #sendoc-print-area, #sendoc-print-area * { visibility: visible; }
+                  #sendoc-print-area { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 100% !important; box-shadow: none !important; }
+                  @page { size: auto; margin: 0mm; }
+                }
+              `}</style>
+              <div id="sendoc-print-area" style={{ position: 'relative', width: 800, minHeight: 1131, background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
                 <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
                 {resultViewerData.fields.map(f => (
                   <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>

@@ -66,6 +66,10 @@ export function GetFileDataURL(arg1) {
   return window['go']['main']['App']['GetFileDataURL'](arg1);
 }
 
+export function GetLocalModels() {
+  return window['go']['main']['App']['GetLocalModels']();
+}
+
 export function GetPlugins() {
   return window['go']['main']['App']['GetPlugins']();
 }

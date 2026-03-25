@@ -13,11 +13,13 @@ type KnowledgeDoc struct {
 	Title            string    `json:"title"`
 	SourceType       string    `json:"source_type"` // 'file' | 'text'
 	OriginalFilename string    `json:"original_filename"`
+	FileURL          string    `json:"file_url"`
 	MarkdownContent  string    `json:"markdown_content"`
 	CreatedBy        uuid.UUID `gorm:"type:uuid" json:"created_by"`
 	CreatedAt        time.Time `json:"created_at"`
 
 	Chunks []KnowledgeChunk `gorm:"foreignKey:DocID;constraint:OnDelete:CASCADE" json:"-"`
+	User   *User            `gorm:"foreignKey:CreatedBy" json:"user,omitempty"`
 }
 
 type KnowledgeChunk struct {

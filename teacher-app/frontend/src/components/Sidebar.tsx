@@ -27,7 +27,7 @@ const pluginGroupA: NavItem[] = [
   { id: 'announcement', label: '공문전달', icon: 'fi fi-rr-document' },
   { id: 'todo', label: '투두리스트', icon: 'fi fi-rr-checkbox' },
   { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
-  { id: 'attendance', label: '지각·결석', icon: 'fi fi-rr-alarm-clock' },
+  { id: 'attendance', label: '출결', icon: 'fi fi-rr-alarm-clock' },
   { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open', priceType: 'paid' },
   { id: 'knowledge', label: '업무 규칙/정보', icon: 'fi fi-rr-book-bookmark' },
 ]
@@ -71,6 +71,14 @@ const systemItems: NavItem[] = [
 
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('sidebar_favorites')
+    if (saved) {
+      try { return JSON.parse(saved) } catch (e) { }
+    }
+    return ['messenger', 'aianalysis', 'sendoc']
+  })
 
   // Load saved group states or default to all closed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -84,6 +92,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
     }
     // Default: All closed except system
     return {
+      favorites: true,
       groupA: false,
       groupB: false,
       groupC: false,
@@ -95,6 +104,21 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
       system: true,
     }
   })
+
+  const toggleFavorite = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    setFavorites(prev => {
+      const next = prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
+      localStorage.setItem('sidebar_favorites', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const allItems = [
+    ...coreItems, ...pluginGroupA, ...pluginGroupB, ...pluginGroupC,
+    ...pluginGroupD, ...pluginGroupE, ...pluginGroupG, ...pluginGroupH,
+    ...pluginGroupI, ...systemItems
+  ]
 
   const toggleGroup = (groupId: string) => {
     setOpenGroups(prev => {
@@ -134,27 +158,40 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
     )
   }
 
-  const renderItems = (items: NavItem[], groupId: string) => {
-    if (!isCollapsed && !openGroups[groupId]) return null
-    return items.map((item) => (
-      <button
-        key={item.id}
-        className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-        onClick={() => onNavigate(item.id)}
-        title={isCollapsed ? item.label : undefined}
-      >
-        <span className="sidebar-item-icon"><i className={item.icon} /></span>
-        {!isCollapsed && <span className="sidebar-item-label" style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
-        {!isCollapsed && (
-          <span className={`sidebar-price-badge ${item.priceType || 'free'}`}>
-            {item.priceType === 'paid' ? '유료' : item.priceType === 'partial' ? '부분 유료' : '무료'}
-          </span>
-        )}
-        {((badges && badges[item.id]) || item.badge) ? (
-          <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
-        ) : null}
-      </button>
-    ))
+  const renderItems = (items: NavItem[], groupId: string | null) => {
+    if (!isCollapsed && groupId !== null && !openGroups[groupId] && !searchQuery) return null
+    return items.map((item) => {
+      const isFav = favorites.includes(item.id)
+      const uKey = groupId ? `${groupId}-${item.id}` : `search-${item.id}`
+      return (
+        <button
+          key={uKey}
+          className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
+          onClick={() => onNavigate(item.id)}
+          title={isCollapsed ? item.label : undefined}
+        >
+          <span className="sidebar-item-icon"><i className={item.icon} /></span>
+          {!isCollapsed && <span className="sidebar-item-label" style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
+          {!isCollapsed && item.priceType && (
+            <span className={`sidebar-price-badge ${item.priceType}`}>
+              {item.priceType === 'paid' ? '유료' : item.priceType === 'partial' ? '부분' : '무료'}
+            </span>
+          )}
+          {((badges && badges[item.id]) || item.badge) ? (
+            <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
+          ) : null}
+          {!isCollapsed && item.id !== 'dashboard' && item.id !== 'settings' && (
+            <div
+              onClick={(e) => toggleFavorite(e, item.id)}
+              className={`sidebar-fav-btn ${isFav ? 'active' : ''}`}
+              title={isFav ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+            >
+              <i className={`fi ${isFav ? 'fi-sr-star' : 'fi-rr-star'}`} style={{ fontSize: 13 }} />
+            </div>
+          )}
+        </button>
+      )
+    })
   }
 
   return (
@@ -179,52 +216,92 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
         </button>
       </div>
 
+      {/* Search Box */}
+      {!isCollapsed && (
+        <div style={{ padding: '0 16px 12px 16px' }}>
+          <div style={{ position: 'relative' }}>
+            <i className="fi fi-rr-search" style={{ position: 'absolute', left: 12, top: 10, color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="메뉴 빠른 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px 8px 34px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: 'rgba(0,0,0,0.03)', color: 'var(--text)' }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{ position: 'absolute', right: 8, top: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="sidebar-nav">
-        {/* Core (Always visible) */}
-        {coreItems.map((item) => (
-          <button
-            key={item.id}
-            className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <span className="sidebar-item-icon"><i className={item.icon} /></span>
-            {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
-          </button>
-        ))}
+        {searchQuery ? (
+          <>
+            <div style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>"{searchQuery}" 검색 결과 ({allItems.filter(i => i.label.toLowerCase().includes(searchQuery.toLowerCase())).length}건)</div>
+            {renderItems(allItems.filter(i => i.label.toLowerCase().includes(searchQuery.toLowerCase())), null)}
+          </>
+        ) : (
+          <>
+            {/* Core (Always visible) */}
+            {coreItems.map((item) => (
+              <button
+                key={item.id}
+                className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
+                onClick={() => onNavigate(item.id)}
+                title={isCollapsed ? item.label : undefined}
+              >
+                <span className="sidebar-item-icon"><i className={item.icon} /></span>
+                {!isCollapsed && <span className="sidebar-item-label">{item.label}</span>}
+              </button>
+            ))}
 
-        {/* Group A */}
-        {renderGroupTitle('groupA', 'A · 핵심 소통')}
-        {renderItems(pluginGroupA, 'groupA')}
+            {!isCollapsed && favorites.length > 0 && (
+              <>
+                {renderGroupTitle('favorites', '📌 내 즐겨찾기')}
+                {renderItems(allItems.filter(i => favorites.includes(i.id)), 'favorites')}
+              </>
+            )}
 
-        {/* Group B */}
-        {renderGroupTitle('groupB', 'B · 문서·결재')}
-        {renderItems(pluginGroupB, 'groupB')}
+            {/* Group A */}
+            {renderGroupTitle('groupA', 'A · 핵심 소통')}
+            {renderItems(pluginGroupA, 'groupA')}
 
-        {/* Group D */}
-        {renderGroupTitle('groupD', 'C · 학생관리')}
-        {renderItems(pluginGroupD, 'groupD')}
+            {/* Group B */}
+            {renderGroupTitle('groupB', 'B · 문서·결재')}
+            {renderItems(pluginGroupB, 'groupB')}
 
-        {/* Group E */}
-        {renderGroupTitle('groupE', 'D · 수업·평가')}
-        {renderItems(pluginGroupE, 'groupE')}
+            {/* Group D */}
+            {renderGroupTitle('groupD', 'C · 학생관리')}
+            {renderItems(pluginGroupD, 'groupD')}
 
-        {/* Group G */}
-        {renderGroupTitle('groupG', 'E · AI 문서 생성')}
-        {renderItems(pluginGroupG, 'groupG')}
+            {/* Group E */}
+            {renderGroupTitle('groupE', 'D · 수업·평가')}
+            {renderItems(pluginGroupE, 'groupE')}
 
-        {/* Group H */}
-        {renderGroupTitle('groupH', 'F · 학교행사·투표')}
-        {renderItems(pluginGroupH, 'groupH')}
+            {/* Group G */}
+            {renderGroupTitle('groupG', 'E · AI 문서 생성')}
+            {renderItems(pluginGroupG, 'groupG')}
 
-        {/* Group I */}
-        {renderGroupTitle('groupI', 'G · 인프라·도구')}
-        {renderItems(pluginGroupI, 'groupI')}
+            {/* Group H */}
+            {renderGroupTitle('groupH', 'F · 학교행사·투표')}
+            {renderItems(pluginGroupH, 'groupH')}
 
-        {/* System */}
-        {renderGroupTitle('system', '시스템')}
-        {renderItems(systemItems, 'system')}
+            {/* Group I */}
+            {renderGroupTitle('groupI', 'G · 인프라·도구')}
+            {renderItems(pluginGroupI, 'groupI')}
+
+            {/* System */}
+            {renderGroupTitle('system', '시스템')}
+            {renderItems(systemItems, 'system')}
+          </>
+        )}
       </nav>
 
 

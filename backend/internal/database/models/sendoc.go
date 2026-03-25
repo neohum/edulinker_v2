@@ -14,7 +14,7 @@ type Sendoc struct {
 	AuthorID          *uuid.UUID     `gorm:"type:uuid" json:"author_id"`
 	Title             string         `gorm:"type:varchar(200);not null" json:"title"`
 	Content           string         `gorm:"type:text;not null" json:"content"`             // HTML/Markdown or description
-	BackgroundURL     string         `gorm:"type:varchar(500)" json:"background_url"`       // Image path of the document
+	BackgroundURL     string         `gorm:"type:text" json:"background_url"`               // Image path or Base64 Image
 	FieldsJSON        string         `gorm:"type:jsonb;default:'[]'" json:"fields_json"`    // Coordinates of text/signature fields
 	AttachmentFileID  *uuid.UUID     `gorm:"type:uuid" json:"attachment_file_id,omitempty"` // Original PDF/Doc file
 	RequiresSignature bool           `gorm:"default:true" json:"requires_signature"`
@@ -36,9 +36,10 @@ type SendocRecipient struct {
 	UserID            uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
 	ReadAt            *time.Time `json:"read_at,omitempty"`
 	IsSigned          bool       `gorm:"default:false" json:"is_signed"`
-	SignatureImageURL string     `gorm:"type:text" json:"signature_image_url,omitempty"` // Base64 or MinIO path
-	FormDataJSON      string     `gorm:"type:jsonb;default:'{}'" json:"form_data_json"`  // Values entered in fields
-	SignedAt          *time.Time `json:"signed_at,omitempty"`
+	SignatureImageURL string         `gorm:"type:text" json:"signature_image_url,omitempty"` // Base64 or MinIO path
+	FormDataJSON      string         `gorm:"type:jsonb;default:'{}'" json:"form_data_json"`  // Values entered in fields
+	SignedAt          *time.Time     `json:"signed_at,omitempty"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relationships
 	User   User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
