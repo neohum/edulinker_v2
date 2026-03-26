@@ -228,6 +228,7 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 	if err := p.db.Preload("User").Preload("Sendoc").Preload("Sendoc.Author").
 		Joins("JOIN sendocs ON sendocs.id = sendoc_recipients.sendoc_id").
 		Where("sendoc_recipients.user_id = ?", userID).
+		Where("sendocs.deleted_at IS NULL AND sendocs.status != ?", "recalled").
 		Order("sendocs.created_at desc").Find(&recipients).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch your documents"})
 	}

@@ -91,7 +91,9 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [showRecipientModal, setShowRecipientModal] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null)
   const [expandedNodes, setExpandedNodes] = useState<string[]>([])
+  const [isSending, setIsSending] = useState(false)
 
   // Signature states
   const [activeSignField, setActiveSignField] = useState<string | null>(null)
@@ -618,6 +620,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const handleSend = async () => {
     if (!title.trim()) return toast.error('제목을 입력하세요.')
     if (selectedUsers.length === 0) return toast.error('수신자를 선택하세요.')
+    setIsSending(true)
     try {
       const res = await apiFetch('/api/plugins/sendoc', {
         method: 'POST',
@@ -634,6 +637,8 @@ export default function SendocPage({ user }: SendocPageProps) {
       }
     } catch (e: any) { 
         toast.error('발송 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
+    } finally {
+        setIsSending(false)
     }
   }
 
@@ -678,35 +683,44 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   const handleDeleteDoc = async (id: string, forTeacher: boolean) => {
-    if (!window.confirm('정말 이 문서를 삭제하시겠습니까?')) return
-    try {
-      const endpoint = forTeacher ? `/api/plugins/sendoc/${id}` : `/api/plugins/sendoc/sign/${id}`
-      const res = await apiFetch(endpoint, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success('삭제되었습니다.')
-        if (forTeacher) fetchDocs()
-        else fetchPendingDocs()
-      } else {
-        toast.error('삭제 실패')
+    setConfirmDialog({
+      message: '정말 이 문서를 삭제하시겠습니까?',
+      onConfirm: async () => {
+        try {
+          const endpoint = forTeacher ? `/api/plugins/sendoc/${id}` : `/api/plugins/sendoc/sign/${id}`
+          const res = await apiFetch(endpoint, { method: 'DELETE' })
+          if (res.ok) {
+            toast.success('삭제되었습니다.')
+            if (forTeacher) fetchDocs()
+            else fetchPendingDocs()
+          } else {
+            toast.error('삭제 실패')
+          }
+        } catch {
+          toast.error('삭제 중 오류 발생')
+        }
       }
-    } catch {
-      toast.error('삭제 중 오류 발생')
-    }
+    });
   }
 
   const handleRecallDoc = async (id: string) => {
-    if (!window.confirm('문서를 회수하시겠습니까? 수신자가 더 이상 서명할 수 없게 됩니다.')) return
-    try {
-      const res = await apiFetch(`/api/plugins/sendoc/${id}/recall`, { method: 'PUT' })
-      if (res.ok) {
-        toast.success('문서가 회수되었습니다.')
-        fetchDocs()
-      } else {
-        toast.error('회수 실패: 이미 회수된 문서일 수 있습니다.')
+    setConfirmDialog({
+      message: '문서를 회수하시겠습니까? 수신자가 더 이상 서명할 수 없게 됩니다.',
+      onConfirm: async () => {
+        try {
+          const res = await apiFetch(`/api/plugins/sendoc/${id}/recall`, { method: 'PUT' })
+          if (res.ok) {
+            toast.success('문서가 회수되었습니다.')
+            fetchDocs()
+          } else {
+            const errorData = await res.json().catch(() => ({}));
+            toast.error('회수 실패: ' + (errorData.error || '이미 회수된 문서일 수 있습니다.'))
+          }
+        } catch {
+          toast.error('회수 중 오류 발생')
+        }
       }
-    } catch {
-      toast.error('회수 중 오류 발생')
-    }
+    });
   }
 
   if (viewMode === 'selector') {
@@ -1091,9 +1105,11 @@ export default function SendocPage({ user }: SendocPageProps) {
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setSelectedUsers(allUsers.map((u: any) => u.id))} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>전체선택</button>
                   <button onClick={() => setSelectedUsers([])} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>선택해제</button>
-                  <div style={{ flex: 1 }} />
-                  <button onClick={() => setShowRecipientModal(false)} className="btn-secondary" style={{ padding: '10px 20px' }}>취소</button>
-                  <button onClick={handleSend} className="btn-primary" style={{ padding: '10px 24px' }}>발송하기</button>
+                  <button onClick={() => setShowRecipientModal(false)} className="btn-secondary" style={{ padding: '10px 20px' }} disabled={isSending}>취소</button>
+                  <button onClick={handleSend} disabled={isSending} className="btn-primary" style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8, opacity: isSending ? 0.7 : 1 }}>
+                    {isSending && <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />}
+                    {isSending ? '발송 중...' : '발송하기'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1129,7 +1145,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                   <i className="fi fi-rr-paper-plane" style={{ color: '#4f46e5' }} /> 발송한 문서
                 </h4>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
                 {docs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((sentPage - 1) * ITEMS_PER_PAGE, sentPage * ITEMS_PER_PAGE).map(d => (
                   <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -1139,7 +1155,11 @@ export default function SendocPage({ user }: SendocPageProps) {
                     <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => fetchStatus(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>진행현황 보기</button>
-                      {d.status !== 'recalled' && <button onClick={() => handleRecallDoc(d.id)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#f59e0b' }}>회수</button>}
+                      {d.status === 'recalled' ? (
+                        <button disabled className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#94a3b8', opacity: 0.7 }}>회수 완료</button>
+                      ) : (
+                        <button onClick={() => handleRecallDoc(d.id)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#f59e0b' }}>회수</button>
+                      )}
                       <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
                     </div>
                   </div>
@@ -1163,7 +1183,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                 <i className="fi fi-rr-download" style={{ color: '#0ea5e9' }} /> 받은 문서
               </h4>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
               {pendingDocs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((receivedPage - 1) * ITEMS_PER_PAGE, receivedPage * ITEMS_PER_PAGE).map(d => (
                 <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', opacity: d.status === 'recalled' ? 0.7 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -1251,6 +1271,22 @@ export default function SendocPage({ user }: SendocPageProps) {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 24, background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <i className="fi fi-rr-info" style={{ fontSize: 24 }} />
+            </div>
+            <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>확인창</h4>
+            <p style={{ color: '#64748b', fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>{confirmDialog.message}</p>
+            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+              <button onClick={() => setConfirmDialog(null)} className="btn-secondary" style={{ flex: 1, padding: '12px 0' }}>취소</button>
+              <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="btn-primary" style={{ flex: 1, padding: '12px 0', background: '#ef4444' }}>확인</button>
             </div>
           </div>
         </div>

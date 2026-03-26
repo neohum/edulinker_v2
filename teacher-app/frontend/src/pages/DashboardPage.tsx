@@ -27,6 +27,65 @@ import ResourceMgmtPage from './ResourceMgmtPage'
 import SchoolAdminPage from './SchoolAdminPage'
 import KnowledgePage from './KnowledgePage'
 
+// === Local Semantic RAG Utilities ===
+interface LocalChunk {
+  docId: string;
+  docTitle: string;
+  sourceType: string;
+  text: string;
+  vector: number[];
+}
+
+const getEmbedding = async (text: string): Promise<number[]> => {
+  try {
+    const res = await fetch('http://localhost:11434/api/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'nomic-embed-text', prompt: text })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.embedding || [];
+    }
+  } catch (e) {
+    console.error("Local embedding failed:", e);
+  }
+  return [];
+};
+
+const cosineSimilarity = (vecA: number[], vecB: number[]) => {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+};
+
+const splitIntoChunks = (text: string, maxLen = 500): string[] => {
+  if (!text) return [];
+  const rawChunks = text.split(/\n\s*\n/);
+  const result: string[] = [];
+  for (const rc of rawChunks) {
+    let current = rc.trim();
+    while (current.length > maxLen) {
+      let breakPoint = current.substring(0, maxLen).lastIndexOf('. ');
+      if (breakPoint < maxLen * 0.5) breakPoint = maxLen; // Hard cut fallback
+      result.push(current.substring(0, breakPoint + 1).trim());
+      current = current.substring(breakPoint + 1).trim();
+    }
+    if (current.length > 20) {
+      result.push(current);
+    }
+  }
+  return result;
+};
+// ====================================
+
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
@@ -173,6 +232,8 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
   const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
   const [expandedRefs, setExpandedRefs] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+  const localChunksRef = useRef<LocalChunk[]>([])
+  const [isEmbeddingDocs, setIsEmbeddingDocs] = useState(false)
 
   const startNewSession = () => {
     setActiveSessionId(null);
@@ -354,7 +415,62 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
     }
   }, [messages]);
 
-  const handleSearch = (e: React.FormEvent) => {
+  // Load existing embeddings from cache once on mount
+  useEffect(() => {
+    const rawChunks = localStorage.getItem('knowledge_local_chunks');
+    if (rawChunks) {
+      try { localChunksRef.current = JSON.parse(rawChunks); } catch (e) {}
+    }
+  }, []);
+
+  // Background processor for converting synced documents to dense vectors using local Ollama
+  useEffect(() => {
+    if (docs.length === 0) return;
+    let isActive = true;
+
+    const processEmbeddings = async () => {
+      setIsEmbeddingDocs(true);
+      let currentChunks = [...localChunksRef.current];
+      const activeDocIds = new Set(docs.map(d => d.id));
+      currentChunks = currentChunks.filter(c => activeDocIds.has(c.docId));
+      let modified = false;
+
+      for (const doc of docs) {
+        if (!isActive) break;
+        if (!doc.markdown_content) continue;
+        
+        const docChunkCount = currentChunks.filter(c => c.docId === doc.id).length;
+        if (docChunkCount > 0) continue; 
+
+        const textChunks = splitIntoChunks(doc.markdown_content, 450);
+        for (const text of textChunks) {
+          if (!isActive) break;
+          const vec = await getEmbedding(text);
+          if (vec.length > 0) {
+            currentChunks.push({
+              docId: doc.id,
+              docTitle: doc.title,
+              sourceType: doc.source_type,
+              text,
+              vector: vec
+            });
+            modified = true;
+          }
+        }
+      }
+      
+      if (modified && isActive) {
+        localChunksRef.current = currentChunks;
+        localStorage.setItem('knowledge_local_chunks', JSON.stringify(currentChunks));
+      }
+      if (isActive) setIsEmbeddingDocs(false);
+    };
+
+    const timer = setTimeout(processEmbeddings, 1500);
+    return () => { isActive = false; clearTimeout(timer); };
+  }, [docs]);
+
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!query.trim() || isSearching) return
 
@@ -365,7 +481,9 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
     const keywords = userQuery.toLowerCase().split(/[\s,?\.:]+/).filter(k => k.length > 1);
     const validKeywords = keywords.length > 0 ? keywords : [userQuery.toLowerCase()];
 
-    const scoredDocs = docs.map(doc => {
+    // 1. Lexical Search
+    const lexicalScores = new Map<string, { doc: any; score: number; firstMatchIdx: number }>();
+    docs.forEach(doc => {
       const titleLower = doc.title.toLowerCase()
       const contentLower = doc.markdown_content?.toLowerCase() || ''
       let score = 0;
@@ -376,33 +494,61 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
         const idx = contentLower.indexOf(k);
         if (idx !== -1) {
           score += 2;
-          // 텍스트 내 등장 횟수만큼 추가 점수 (최대 5번)
           const count = (contentLower.match(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
           score += Math.min(count, 5);
-
           if (firstMatchIdx === -1 || idx < firstMatchIdx) firstMatchIdx = idx;
         }
       });
-      return { doc, score, firstMatchIdx };
-    }).filter(d => d.score > 0).sort((a, b) => b.score - a.score);
-
-    const matches: { doc: any; matchSnippet: string; firstMatchIdx?: number }[] = scoredDocs.slice(0, 5).map(d => {
-      let snippet = '';
-      if (d.firstMatchIdx === -1) {
-        let summary = d.doc.markdown_content ? d.doc.markdown_content.substring(0, 100).replace(/\n/g, ' ') : '';
-        if (d.doc.markdown_content && d.doc.markdown_content.length > 100) summary += '...';
-        snippet = `[제목 일치] ${summary}`;
-      } else {
-        const contentLower = d.doc.markdown_content || '';
-        const start = Math.max(0, d.firstMatchIdx - 40);
-        const end = Math.min(contentLower.length, d.firstMatchIdx + 80);
-        let s = contentLower.substring(start, end).replace(/\n/g, ' ');
-        if (start > 0) s = '...' + s;
-        if (end < contentLower.length) s = s + '...';
-        snippet = s;
+      if (score > 0) {
+        lexicalScores.set(doc.id, { doc, score, firstMatchIdx });
       }
-      return { doc: d.doc, matchSnippet: snippet, firstMatchIdx: d.firstMatchIdx };
     });
+
+    // 2. Semantic Search
+    let semanticMatches: { chunk: LocalChunk; score: number }[] = [];
+    try {
+       const queryVector = await getEmbedding(userQuery);
+       if (queryVector.length > 0) {
+         semanticMatches = localChunksRef.current.map(chunk => {
+           const sim = cosineSimilarity(queryVector, chunk.vector);
+           return { chunk, score: sim };
+         }).filter(m => m.score > 0.40).sort((a, b) => b.score - a.score);
+       }
+    } catch(e) {}
+
+    // 3. Fusion matching
+    const combinedMatches: { doc: any; matchSnippet: string; score: number; isSemantic: boolean }[] = [];
+    const seenDocs = new Set<string>();
+    
+    semanticMatches.slice(0, 3).forEach(sm => {
+      const doc = docs.find(d => d.id === sm.chunk.docId);
+      if (doc && !seenDocs.has(doc.id)) {
+        combinedMatches.push({ doc, matchSnippet: sm.chunk.text, score: sm.score * 100 + 50, isSemantic: true });
+        seenDocs.add(doc.id);
+      }
+    });
+
+    const sortedLexical = Array.from(lexicalScores.values()).sort((a, b) => b.score - a.score);
+    sortedLexical.forEach(lx => {
+      if (!seenDocs.has(lx.doc.id) && combinedMatches.length < 5) {
+        let snippet = '';
+        if (lx.firstMatchIdx === -1) {
+          snippet = `[제목 일치] ${lx.doc.markdown_content?.substring(0, 150) || ''}...`;
+        } else {
+          const contentLower = lx.doc.markdown_content || '';
+          const start = Math.max(0, lx.firstMatchIdx - 40);
+          const end = Math.min(contentLower.length, lx.firstMatchIdx + 150);
+          snippet = contentLower.substring(start, end).replace(/\n/g, ' ');
+          if (start > 0) snippet = '...' + snippet;
+          if (end < contentLower.length) snippet = snippet + '...';
+        }
+        combinedMatches.push({ doc: lx.doc, matchSnippet: snippet, score: lx.score, isSemantic: false });
+        seenDocs.add(lx.doc.id);
+      }
+    });
+    
+    combinedMatches.sort((a, b) => b.score - a.score);
+    const finalMatches = combinedMatches.slice(0, 5);
 
     const newMsgs: ChatMessage[] = [
       ...messages,
@@ -414,7 +560,7 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
       id: aiMsgId,
       role: 'assistant',
       content: '',
-      references: matches.length > 0 ? matches : undefined,
+      references: finalMatches.length > 0 ? finalMatches : undefined,
       isGenerating: true
     });
 
@@ -434,56 +580,42 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     setMessages(newMsgs);
 
-    const matchContext = matches.slice(0, 3).map(m => {
-      const fullText = m.doc.markdown_content || '';
-      const idx = m.firstMatchIdx !== undefined && m.firstMatchIdx > -1 ? m.firstMatchIdx : 0;
-
-      let start = Math.max(0, idx - 300);
-      let end = Math.min(fullText.length, idx + 1200);
-      if (start === 0) end = Math.min(fullText.length, 1500);
-
-      let textToFeed = fullText.substring(start, end);
-      if (start > 0) textToFeed = '...' + textToFeed;
-      if (end < fullText.length) textToFeed = textToFeed + '...';
-
-      return `### 문서 제목: ${m.doc.title}\n${textToFeed}`;
+    const matchContext = finalMatches.slice(0, 3).map(m => {
+      return `### 문서 제목: ${m.doc.title}\n${m.matchSnippet}`;
     }).join('\n\n');
 
-    const systemPrompt = `당신은 학교 업무 규정을 안내하는 엄격하고 정확한 AI 어시스턴트입니다. 
-아래 제공된 [참고 문서] 내용을 최우선으로 분석하여 사용자의 질문에 정확하게 답변하세요. 
-[참고 문서]에 명시되지 않은 내용은 절대 임의로 지어내거나 추측해서 대답하지 마세요. 
-특히 결재, 복무 위반, 처벌 등과 관련된 핵심 규정이나 절차는 단어 하나하나 꼼꼼하게 확인하여 누락 없이 반드시 포함해야 합니다.
+    const systemPrompt = `당신은 학교 업무 보조 및 규정 안내를 담당하는 AI 어시스턴트입니다. 
+아래 제공된 [참고 문서]에 질문과 관련된 내용이 있다면 이를 최우선으로 분석하여 답변하세요. 
+만약 [참고 문서]에 정확히 일치하거나 명시된 내용이 없더라도, 당신이 가진 기본 지식과 질문의 문맥을 고려하여 일반적인 업무 기준에 맞춰 유연하게 조언해 주세요. 
+단, 기본 지식으로 답변할 경우 '학교별 세부 규정에 따라 다를 수 있으므로 최종 확인이 필요하다'는 점을 덧붙여 주시면 좋습니다.
 
 [참고 문서]
-${matchContext || '관련 문서 없음'}`;
+${matchContext || '현재 검색된 관련 문서 내용이 없습니다. AI의 기본 지식을 바탕으로 유연하게 답변해 주세요.'}`;
 
-    setTimeout(async () => {
-      if ((window as any).go?.main?.App?.GenerateAIStream) {
-        let selectedModel = "gemma3:4b"; // default fallback
-        try {
-          const wailsApp = (window as any).go?.main?.App;
-          if (wailsApp?.GetLocalModels) {
-            const models = await wailsApp.GetLocalModels();
-            if (models && models.length > 0) {
-              const gemma = models.find((m: string) => m.includes('gemma'));
-              selectedModel = gemma || models[0];
-            }
+    if ((window as any).go?.main?.App?.GenerateAIStream) {
+      let selectedModel = "gemma3:4b"; // default fallback
+      try {
+        const wailsApp = (window as any).go?.main?.App;
+        if (wailsApp?.GetLocalModels) {
+          const models = await wailsApp.GetLocalModels();
+          if (models && models.length > 0) {
+            const gemma = models.find((m: string) => m.includes('gemma'));
+            selectedModel = gemma || models[0];
           }
-        } catch (e) {
-          console.error("Failed to fetch local AI models safely via Wails", e);
         }
-
-        (window as any).go.main.App.GenerateAIStream(selectedModel, systemPrompt, userQuery);
-      } else {
-        setIsSearching(false);
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1].content = "AI 스트리밍 엔진에 연결할 수 없습니다. (Wails 환경인지 확인하세요)";
-          updated[updated.length - 1].isGenerating = false;
-          return updated;
-        });
+      } catch (e) {
+        console.error("Failed to fetch local AI models safely via Wails", e);
       }
-    }, 50);
+      (window as any).go.main.App.GenerateAIStream(selectedModel, systemPrompt, userQuery);
+    } else {
+      setIsSearching(false);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1].content = "AI 스트리밍 엔진에 연결할 수 없습니다. (Wails 환경인지 확인하세요)";
+        updated[updated.length - 1].isGenerating = false;
+        return updated;
+      });
+    }
   }
 
   return (
@@ -621,6 +753,9 @@ ${matchContext || '관련 문서 없음'}`;
                 </button>
               )}
             </form>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 12 }}>
+              검색어와 AI의 특성상 결과가 정확하지 않거나 오류가 있을 수 있으니 참고용으로 사용을 바랍니다.
+            </div>
           </div>
         </div>
 

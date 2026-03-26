@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { apiFetch } from '../api'
 
@@ -28,7 +28,6 @@ export default function KnowledgePage() {
 
     // Add Form State
     const [title, setTitle] = useState('')
-    const [sourceType, setSourceType] = useState<'text' | 'file'>('text')
     const [content, setContent] = useState('')
     const [filename, setFilename] = useState('')
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -75,7 +74,7 @@ export default function KnowledgePage() {
 
     const processFile = async (file: File) => {
         setFilename(file.name)
-        setTitle(file.name.replace(/\.[^/.]+$/, ''))
+        setTitle(prev => prev ? prev : file.name.replace(/\.[^/.]+$/, ''))
         setSelectedFile(file)
         setIsConverting(true)
 
@@ -87,11 +86,10 @@ export default function KnowledgePage() {
                 // Call Wails Backend
                 const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64data)
                 if (res.success) {
-                    setContent(res.text)
-                    toast.success('문서 변환 완료')
+                    setContent(prev => prev ? prev + '\n\n' + res.text : res.text)
+                    toast.success('문서 텍스트 추출 완료')
                 } else {
-                    toast.error('변환 실패: ' + res.error)
-                    setContent('')
+                    toast.error('텍스트 추출 실패: ' + res.error)
                 }
                 setIsConverting(false)
             }
@@ -138,11 +136,12 @@ export default function KnowledgePage() {
         try {
             setLoading(true)
             let body: any;
+            const currentSourceType = selectedFile ? 'file' : 'text'
 
-            if (sourceType === 'file' && selectedFile) {
+            if (selectedFile) {
                 const formData = new FormData()
                 formData.append('title', title)
-                formData.append('source_type', sourceType)
+                formData.append('source_type', currentSourceType)
                 formData.append('original_filename', filename)
                 formData.append('content', content)
                 formData.append('file', selectedFile)
@@ -150,8 +149,8 @@ export default function KnowledgePage() {
             } else {
                 body = JSON.stringify({
                     title,
-                    source_type: sourceType,
-                    original_filename: sourceType === 'file' ? filename : '',
+                    source_type: currentSourceType,
+                    original_filename: '',
                     content
                 })
             }
@@ -366,25 +365,6 @@ export default function KnowledgePage() {
 
             {activeTab === 'add' && (
                 <div className="card">
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-                        <button
-                            type="button"
-                            onClick={() => setSourceType('text')}
-                            className={sourceType === 'text' ? 'btn-primary' : 'btn-secondary'}
-                            style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 8, margin: 0 }}
-                        >
-                            <i className="fi fi-rr-keyboard" /> 텍스트 직접 입력
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setSourceType('file')}
-                            className={sourceType === 'file' ? 'btn-primary' : 'btn-secondary'}
-                            style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 8, margin: 0 }}
-                        >
-                            <i className="fi fi-rr-file-upload" /> 파일 업로드 (HWP 등)
-                        </button>
-                    </div>
-
                     <div style={{ marginBottom: 16 }}>
                         <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>제목</label>
                         <input
@@ -397,58 +377,59 @@ export default function KnowledgePage() {
                         />
                     </div>
 
-                    {sourceType === 'file' && (
-                        <div style={{ marginBottom: 16 }}>
-                            <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>파일 첨부</label>
-                            <label style={{
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                padding: '32px 20px', border: '2px dashed',
-                                borderColor: isDragging ? 'var(--accent-blue)' : 'var(--border-light)',
-                                borderRadius: '12px',
-                                background: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
-                                cursor: isConverting ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
-                                opacity: isConverting ? 0.6 : 1
-                            }}
-                                onMouseOver={e => !isConverting && !isDragging && (e.currentTarget.style.borderColor = 'var(--accent-blue)', e.currentTarget.style.background = 'rgba(59, 130, 246, 0.05)')}
-                                onMouseOut={e => !isConverting && !isDragging && (e.currentTarget.style.borderColor = 'var(--border-light)', e.currentTarget.style.background = 'var(--bg-primary)')}
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                                onDrop={handleDrop}
-                            >
-                                <i className="fi fi-rr-cloud-upload" style={{ fontSize: 32, margin: '0 0 12px', color: filename ? 'var(--accent-blue)' : 'var(--text-muted)' }} />
-                                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
-                                    {filename ? filename : '클릭하여 파일 선택'}
-                                </span>
-                                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                                    지원 포맷: HWP, HWPX, PDF, TXT, CSV, MD
-                                </span>
-                                <input
-                                    type="file"
-                                    style={{ display: 'none' }}
-                                    accept=".hwp,.hwpx,.pdf,.txt,.csv,.md"
-                                    onChange={handleFileSelect}
-                                    disabled={isConverting}
-                                />
-                            </label>
-                            {isConverting && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--accent-blue)', fontSize: 13, fontWeight: 600, background: 'rgba(59,130,246,0.1)', padding: '10px 16px', borderRadius: 8 }}>
-                                    <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                                    파일을 텍스트로 변환 중입니다. HWP 파일의 경우 수 초가 소요될 수 있습니다...
-                                </div>
-                            )}
-                        </div>
-                    )}
+                    <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>파일 첨부 (옵션)</label>
+                        <label style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                            padding: '32px 20px', border: '2px dashed',
+                            borderColor: isDragging ? 'var(--accent-blue)' : 'var(--border-light)',
+                            borderRadius: '12px',
+                            background: isDragging ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-primary)',
+                            cursor: isConverting ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+                            opacity: isConverting ? 0.6 : 1
+                        }}
+                            onMouseOver={e => !isConverting && !isDragging && (e.currentTarget.style.borderColor = 'var(--accent-blue)', e.currentTarget.style.background = 'rgba(59, 130, 246, 0.05)')}
+                            onMouseOut={e => !isConverting && !isDragging && (e.currentTarget.style.borderColor = 'var(--border-light)', e.currentTarget.style.background = 'var(--bg-primary)')}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                        >
+                            <i className="fi fi-rr-cloud-upload" style={{ fontSize: 32, margin: '0 0 12px', color: filename ? 'var(--accent-blue)' : 'var(--text-muted)' }} />
+                            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                                {filename ? filename : '클릭하여 파일 선택'}
+                            </span>
+                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                                지원 포맷: HWP, HWPX, PDF, TXT, CSV, MD
+                            </span>
+                            <input
+                                type="file"
+                                style={{ display: 'none' }}
+                                accept=".hwp,.hwpx,.pdf,.txt,.csv,.md"
+                                onChange={handleFileSelect}
+                                disabled={isConverting}
+                            />
+                        </label>
+                        {isConverting && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--accent-blue)', fontSize: 13, fontWeight: 600, background: 'rgba(59,130,246,0.1)', padding: '10px 16px', borderRadius: 8 }}>
+                                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                                파일을 텍스트로 변환 중입니다. HWP 파일의 경우 수 초가 소요될 수 있습니다...
+                            </div>
+                        )}
+                    </div>
 
                     <div style={{ marginBottom: 24 }}>
                         <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontWeight: 500 }}>
-                            본문 내용 {sourceType === 'file' && '(자동 추출됨)'}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                본문 내용
+                                <span style={{ color: 'var(--accent-blue)', fontSize: 13, fontWeight: 500, background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: 12 }}>(파일 업로드 시 자동 추출 및 추가됨)</span>
+                            </div>
                             <span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 400 }}>이 내용이 AI 검색에 활용됩니다.</span>
                         </label>
                         <textarea
                             className="form-input"
                             value={content}
                             onChange={e => setContent(e.target.value)}
-                            placeholder="문서 본문을 입력하거나 파일을 업로드하여 텍스트를 추출하세요."
+                            placeholder="직접 문서를 작성하거나 파일을 업로드하여 텍스트를 추출하세요."
                             style={{ width: '100%', height: 300, resize: 'vertical', fontFamily: 'monospace', fontSize: 14 }}
                             disabled={isConverting}
                         />
