@@ -45,6 +45,7 @@ type App struct {
 	hwpWorkerOnce sync.Once
 	hancomStatus  map[string]interface{} // cached on startup
 	aiCancel      context.CancelFunc     // cancel func for ongoing AI generation
+	rag           *LocalRAG              // 로컬 RAG 엔진 (SQLite + Ollama)
 }
 
 type hwpTask struct {
@@ -71,6 +72,11 @@ func (a *App) startup(ctx context.Context) {
 	a.hwpWorkerOnce.Do(func() {
 		go a.startHwpWorker()
 	})
+
+	// 로컬 RAG 엔진 초기화 (SQLite)
+	if err := a.initLocalRAG(); err != nil {
+		fmt.Println("[RAG] Failed to initialize local RAG engine:", err)
+	}
 
 	go systray.Run(a.onTrayReady, a.onTrayExit)
 }

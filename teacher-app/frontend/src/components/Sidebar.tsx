@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const coreItems: NavItem[] = [
-  { id: 'dashboard', label: '대시보드', icon: 'fi fi-rr-home' },
+  { id: 'dashboard', label: '통합 검색', icon: 'fi fi-rr-search' },
 ]
 
 const pluginGroupA: NavItem[] = [
@@ -199,9 +199,9 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
       {/* Logo */}
       <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="sidebar-logo">
-          <img src={logoUrl} className="sidebar-logo-icon" alt="EduLinker Logo" title={isCollapsed ? "edulinker" : undefined} onClick={() => isCollapsed && setIsCollapsed(false)} style={{ cursor: isCollapsed ? 'pointer' : 'default', width: '32px', height: '32px', objectFit: 'contain' }} />
+          <img src={logoUrl} className="sidebar-logo-icon" alt="EduLinker Logo" title="대시보드" onClick={() => { if (isCollapsed) setIsCollapsed(false); onNavigate('dashboard'); }} style={{ cursor: 'pointer', width: '32px', height: '32px', objectFit: 'contain' }} />
           {!isCollapsed && (
-            <div>
+            <div onClick={() => onNavigate('dashboard')} style={{ cursor: 'pointer' }} title="대시보드">
               <div className="sidebar-logo-text">edulinker</div>
               <div className="sidebar-logo-version">v1.0.0 · Phase 1</div>
             </div>

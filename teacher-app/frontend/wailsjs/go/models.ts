@@ -270,6 +270,30 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class RAGSearchResult {
+	    doc_id: string;
+	    doc_title: string;
+	    source_type: string;
+	    display_text: string;
+	    heading_context: string;
+	    score: number;
+	    is_semantic: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new RAGSearchResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.doc_id = source["doc_id"];
+	        this.doc_title = source["doc_title"];
+	        this.source_type = source["source_type"];
+	        this.display_text = source["display_text"];
+	        this.heading_context = source["heading_context"];
+	        this.score = source["score"];
+	        this.is_semantic = source["is_semantic"];
+	    }
+	}
 	export class SchoolResult {
 	    name: string;
 	    code: string;

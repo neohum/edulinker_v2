@@ -779,3 +779,73 @@ func (a *App) UpdateDBUserRole(id string, role string) error {
 	_, err = db.Exec("UPDATE users SET role = $1 WHERE id = $2", role, id)
 	return err
 }
+
+// ── 문서 관리 ──
+
+type DBKnowledgeDoc struct {
+	ID               string `json:"id"`
+	SchoolID         string `json:"school_id"`
+	Title            string `json:"title"`
+	SourceType       string `json:"source_type"`
+	OriginalFilename string `json:"original_filename"`
+	FileURL          string `json:"file_url"`
+	MarkdownContent  string `json:"markdown_content"`
+	CreatedBy        string `json:"created_by"`
+	CreatedByName    string `json:"created_by_name"`
+	CreatedAt        string `json:"created_at"`
+}
+
+func (a *App) GetDBKnowledgeDocs() ([]DBKnowledgeDoc, error) {
+	db, err := getDBConn()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT kd.id, kd.school_id, COALESCE(kd.title, ''),
+		       COALESCE(kd.source_type, 'text'),
+		       COALESCE(kd.original_filename, ''),
+		       COALESCE(kd.file_url, ''),
+		       COALESCE(kd.markdown_content, ''),
+		       kd.created_by::text,
+		       COALESCE(u.name, '') as created_by_name,
+		       kd.created_at
+		FROM knowledge_docs kd
+		LEFT JOIN users u ON kd.created_by = u.id
+		ORDER BY kd.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []DBKnowledgeDoc
+	for rows.Next() {
+		var d DBKnowledgeDoc
+		var createdAt time.Time
+		var schoolID sql.NullString
+		if err := rows.Scan(&d.ID, &schoolID, &d.Title, &d.SourceType,
+			&d.OriginalFilename, &d.FileURL, &d.MarkdownContent,
+			&d.CreatedBy, &d.CreatedByName, &createdAt); err != nil {
+			continue
+		}
+		if schoolID.Valid {
+			d.SchoolID = schoolID.String
+		}
+		d.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z")
+		docs = append(docs, d)
+	}
+	return docs, nil
+}
+
+func (a *App) DeleteDBKnowledgeDoc(docID string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("DELETE FROM knowledge_docs WHERE id = $1", docID)
+	return err
+}

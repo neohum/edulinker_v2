@@ -26,6 +26,8 @@ export function ConvertToMarkdown(arg1:string,arg2:string):Promise<main.ConvertT
 
 export function ConvertToPdfAndImages(arg1:string,arg2:string):Promise<main.PdfConvertResult>;
 
+export function DeleteDocumentIndex(arg1:string):Promise<void>;
+
 export function DownloadFile(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 
 export function GenerateAIStream(arg1:string,arg2:string,arg3:string):Promise<void>;
@@ -34,6 +36,8 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetFileDataURL(arg1:string):Promise<string>;
 
+export function GetIndexedDocIDs():Promise<Array<string>>;
+
 export function GetLocalModels():Promise<Array<string>>;
 
 export function GetPlugins():Promise<Array<main.PluginInfo>>;
@@ -41,6 +45,8 @@ export function GetPlugins():Promise<Array<main.PluginInfo>>;
 export function GetSystemInfo():Promise<main.SystemInfo>;
 
 export function GetToken():Promise<string>;
+
+export function IndexDocument(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function InstallOllama():Promise<main.OllamaStatus>;
 
@@ -55,6 +61,8 @@ export function PullModel(arg1:string):Promise<main.PullModelResult>;
 export function QuitHwp():Promise<void>;
 
 export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number,arg11:number):Promise<main.LoginResult>;
+
+export function SearchKnowledge(arg1:string,arg2:number):Promise<Array<main.RAGSearchResult>>;
 
 export function SearchSchool(arg1:string):Promise<Array<main.SchoolResult>>;
 

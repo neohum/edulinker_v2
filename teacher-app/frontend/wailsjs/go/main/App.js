@@ -50,6 +50,10 @@ export function ConvertToPdfAndImages(arg1, arg2) {
   return window['go']['main']['App']['ConvertToPdfAndImages'](arg1, arg2);
 }
 
+export function DeleteDocumentIndex(arg1) {
+  return window['go']['main']['App']['DeleteDocumentIndex'](arg1);
+}
+
 export function DownloadFile(arg1, arg2) {
   return window['go']['main']['App']['DownloadFile'](arg1, arg2);
 }
@@ -66,6 +70,10 @@ export function GetFileDataURL(arg1) {
   return window['go']['main']['App']['GetFileDataURL'](arg1);
 }
 
+export function GetIndexedDocIDs() {
+  return window['go']['main']['App']['GetIndexedDocIDs']();
+}
+
 export function GetLocalModels() {
   return window['go']['main']['App']['GetLocalModels']();
 }
@@ -80,6 +88,10 @@ export function GetSystemInfo() {
 
 export function GetToken() {
   return window['go']['main']['App']['GetToken']();
+}
+
+export function IndexDocument(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['IndexDocument'](arg1, arg2, arg3, arg4);
 }
 
 export function InstallOllama() {
@@ -108,6 +120,10 @@ export function QuitHwp() {
 
 export function Register(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11) {
   return window['go']['main']['App']['Register'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
+}
+
+export function SearchKnowledge(arg1, arg2) {
+  return window['go']['main']['App']['SearchKnowledge'](arg1, arg2);
 }
 
 export function SearchSchool(arg1) {

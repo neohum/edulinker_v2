@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -18,11 +17,12 @@ import (
 )
 
 // ── Models ──
+
 type DocumentRequest struct {
-	Title            string `json:"title"`
-	SourceType       string `json:"source_type"` // 'file' | 'text'
-	OriginalFilename string `json:"original_filename"`
-	Content          string `json:"content"`
+	Title            string `json:"title" form:"title"`
+	SourceType       string `json:"source_type" form:"source_type"` // 'file' | 'text'
+	OriginalFilename string `json:"original_filename" form:"original_filename"`
+	Content          string `json:"content" form:"content"`
 }
 
 type QueryRequest struct {
@@ -59,7 +59,7 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Get("/sync", p.syncDocs)
 	r.Post("/docs", p.createDoc)
 	r.Delete("/docs/:id", p.deleteDoc)
-	r.Post("/query", p.queryChat)
+	r.Post("/query", p.queryChat) // 서버사이드 AI 쿼리 (레거시 유지)
 }
 
 // ── Handlers ──
@@ -78,12 +78,14 @@ func (p *Plugin) listDocs(c *fiber.Ctx) error {
 	return c.JSON(docs)
 }
 
+// syncDocs: 문서 목록 + 내용 동기화 (교사 PC가 로컬 RAG 처리)
+// markdown_content 포함 반환 → 교사 PC에서 청킹/임베딩 처리
 func (p *Plugin) syncDocs(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 	sinceParam := c.Query("since")
 
 	var allIDs []string
-	p.db.Model(&models.KnowledgeDoc{}).Where("school_id = ?", schoolID).Pluck("id", &allIDs) // fetch only IDs to detect deletions
+	p.db.Model(&models.KnowledgeDoc{}).Where("school_id = ?", schoolID).Pluck("id", &allIDs)
 
 	var updatedDocs []models.KnowledgeDoc
 	query := p.db.Where("school_id = ?", schoolID)
@@ -93,7 +95,9 @@ func (p *Plugin) syncDocs(c *fiber.Ctx) error {
 			query = query.Where("created_at > ?", sinceTime)
 		}
 	}
-	query.Order("created_at DESC").Find(&updatedDocs)
+	// markdown_content 포함 — 교사 PC에서 로컬 RAG 처리에 필요
+	query.Select("id", "school_id", "title", "source_type", "original_filename", "file_url", "markdown_content", "created_by", "created_at").
+		Order("created_at DESC").Find(&updatedDocs)
 
 	return c.JSON(fiber.Map{
 		"all_ids":      allIDs,
@@ -106,7 +110,6 @@ func (p *Plugin) deleteDoc(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
 	}
-
 	p.db.Delete(&models.KnowledgeDoc{}, "id = ?", id)
 	return c.JSON(fiber.Map{"message": "deleted"})
 }
@@ -116,11 +119,18 @@ func (p *Plugin) createDoc(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
 	var req DocumentRequest
-	if err := c.BodyParser(&req); err != nil {
-		// Fallback to form-data (for file uploads)
+	_ = c.BodyParser(&req)
+
+	if req.Title == "" {
 		req.Title = c.FormValue("title")
+	}
+	if req.SourceType == "" {
 		req.SourceType = c.FormValue("source_type")
+	}
+	if req.OriginalFilename == "" {
 		req.OriginalFilename = c.FormValue("original_filename")
+	}
+	if req.Content == "" {
 		req.Content = c.FormValue("content")
 	}
 
@@ -137,46 +147,35 @@ func (p *Plugin) createDoc(c *fiber.Ctx) error {
 		CreatedBy:        userID,
 	}
 
-	// Handle file upload
 	if fileHeader, err := c.FormFile("file"); err == nil {
 		uploadDir := fmt.Sprintf("./uploads/knowledge/%s", schoolID.String())
 		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			fmt.Println("MkdirAll error:", err)
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to create upload directory"})
 		}
-		// ensure filename is safe or use uuid + orig ext
 		safeName := uuid.New().String() + "-" + fileHeader.Filename
 		filePath := fmt.Sprintf("%s/%s", uploadDir, safeName)
 		if err := c.SaveFile(fileHeader, filePath); err != nil {
+			fmt.Println("SaveFile error:", err)
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to save file"})
 		}
-		// Update URL
 		doc.FileURL = fmt.Sprintf("/uploads/knowledge/%s/%s", schoolID.String(), safeName)
+	} else {
+		fmt.Println("FormFile error:", err)
+		// even if there's no file, we might just log it and continue
 	}
 
 	if err := p.db.Create(&doc).Error; err != nil {
+		fmt.Println("DB Create error:", err)
 		return c.Status(500).JSON(fiber.Map{"error": "failed to create doc"})
 	}
 
-	// 2. Chunking (naive markdown chunking by max 500 chars roughly)
-	chunks := chunkText(req.Content, 500)
-
-	// 3. Embedding and Saving
-	for i, text := range chunks {
-		embedding, err := getEmbedding(text)
-		if err == nil && len(embedding) > 0 {
-			chunk := models.KnowledgeChunk{
-				DocID:      doc.ID,
-				ChunkIndex: i,
-				ChunkText:  text,
-				Embedding:  embedding,
-			}
-			p.db.Create(&chunk)
-		}
-	}
-
+	// 서버는 문서 저장만 담당
+	// 임베딩/청킹은 교사 PC(Wails)에서 로컬 SQLite + Ollama로 처리
 	return c.Status(201).JSON(doc)
 }
 
+// queryChat: 서버사이드 AI 쿼리 (레거시 — 주 검색은 교사 PC 로컬에서 처리)
 func (p *Plugin) queryChat(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
 
@@ -184,62 +183,42 @@ func (p *Plugin) queryChat(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-
 	if req.Query == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "query is empty"})
 	}
 
-	// 1. Get embedding for query
-	queryEmbedding, err := getEmbedding(req.Query)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to embed query"})
-	}
+	// 서버에 저장된 문서 내용을 키워드 기반으로 컨텍스트 추출
+	var docs []models.KnowledgeDoc
+	p.db.Select("title", "markdown_content").Where("school_id = ?", schoolID).Find(&docs)
 
-	// 2. Fetch all chunks for the school
-	var chunks []models.KnowledgeChunk
-	p.db.Raw(`
-		SELECT c.id, c.doc_id, c.chunk_text, c.embedding
-		FROM knowledge_chunks c
-		JOIN knowledge_docs d ON c.doc_id = d.id
-		WHERE d.school_id = ?
-	`, schoolID).Scan(&chunks)
+	keywords := strings.FieldsFunc(strings.ToLower(req.Query), func(r rune) bool {
+		return r == ' ' || r == ',' || r == '?'
+	})
 
-	// 3. Find top 3 most similar chunks
-	type scoredChunk struct {
-		Text  string
-		Score float64
-	}
-	var topChunks []scoredChunk
-
-	for _, k := range chunks {
-		score := cosineSimilarity(queryEmbedding, k.Embedding)
-		topChunks = append(topChunks, scoredChunk{Text: k.ChunkText, Score: score})
-	}
-
-	// Sort manually (descending)
-	for i := 0; i < len(topChunks)-1; i++ {
-		for j := i + 1; j < len(topChunks); j++ {
-			if topChunks[j].Score > topChunks[i].Score {
-				topChunks[i], topChunks[j] = topChunks[j], topChunks[i]
+	contextText := ""
+	for _, doc := range docs {
+		content := strings.ToLower(doc.MarkdownContent)
+		for _, kw := range keywords {
+			if len(kw) > 1 && strings.Contains(content, kw) {
+				snippet := doc.MarkdownContent
+				if len(snippet) > 500 {
+					snippet = snippet[:500]
+				}
+				contextText += fmt.Sprintf("### %s\n%s\n\n", doc.Title, snippet)
+				break
 			}
 		}
 	}
 
-	contextText := ""
-	for i := 0; i < len(topChunks) && i < 3; i++ {
-		contextText += fmt.Sprintf("- %s\n", topChunks[i].Text)
-	}
-
-	// 4. Send to Ollama Chat (Streaming)
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
 		ollamaReqBody, _ := json.Marshal(map[string]interface{}{
-			"model": "gemma3:4b", // or extract the most optimal model
+			"model": "gemma3:4b",
 			"messages": []map[string]string{
-				{"role": "system", "content": "당신은 학교 업무 보조 AI입니다. 다음 제공된 문서 컨텍스트를 바탕으로 질문에 정확하고 간결하게 답변하세요. 컨텍스트에 내용이 없다면 일상적인 답변을 하세요.\n\n[컨텍스트]\n" + contextText},
+				{"role": "system", "content": "당신은 학교 업무 보조 및 규정 안내를 담당하는 AI 어시스턴트입니다.\n아래 [참고 문서]에 관련 내용이 있다면 이를 최우선으로 답변하세요.\n\n[참고 문서]\n" + contextText},
 				{"role": "user", "content": req.Query},
 			},
 			"stream": true,
@@ -257,16 +236,13 @@ func (p *Plugin) queryChat(c *fiber.Ctx) error {
 			if err != nil {
 				break
 			}
-
 			var chatResp struct {
 				Message struct {
 					Content string `json:"content"`
 				} `json:"message"`
 				Done bool `json:"done"`
 			}
-
 			if err := json.Unmarshal(line, &chatResp); err == nil {
-				// SSE format
 				jsonEvent, _ := json.Marshal(map[string]interface{}{
 					"content": chatResp.Message.Content,
 					"done":    chatResp.Done,
@@ -278,68 +254,4 @@ func (p *Plugin) queryChat(c *fiber.Ctx) error {
 	})
 
 	return nil
-}
-
-// ── Helpers ──
-
-func chunkText(text string, chunkSize int) []string {
-	var chunks []string
-	paragraphs := strings.Split(text, "\n\n")
-
-	currentChunk := ""
-	for _, p := range paragraphs {
-		p = strings.TrimSpace(p)
-		if len(p) == 0 {
-			continue
-		}
-
-		if len(currentChunk)+len(p) > chunkSize && len(currentChunk) > 0 {
-			chunks = append(chunks, strings.TrimSpace(currentChunk))
-			currentChunk = p
-		} else {
-			if len(currentChunk) > 0 {
-				currentChunk += "\n\n"
-			}
-			currentChunk += p
-		}
-	}
-	if len(currentChunk) > 0 {
-		chunks = append(chunks, strings.TrimSpace(currentChunk))
-	}
-	return chunks
-}
-
-func getEmbedding(text string) ([]float64, error) {
-	reqBody, _ := json.Marshal(OllamaEmbedRequest{
-		Model:  "nomic-embed-text",
-		Prompt: text,
-	})
-
-	resp, err := http.Post("http://localhost:11434/api/embeddings", "application/json", bytes.NewBuffer(reqBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result OllamaEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result.Embedding, nil
-}
-
-func cosineSimilarity(a, b []float64) float64 {
-	if len(a) != len(b) || len(a) == 0 {
-		return 0
-	}
-	var dotProduct, normA, normB float64
-	for i := 0; i < len(a); i++ {
-		dotProduct += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }

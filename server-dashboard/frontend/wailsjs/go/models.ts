@@ -1,5 +1,35 @@
 export namespace main {
 	
+	export class DBKnowledgeDoc {
+	    id: string;
+	    school_id: string;
+	    title: string;
+	    source_type: string;
+	    original_filename: string;
+	    file_url: string;
+	    markdown_content: string;
+	    created_by: string;
+	    created_by_name: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DBKnowledgeDoc(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.school_id = source["school_id"];
+	        this.title = source["title"];
+	        this.source_type = source["source_type"];
+	        this.original_filename = source["original_filename"];
+	        this.file_url = source["file_url"];
+	        this.markdown_content = source["markdown_content"];
+	        this.created_by = source["created_by"];
+	        this.created_by_name = source["created_by_name"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 	export class DBUser {
 	    id: string;
 	    school_id: string;

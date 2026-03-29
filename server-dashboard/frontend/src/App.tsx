@@ -4,12 +4,13 @@ import { EventsOn } from '../wailsjs/runtime/runtime';
 import { Toaster, toast } from 'sonner';
 import logoUrl from './assets/images/logo-universal.png';
 import UserManagement from './components/UserManagement';
+import DocumentManagement from './components/DocumentManagement';
 
 function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [uptime, setUptime] = useState("0s");
   const [logs, setLogs] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'status' | 'settings' | 'users'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'settings' | 'users' | 'documents'>('status');
   const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn'>('all');
   const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false });
   const [isStartingInfra, setIsStartingInfra] = useState(false);
@@ -342,6 +343,17 @@ function App() {
             <i className="fi fi-rr-users shrink-0" style={{ fontSize: 18 }} />
             {isSidebarOpen && <span className="whitespace-nowrap">사용자 관리</span>}
           </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            title="문서 관리"
+            className={`flex items-center font-medium py-3 rounded-lg text-sm transition-colors ${activeTab === 'documents'
+              ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+              } ${isSidebarOpen ? 'gap-3 px-4 w-full' : 'justify-center w-full px-0'}`}
+          >
+            <i className="fi fi-rr-book-open-cover shrink-0" style={{ fontSize: 18 }} />
+            {isSidebarOpen && <span className="whitespace-nowrap">문서 관리</span>}
+          </button>
         </nav>
       </div>
 
@@ -564,6 +576,9 @@ function App() {
         )}
         {activeTab === 'users' && (
           <UserManagement />
+        )}
+        {activeTab === 'documents' && (
+          <DocumentManagement />
         )}
       </div>
     </div>

@@ -27,64 +27,17 @@ import ResourceMgmtPage from './ResourceMgmtPage'
 import SchoolAdminPage from './SchoolAdminPage'
 import KnowledgePage from './KnowledgePage'
 
-// === Local Semantic RAG Utilities ===
-interface LocalChunk {
-  docId: string;
-  docTitle: string;
-  sourceType: string;
-  text: string;
-  vector: number[];
+// === Knowledge Search Types ===
+interface RAGSearchResult {
+  doc_id: string;
+  doc_title: string;
+  source_type: string;
+  display_text: string;
+  heading_context: string;
+  score: number;
+  is_semantic: boolean;
 }
-
-const getEmbedding = async (text: string): Promise<number[]> => {
-  try {
-    const res = await fetch('http://localhost:11434/api/embeddings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'nomic-embed-text', prompt: text })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.embedding || [];
-    }
-  } catch (e) {
-    console.error("Local embedding failed:", e);
-  }
-  return [];
-};
-
-const cosineSimilarity = (vecA: number[], vecB: number[]) => {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-};
-
-const splitIntoChunks = (text: string, maxLen = 500): string[] => {
-  if (!text) return [];
-  const rawChunks = text.split(/\n\s*\n/);
-  const result: string[] = [];
-  for (const rc of rawChunks) {
-    let current = rc.trim();
-    while (current.length > maxLen) {
-      let breakPoint = current.substring(0, maxLen).lastIndexOf('. ');
-      if (breakPoint < maxLen * 0.5) breakPoint = maxLen; // Hard cut fallback
-      result.push(current.substring(0, breakPoint + 1).trim());
-      current = current.substring(breakPoint + 1).trim();
-    }
-    if (current.length > 20) {
-      result.push(current);
-    }
-  }
-  return result;
-};
-// ====================================
+// ==============================
 
 interface DashboardPageProps {
   user: UserInfo
@@ -133,7 +86,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
 
       <div className="main-content">
         <header className="main-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 16 }}>
-          <h2 className="main-header-title" style={{ margin: 0 }}>{getPageTitle(currentPage)}</h2>
+          {currentPage !== 'dashboard' && <h2 className="main-header-title" style={{ margin: 0 }}>{getPageTitle(currentPage)}</h2>}
           {currentPage === 'dashboard' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 14, color: 'var(--text-secondary)', fontWeight: 500 }}>
               <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
@@ -232,8 +185,6 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
   const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
   const [expandedRefs, setExpandedRefs] = useState<Record<string, boolean>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
-  const localChunksRef = useRef<LocalChunk[]>([])
-  const [isEmbeddingDocs, setIsEmbeddingDocs] = useState(false)
 
   const startNewSession = () => {
     setActiveSessionId(null);
@@ -318,36 +269,52 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
   }, [messages, activeSessionId]);
 
   useEffect(() => {
-    // Incremental sync of knowledge documents
+    // 구버전 로컬 벡터 캐시 정리
+    localStorage.removeItem('knowledge_local_chunks');
+    localStorage.removeItem('knowledge_chunk_hashes');
+
+    const wailsApp = (window as any).go?.main?.App;
+
+    // 서버 전체 문서 sync → 로컬 미인덱싱 문서 자동 보완
     const syncDocs = async () => {
       try {
-        const lastSyncStr = localStorage.getItem('knowledge_last_sync')
-        const cachedDocsStr = localStorage.getItem('knowledge_cache')
-        let cachedDocs: any[] = cachedDocsStr ? JSON.parse(cachedDocsStr) : []
+        // 항상 전체 문서 목록 가져오기 (since 파라미터 없이)
+        const res = await apiFetch('/api/plugins/knowledge/sync')
+        if (!res.ok) return
 
-        if (cachedDocs.length > 0) setDocs(cachedDocs)
+        const data = await res.json()
+        const allIds: string[] = data.all_ids || []
+        const allDocs: any[] = data.updated_docs || []
 
-        const url = lastSyncStr
-          ? `/api/plugins/knowledge/sync?since=${encodeURIComponent(lastSyncStr)}`
-          : '/api/plugins/knowledge/sync'
+        // 로컬 캐시 갱신
+        setDocs(allDocs)
+        localStorage.setItem('knowledge_cache', JSON.stringify(allDocs))
+        localStorage.setItem('knowledge_last_sync', new Date().toISOString())
 
-        const res = await apiFetch(url)
-        if (res.ok) {
-          const data = await res.json()
-          const allIds = data.all_ids || []
-          const updatedDocs = data.updated_docs || []
+        if (!wailsApp?.IndexDocument || !wailsApp?.GetIndexedDocIDs) return
 
-          let merged = cachedDocs.filter(d => allIds.includes(d.id))
-          updatedDocs.forEach((newDoc: any) => {
-            const idx = merged.findIndex(d => d.id === newDoc.id)
-            if (idx >= 0) merged[idx] = newDoc
-            else merged.push(newDoc)
-          })
+        // 로컬 SQLite에 인덱싱된 doc_id 목록 조회
+        let indexedIds: string[] = []
+        try { indexedIds = await wailsApp.GetIndexedDocIDs() ?? [] } catch (e) { }
 
-          setDocs(merged)
-          localStorage.setItem('knowledge_cache', JSON.stringify(merged))
-          localStorage.setItem('knowledge_last_sync', new Date().toISOString())
+        // 삭제된 문서 로컬 인덱스 제거
+        if (wailsApp?.DeleteDocumentIndex) {
+          const deletedIds = indexedIds.filter(id => !allIds.includes(id))
+          for (const id of deletedIds) {
+            wailsApp.DeleteDocumentIndex(id).catch(() => { })
+          }
         }
+
+        // 로컬에 없는 문서 + 내용이 있는 문서 인덱싱
+        const toIndex = allDocs.filter(
+          (doc: any) => doc.markdown_content && !indexedIds.includes(doc.id)
+        )
+        for (const doc of toIndex) {
+          wailsApp.IndexDocument(
+            doc.id, doc.title, doc.source_type ?? 'text', doc.markdown_content
+          ).catch(() => { })
+        }
+
       } catch (e) {
         console.error('Failed to sync knowledge docs', e)
       }
@@ -415,61 +382,7 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
     }
   }, [messages]);
 
-  // Load existing embeddings from cache once on mount
-  useEffect(() => {
-    const rawChunks = localStorage.getItem('knowledge_local_chunks');
-    if (rawChunks) {
-      try { localChunksRef.current = JSON.parse(rawChunks); } catch (e) {}
-    }
-  }, []);
-
-  // Background processor for converting synced documents to dense vectors using local Ollama
-  useEffect(() => {
-    if (docs.length === 0) return;
-    let isActive = true;
-
-    const processEmbeddings = async () => {
-      setIsEmbeddingDocs(true);
-      let currentChunks = [...localChunksRef.current];
-      const activeDocIds = new Set(docs.map(d => d.id));
-      currentChunks = currentChunks.filter(c => activeDocIds.has(c.docId));
-      let modified = false;
-
-      for (const doc of docs) {
-        if (!isActive) break;
-        if (!doc.markdown_content) continue;
-        
-        const docChunkCount = currentChunks.filter(c => c.docId === doc.id).length;
-        if (docChunkCount > 0) continue; 
-
-        const textChunks = splitIntoChunks(doc.markdown_content, 450);
-        for (const text of textChunks) {
-          if (!isActive) break;
-          const vec = await getEmbedding(text);
-          if (vec.length > 0) {
-            currentChunks.push({
-              docId: doc.id,
-              docTitle: doc.title,
-              sourceType: doc.source_type,
-              text,
-              vector: vec
-            });
-            modified = true;
-          }
-        }
-      }
-      
-      if (modified && isActive) {
-        localChunksRef.current = currentChunks;
-        localStorage.setItem('knowledge_local_chunks', JSON.stringify(currentChunks));
-      }
-      if (isActive) setIsEmbeddingDocs(false);
-    };
-
-    const timer = setTimeout(processEmbeddings, 1500);
-    return () => { isActive = false; clearTimeout(timer); };
-  }, [docs]);
-
+  // handleSearch: 로컬 SQLite + Ollama RAG 검색 (Wails)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!query.trim() || isSearching) return
@@ -478,77 +391,45 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
     setQuery('');
     setIsSearching(true);
 
-    const keywords = userQuery.toLowerCase().split(/[\s,?\.:]+/).filter(k => k.length > 1);
-    const validKeywords = keywords.length > 0 ? keywords : [userQuery.toLowerCase()];
-
-    // 1. Lexical Search
-    const lexicalScores = new Map<string, { doc: any; score: number; firstMatchIdx: number }>();
-    docs.forEach(doc => {
-      const titleLower = doc.title.toLowerCase()
-      const contentLower = doc.markdown_content?.toLowerCase() || ''
-      let score = 0;
-      let firstMatchIdx = -1;
-
-      validKeywords.forEach(k => {
-        if (titleLower.includes(k)) score += 10;
-        const idx = contentLower.indexOf(k);
-        if (idx !== -1) {
-          score += 2;
-          const count = (contentLower.match(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-          score += Math.min(count, 5);
-          if (firstMatchIdx === -1 || idx < firstMatchIdx) firstMatchIdx = idx;
-        }
-      });
-      if (score > 0) {
-        lexicalScores.set(doc.id, { doc, score, firstMatchIdx });
-      }
-    });
-
-    // 2. Semantic Search
-    let semanticMatches: { chunk: LocalChunk; score: number }[] = [];
+    // Wails를 통해 교사 PC 로컬 RAG 검색 수행
+    let localResults: RAGSearchResult[] = [];
     try {
-       const queryVector = await getEmbedding(userQuery);
-       if (queryVector.length > 0) {
-         semanticMatches = localChunksRef.current.map(chunk => {
-           const sim = cosineSimilarity(queryVector, chunk.vector);
-           return { chunk, score: sim };
-         }).filter(m => m.score > 0.40).sort((a, b) => b.score - a.score);
-       }
-    } catch(e) {}
-
-    // 3. Fusion matching
-    const combinedMatches: { doc: any; matchSnippet: string; score: number; isSemantic: boolean }[] = [];
-    const seenDocs = new Set<string>();
-    
-    semanticMatches.slice(0, 3).forEach(sm => {
-      const doc = docs.find(d => d.id === sm.chunk.docId);
-      if (doc && !seenDocs.has(doc.id)) {
-        combinedMatches.push({ doc, matchSnippet: sm.chunk.text, score: sm.score * 100 + 50, isSemantic: true });
-        seenDocs.add(doc.id);
-      }
-    });
-
-    const sortedLexical = Array.from(lexicalScores.values()).sort((a, b) => b.score - a.score);
-    sortedLexical.forEach(lx => {
-      if (!seenDocs.has(lx.doc.id) && combinedMatches.length < 5) {
-        let snippet = '';
-        if (lx.firstMatchIdx === -1) {
-          snippet = `[제목 일치] ${lx.doc.markdown_content?.substring(0, 150) || ''}...`;
-        } else {
-          const contentLower = lx.doc.markdown_content || '';
-          const start = Math.max(0, lx.firstMatchIdx - 40);
-          const end = Math.min(contentLower.length, lx.firstMatchIdx + 150);
-          snippet = contentLower.substring(start, end).replace(/\n/g, ' ');
-          if (start > 0) snippet = '...' + snippet;
-          if (end < contentLower.length) snippet = snippet + '...';
+      const wailsApp = (window as any).go?.main?.App;
+      if (wailsApp?.SearchKnowledge) {
+        const raw = await wailsApp.SearchKnowledge(userQuery, 5);
+        if (Array.isArray(raw)) {
+          localResults = raw.map((r: any) => ({
+            doc_id: r.doc_id ?? r.DocID ?? '',
+            doc_title: r.doc_title ?? r.DocTitle ?? '',
+            source_type: r.source_type ?? r.SourceType ?? 'text',
+            display_text: r.display_text ?? r.DisplayText ?? '',
+            heading_context: r.heading_context ?? r.HeadingContext ?? '',
+            score: r.score ?? r.Score ?? 0,
+            is_semantic: r.is_semantic ?? r.IsSemantic ?? false,
+          }));
         }
-        combinedMatches.push({ doc: lx.doc, matchSnippet: snippet, score: lx.score, isSemantic: false });
-        seenDocs.add(lx.doc.id);
       }
+    } catch (e) {
+      console.error('Local search failed:', e);
+    }
+
+    // 로컬 결과를 references 포맷으로 변환
+    const finalMatches = localResults.map(r => {
+      const fullDoc = docs.find(d => d.id === r.doc_id) || {};
+      return {
+        doc: {
+          id: r.doc_id,
+          title: r.doc_title,
+          source_type: r.source_type,
+          markdown_content: fullDoc.markdown_content || r.display_text,
+          original_filename: fullDoc.original_filename,
+          file_url: fullDoc.file_url
+        },
+        matchSnippet: r.display_text,
+        score: r.score,
+        isSemantic: r.is_semantic
+      };
     });
-    
-    combinedMatches.sort((a, b) => b.score - a.score);
-    const finalMatches = combinedMatches.slice(0, 5);
 
     const newMsgs: ChatMessage[] = [
       ...messages,
@@ -580,20 +461,20 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     setMessages(newMsgs);
 
-    const matchContext = finalMatches.slice(0, 3).map(m => {
-      return `### 문서 제목: ${m.doc.title}\n${m.matchSnippet}`;
-    }).join('\n\n');
+    const matchContext = finalMatches.slice(0, 3).map((m, i) =>
+      `### [참고${i + 1}] ${m.doc.title}\n${m.matchSnippet}`
+    ).join('\n\n---\n');
 
-    const systemPrompt = `당신은 학교 업무 보조 및 규정 안내를 담당하는 AI 어시스턴트입니다. 
-아래 제공된 [참고 문서]에 질문과 관련된 내용이 있다면 이를 최우선으로 분석하여 답변하세요. 
-만약 [참고 문서]에 정확히 일치하거나 명시된 내용이 없더라도, 당신이 가진 기본 지식과 질문의 문맥을 고려하여 일반적인 업무 기준에 맞춰 유연하게 조언해 주세요. 
-단, 기본 지식으로 답변할 경우 '학교별 세부 규정에 따라 다를 수 있으므로 최종 확인이 필요하다'는 점을 덧붙여 주시면 좋습니다.
+    const systemPrompt = `당신은 학교 업무 보조 및 규정 안내를 담당하는 AI 어시스턴트입니다.
+오직 아래 제공된 [참고 문서]에 있는 내용만을 근거로 답변을 작성해야 합니다.
+외부 정보를 임의로 추가하거나 지어내지 마십시오.
+질문에 대한 답이 [참고 문서]에 명시되어 있지 않다면 "검색된 규정 문서에서 질문에 해당하는 관련된 내용을 찾을 수 없습니다."라고 안내하세요.
 
 [참고 문서]
-${matchContext || '현재 검색된 관련 문서 내용이 없습니다. AI의 기본 지식을 바탕으로 유연하게 답변해 주세요.'}`;
+${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
 
     if ((window as any).go?.main?.App?.GenerateAIStream) {
-      let selectedModel = "gemma3:4b"; // default fallback
+      let selectedModel = "gemma3:4b";
       try {
         const wailsApp = (window as any).go?.main?.App;
         if (wailsApp?.GetLocalModels) {
@@ -604,7 +485,7 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다. AI의 
           }
         }
       } catch (e) {
-        console.error("Failed to fetch local AI models safely via Wails", e);
+        console.error("Failed to fetch local AI models:", e);
       }
       (window as any).go.main.App.GenerateAIStream(selectedModel, systemPrompt, userQuery);
     } else {
@@ -894,7 +775,7 @@ function PluginPlaceholder({ name }: { name: string }) {
 
 function getPageTitle(page: string): string {
   const titles: Record<string, string> = {
-    dashboard: '대시보드',
+    dashboard: '통합 검색',
     messenger: '교사 메신저',
     announcement: '공문전달',
     todo: '투두리스트',

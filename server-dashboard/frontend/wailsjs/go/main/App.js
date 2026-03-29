@@ -10,8 +10,16 @@ export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
 
+export function DeleteDBKnowledgeDoc(arg1) {
+  return window['go']['main']['App']['DeleteDBKnowledgeDoc'](arg1);
+}
+
 export function DeleteDBUser(arg1) {
   return window['go']['main']['App']['DeleteDBUser'](arg1);
+}
+
+export function GetDBKnowledgeDocs() {
+  return window['go']['main']['App']['GetDBKnowledgeDocs']();
 }
 
 export function GetDBUsers() {

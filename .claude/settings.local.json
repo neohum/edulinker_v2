@@ -42,7 +42,23 @@
       "Bash(taskkill:*)",
       "Bash(python -c \":*)",
       "Bash(find /d/works/edulinker_v2/backend/internal/plugins -type f -name \"*.go\" -exec head -60 {} +)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(find /e/works/project/edulinker -type d -name *plugin*)",
+      "Bash(find /e/works/project/edulinker -type d -name *backend* -o -type d -name *server*)",
+      "Bash(xargs ls:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(psql -U postgres -c \"SELECT extname, extversion FROM pg_extension WHERE extname = ''vector'';\")",
+      "Bash(psql:*)",
+      "Bash(pg_config --version)",
+      "Bash(psql -U postgres -d edulinker --set=client_encoding=UTF8 -c \"CREATE INDEX IF NOT EXISTS idx_kchunks_display_text_gin ON knowledge_chunks USING gin\\(to_tsvector\\(''simple'', COALESCE\\(display_text, ''''\\)\\)\\);\")",
+      "Bash(psql -U postgres -d edulinker --set=client_encoding=UTF8 -c \"CREATE INDEX IF NOT EXISTS idx_kchunks_heading_gin ON knowledge_chunks USING gin\\(to_tsvector\\(''simple'', COALESCE\\(heading_context, ''''\\)\\)\\);\")",
+      "Bash(set GOPROXY=direct)",
+      "Read(//e/works/project/edulinker/teacher-app/%APPDATA%/**)",
+      "Read(//e/works/project/edulinker/teacher-app/$APPDATA/**)",
+      "Bash(python3:*)",
+      "Bash(find E:/works/project/edulinker -type f -name *.tsx)"
     ]
   }
 }

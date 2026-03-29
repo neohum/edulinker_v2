@@ -101,7 +101,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.TaskHandover{},
 		&models.MultiEvaluation{},
 		&models.KnowledgeDoc{},
-		&models.KnowledgeChunk{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to auto-migrate: %w", err)
