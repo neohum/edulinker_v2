@@ -60,7 +60,9 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Post("/report", p.report)
 	r.Get("/", p.listRecords)
 	r.Get("/today", p.todayRecords)
+	r.Get("/month", p.monthRecords)
 	r.Put("/:id/confirm", p.confirm)
+	r.Delete("/:id", p.deleteRecord)
 }
 
 func (p *Plugin) report(c *fiber.Ctx) error {
@@ -143,6 +145,28 @@ func (p *Plugin) todayRecords(c *fiber.Ctx) error {
 	return c.JSON(records)
 }
 
+func (p *Plugin) monthRecords(c *fiber.Ctx) error {
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	ym := c.Query("ym") // format: "2026-03"
+	if len(ym) != 7 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ym format, expected YYYY-MM"})
+	}
+	startStr := ym + "-01"
+
+	t, err := time.Parse("2006-01-02", startStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid date"})
+	}
+	endStr := t.AddDate(0, 1, -1).Format("2006-01-02")
+
+	var records []AttendanceRecord
+	// Fetch all records where (start_date <= endOfMonth AND end_date >= startOfMonth) OR (start_date IS NULL AND date BETWEEN start and end)
+	p.db.Where("school_id = ? AND ((start_date <= ? AND end_date >= ?) OR (start_date IS NULL AND date >= ? AND date <= ?))",
+		schoolID, endStr, startStr, startStr, endStr).Order("created_at DESC").Find(&records)
+
+	return c.JSON(records)
+}
+
 func (p *Plugin) confirm(c *fiber.Ctx) error {
 	id, _ := uuid.Parse(c.Params("id"))
 	teacherID, _ := c.Locals("userID").(uuid.UUID)
@@ -179,4 +203,15 @@ func (p *Plugin) confirm(c *fiber.Ctx) error {
 	p.db.Model(&AttendanceRecord{}).Where("id = ?", id).Updates(updates)
 
 	return c.JSON(fiber.Map{"message": "confirmed"})
+}
+func (p *Plugin) deleteRecord(c *fiber.Ctx) error {
+	id, _ := uuid.Parse(c.Params("id"))
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+
+	res := p.db.Where("id = ? AND school_id = ?", id, schoolID).Delete(&AttendanceRecord{})
+	if res.RowsAffected == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+
+	return c.JSON(fiber.Map{"message": "deleted"})
 }

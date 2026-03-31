@@ -364,12 +364,8 @@ func (a *App) executeHwpTask(inputPath, outputPath, outputType string) error {
 				hfos.Release()
 			}
 		}
-		if hParamSet != nil {
-			hParamSet.Release()
-		}
-		if hAction != nil {
-			hAction.Release()
-		}
+		hParamSet.Release()
+		hAction.Release()
 	}
 
 	oleutil.CallMethod(hwp, "Clear", 1)

@@ -39,6 +39,7 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 
 	api.Get("/logs", p.listAnalysisLogs)
 	api.Post("/generate", p.generateAndLogAnalysis)
+	api.Delete("/logs/:id", p.deleteAnalysisLog)
 }
 
 func (p *Plugin) listAnalysisLogs(c *fiber.Ctx) error {
@@ -86,4 +87,20 @@ func (p *Plugin) generateAndLogAnalysis(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(alog)
+}
+
+func (p *Plugin) deleteAnalysisLog(c *fiber.Ctx) error {
+	teacherID := c.Locals("userID").(uuid.UUID)
+	logID := c.Params("id")
+
+	var alog models.AIAnalysisLog
+	if err := p.db.Where("teacher_id = ? AND id = ?", teacherID, logID).First(&alog).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "log not found"})
+	}
+
+	if err := p.db.Delete(&alog).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete ai log"})
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
 }

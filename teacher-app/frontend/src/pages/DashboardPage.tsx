@@ -26,6 +26,7 @@ import ClassMgmtPage from './ClassMgmtPage'
 import ResourceMgmtPage from './ResourceMgmtPage'
 import SchoolAdminPage from './SchoolAdminPage'
 import KnowledgePage from './KnowledgePage'
+import BehaviorOpinionPage from './BehaviorOpinionPage'
 
 // === Knowledge Search Types ===
 interface RAGSearchResult {
@@ -44,18 +45,41 @@ interface DashboardPageProps {
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin' | 'knowledge'
+type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin' | 'knowledge' | 'behavior-opinion'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
   const [pendingDocCount, setPendingDocCount] = useState(0)
+  const [activeVotingsCount, setActiveVotingsCount] = useState(0)
 
   useEffect(() => {
     fetchPendingDocCount()
-    const interval = setInterval(fetchPendingDocCount, 30000) // Poll every 30s
+    fetchVotingsCount()
+    const interval = setInterval(() => {
+      fetchPendingDocCount()
+      fetchVotingsCount()
+    }, 30000) // Poll every 30s
     return () => clearInterval(interval)
   }, [])
+
+  const fetchVotingsCount = async () => {
+    try {
+      const res = await apiFetch('/api/plugins/schoolevents/votings')
+      if (res.ok) {
+        const data = await res.json()
+        const now = new Date()
+        const pending = (data || []).filter((v: any) => {
+          const isPending = new Date(v.starts_at || v.created_at) > now
+          const isEnded = new Date(v.ends_at) <= now
+          return !isPending && !isEnded && v.my_vote_option == null
+        })
+        setActiveVotingsCount(pending.length)
+      }
+    } catch (e) {
+      console.error('Failed to fetch votings count:', e)
+    }
+  }
 
   const fetchPendingDocCount = async () => {
     try {
@@ -78,7 +102,8 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         currentPage={currentPage}
         badges={{
           messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined,
-          sendoc: pendingDocCount > 0 ? pendingDocCount : undefined
+          sendoc: pendingDocCount > 0 ? pendingDocCount : undefined,
+          schoolevents: activeVotingsCount > 0 ? activeVotingsCount : undefined
         }}
         onNavigate={(page) => setCurrentPage(page as PageView)}
         onLogout={onLogout}
@@ -108,8 +133,9 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'counseling' && <CounselingPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage user={user} />}
           {currentPage === 'aianalysis' && <AIAnalysisPage user={user} onNavigate={(p) => setCurrentPage(p as PageView)} />}
-          {currentPage === 'schoolevents' && <SchoolEventsPage />}
+          {currentPage === 'schoolevents' && <SchoolEventsPage onVoteChange={fetchVotingsCount} />}
           {currentPage === 'classmgmt' && <ClassMgmtPage />}
+          {currentPage === 'behavior-opinion' && <BehaviorOpinionPage user={user} />}
           {currentPage === 'resourcemgmt' && <ResourceMgmtPage />}
           {currentPage === 'schooladmin' && <SchoolAdminPage user={user} />}
 
@@ -131,7 +157,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
 
           {currentPage === 'knowledge' && <KnowledgePage />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && currentPage !== 'classmgmt' && currentPage !== 'resourcemgmt' && currentPage !== 'schooladmin' && currentPage !== 'knowledge' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
+          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && currentPage !== 'classmgmt' && currentPage !== 'resourcemgmt' && currentPage !== 'schooladmin' && currentPage !== 'knowledge' && currentPage !== 'behavior-opinion' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
         </div>
       </div>
     </div>
@@ -184,7 +210,18 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
   const [isSearching, setIsSearching] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
   const [expandedRefs, setExpandedRefs] = useState<Record<string, boolean>>({})
+  const [docSearchQuery, setDocSearchQuery] = useState('')
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (docSearchQuery.trim()) {
+      setTimeout(() => {
+        const el = document.getElementById('search-match-active');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+  }, [currentMatchIndex, docSearchQuery]);
 
   const startNewSession = () => {
     setActiveSessionId(null);
@@ -393,10 +430,28 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     // Wails를 통해 교사 PC 로컬 RAG 검색 수행
     let localResults: RAGSearchResult[] = [];
+    let finalQuery = userQuery;
+
     try {
       const wailsApp = (window as any).go?.main?.App;
+      
+      // 문장형 질문(띄어쓰기 포함, 10자 이상)인 경우 핵심어 추출
+      if (userQuery.includes(' ') && userQuery.length > 8) {
+        setMessages(prev => [
+          ...prev,
+          { id: 'extracting', role: 'assistant', content: '💡 자연어 질의를 분석하여 핵심 검색어를 추출하고 있습니다...', isGenerating: true }
+        ]);
+        if (wailsApp?.ExtractKeywordsLocalAI) {
+          const extracted = await wailsApp.ExtractKeywordsLocalAI(userQuery);
+          if (extracted && extracted !== userQuery) {
+            finalQuery = extracted;
+          }
+        }
+        setMessages(prev => prev.filter(m => m.id !== 'extracting'));
+      }
+
       if (wailsApp?.SearchKnowledge) {
-        const raw = await wailsApp.SearchKnowledge(userQuery, 5);
+        const raw = await wailsApp.SearchKnowledge(finalQuery, 5);
         if (Array.isArray(raw)) {
           localResults = raw.map((r: any) => ({
             doc_id: r.doc_id ?? r.DocID ?? '',
@@ -596,7 +651,7 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                 className="form-input"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="단어로 검색하세요"
+                placeholder="단어로 검색하세요 예)초과근무"
                 style={{ flex: 1, borderRadius: 24, paddingLeft: 20, imeMode: 'active' } as React.CSSProperties}
                 disabled={isSearching}
               />
@@ -748,8 +803,71 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                 </button>
               </div>
             </div>
+            <div style={{ padding: '8px 24px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {(() => {
+                let matchCount = 0;
+                if (docSearchQuery.trim()) {
+                  const m = selectedDoc.markdown_content.match(new RegExp(docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+                  matchCount = m ? m.length : 0;
+                }
+                return (
+                  <>
+                    <i className="fi fi-rr-search" style={{ color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="문서 내 검색 (Enter로 다음 이동)"
+                      value={docSearchQuery}
+                      onChange={e => {
+                        setDocSearchQuery(e.target.value);
+                        setCurrentMatchIndex(0);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (matchCount > 0) {
+                            setCurrentMatchIndex(prev => (prev + 1) % matchCount);
+                          }
+                        }
+                      }}
+                      className="form-input"
+                      style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', fontSize: 13 }}
+                    />
+                    {docSearchQuery && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                          {matchCount > 0 ? `${currentMatchIndex + 1} / ${matchCount}` : '0 / 0'}
+                        </span>
+                        <button type="button" onClick={() => { setDocSearchQuery(''); setCurrentMatchIndex(0); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+                         <i className="fi fi-rr-cross-circle" style={{ fontSize: 14 }} />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
-              {selectedDoc.markdown_content}
+              {docSearchQuery.trim() ? (() => {
+                const regex = new RegExp(`(${docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                const parts = selectedDoc.markdown_content.split(regex);
+                let matchIdx = -1;
+                return parts.map((part: string, i: number) => {
+                  if (part.toLowerCase() === docSearchQuery.trim().toLowerCase()) {
+                    matchIdx++;
+                    const isActive = matchIdx === currentMatchIndex;
+                    return (
+                      <mark 
+                        id={isActive ? 'search-match-active' : undefined} 
+                        key={i} 
+                        style={{ backgroundColor: isActive ? '#f97316' : '#fef08a', color: isActive ? '#fff' : '#000', padding: '0 2px', borderRadius: 2 }}
+                      >
+                        {part}
+                      </mark>
+                    );
+                  }
+                  return part;
+                });
+              })() : selectedDoc.markdown_content}
             </div>
             {selectedDoc.original_filename && (
               <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between' }}>
@@ -786,7 +904,7 @@ function getPageTitle(page: string): string {
     studentmgmt: '학생관리',
     curriculum: '주간학습·평가',
     aianalysis: 'AI 문서 생성',
-    schoolevents: '학교행사·투표',
+    schoolevents: '학교행사·투표/설문',
     linker: 'linker',
     pcinfo: 'pc-info',
     'hwp-converter': 'HWP 문서 변환',
@@ -798,6 +916,7 @@ function getPageTitle(page: string): string {
     resourcemgmt: '시설 예약',
     schooladmin: '행정 및 인사 관리',
     knowledge: '업무 규칙/정보',
+    'behavior-opinion': '행동특성 및 종합의견',
   }
   return titles[page] || page
 }

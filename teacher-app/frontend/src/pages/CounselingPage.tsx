@@ -150,7 +150,7 @@ export default function CounselingPage({ user }: CounselingPageProps) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 15 }}>
             <div style={{ textAlign: 'center' }}>
               <i className="fi fi-rr-comments" style={{ fontSize: 40, display: 'block', marginBottom: 12 }} />
-              왼쪽에서 학생을 선택하면 상담 기록을 확인하고 추가할 수 있습니다.
+              왼쪽에서 학생을 선택하면 상담/생활기록을 확인하고 추가할 수 있습니다.
             </div>
           </div>
         ) : (
@@ -158,7 +158,7 @@ export default function CounselingPage({ user }: CounselingPageProps) {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{selectedStudent.name} 학생 상담 기록</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{selectedStudent.name} 학생 상담/생활기록</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
                   {selectedStudent.grade}학년 {selectedStudent.class_num}반 {selectedStudent.number}번
                 </div>
@@ -167,14 +167,14 @@ export default function CounselingPage({ user }: CounselingPageProps) {
                 onClick={() => setShowForm(!showForm)}
                 style={{ padding: '10px 20px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: 'white', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}
               >
-                <i className="fi fi-rr-plus" style={{ marginRight: 6 }} />상담 기록 추가
+                <i className="fi fi-rr-plus" style={{ marginRight: 6 }} />상담/생활기록 추가
               </button>
             </div>
 
             {/* Add Form */}
             {showForm && (
               <div style={{ background: 'white', padding: 24, borderRadius: 14, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>새 상담 기록</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>새 상담/생활기록</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>상담 날짜</label>
@@ -208,7 +208,7 @@ export default function CounselingPage({ user }: CounselingPageProps) {
             {/* Records */}
             {records.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', background: 'var(--surface)', borderRadius: 14 }}>
-                아직 상담 기록이 없습니다.
+                아직 상담/생활기록이 없습니다.
               </div>
             ) : (
               records.map(r => (

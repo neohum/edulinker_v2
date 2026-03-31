@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -46,6 +47,7 @@ type App struct {
 	hancomStatus  map[string]interface{} // cached on startup
 	aiCancel      context.CancelFunc     // cancel func for ongoing AI generation
 	rag           *LocalRAG              // 로컬 RAG 엔진 (SQLite + Ollama)
+	attendanceDB  *sql.DB                // 로컬 출결 기록 DB
 }
 
 type hwpTask struct {
@@ -78,6 +80,11 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Println("[RAG] Failed to initialize local RAG engine:", err)
 	}
 
+	// 로컬 출결 DB 초기화 (SQLite)
+	if err := a.initLocalAttendance(); err != nil {
+		fmt.Println("[Attendance] Failed to initialize local attendance db:", err)
+	}
+
 	go systray.Run(a.onTrayReady, a.onTrayExit)
 }
 
@@ -103,6 +110,52 @@ func (a *App) onTrayReady() {
 	}()
 }
 
+// GenerateAISync performs a blocking, non-streaming generation request to Ollama and returns the finalized string.
+func (a *App) GenerateAISync(model, prompt string) (string, error) {
+	reqBody := map[string]interface{}{
+		"model":  model,
+		"prompt": prompt,
+		"stream": false,
+		"options": map[string]interface{}{
+			"num_ctx":     4096,
+			"num_predict": 2048,
+			"temperature": 0.6,
+			"top_k":       20,
+			"top_p":       0.5,
+		},
+	}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("serialize error: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost:11434/api/generate", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("request creation error: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Ollama 서버 오류 (localhost:11434 연결 실패)")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Ollama 서버 HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("parse error: %v", err)
+	}
+
+	return result.Response, nil
+}
+
 func (a *App) onTrayExit() {
 	if a.ctx != nil {
 		wailsRuntime.Quit(a.ctx)
@@ -122,28 +175,68 @@ type ConvertToMarkdownResult struct {
 func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 
-	if ext == ".hwp" || ext == ".hwpx" {
-		res := a.ConvertHwpToText(filename, base64data)
-		if !res.Success {
-			return ConvertToMarkdownResult{Error: res.Error}
+	if ext == ".hwp" || ext == ".hwpx" || ext == ".pdf" {
+		resKordoc := a.ConvertWithKordoc(filename, base64data)
+		if resKordoc.Success {
+			return resKordoc
 		}
-		return ConvertToMarkdownResult{Success: true, Text: res.Text}
+		
+		if ext == ".pdf" {
+			res := a.ConvertPdfToText(base64data)
+			if !res.Success {
+				return ConvertToMarkdownResult{Error: res.Error}
+			}
+			return ConvertToMarkdownResult{Success: true, Text: res.Text}
+		} else {
+			res := a.ConvertHwpToText(filename, base64data)
+			if !res.Success {
+				return ConvertToMarkdownResult{Error: res.Error}
+			}
+			return ConvertToMarkdownResult{Success: true, Text: res.Text}
+		}
 	} else if ext == ".txt" || ext == ".md" || ext == ".csv" {
 		data, err := base64.StdEncoding.DecodeString(base64data)
 		if err != nil {
 			return ConvertToMarkdownResult{Error: "디코딩 실패"}
 		}
 		return ConvertToMarkdownResult{Success: true, Text: string(data)}
-	} else if ext == ".pdf" {
-		// Native PDF Text Extraction via ledongthuc/pdf
-		res := a.ConvertPdfToText(base64data)
-		if !res.Success {
-			return ConvertToMarkdownResult{Error: res.Error}
-		}
-		return ConvertToMarkdownResult{Success: true, Text: res.Text}
 	}
 
 	return ConvertToMarkdownResult{Error: "지원하지 않는 파일 형식입니다: " + ext}
+}
+
+// ConvertWithKordoc runs the local kordoc_parser.mjs node script to extract Markdown from a document.
+func (a *App) ConvertWithKordoc(filename, base64data string) ConvertToMarkdownResult {
+	fileData, err := base64.StdEncoding.DecodeString(base64data)
+	if err != nil {
+		return ConvertToMarkdownResult{Error: "디코딩 실패"}
+	}
+
+	tmpFile, err := os.CreateTemp("", "*_"+filepath.Base(filename))
+	if err != nil {
+		return ConvertToMarkdownResult{Error: "임시 파일 생성 실패"}
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(fileData); err != nil {
+		return ConvertToMarkdownResult{Error: "임시 파일 쓰기 실패"}
+	}
+	tmpFile.Close()
+
+	cmd := exec.Command("node", "kordoc_parser.mjs", tmpFile.Name())
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	err = cmd.Run()
+	if err != nil {
+		return ConvertToMarkdownResult{Error: fmt.Sprintf("Kordoc 오류: %v, %s", err, errBuf.String())}
+	}
+
+	if outBuf.Len() > 0 {
+		return ConvertToMarkdownResult{Success: true, Text: outBuf.String()}
+	}
+	return ConvertToMarkdownResult{Error: "추출된 내부 텍스트가 없습니다"}
 }
 
 // ConvertPdfToText extracts raw text from a PDF securely via Go bytes.
@@ -1215,8 +1308,8 @@ func (a *App) GenerateAIStream(model, systemPrompt, userMsg string) {
 			},
 			"stream": true,
 			"options": map[string]interface{}{
-				"num_ctx":     1024,
-				"num_predict": 512,
+				"num_ctx":     4096,
+				"num_predict": 2048,
 				"temperature": 0.6,
 				"top_k":       20,
 				"top_p":       0.5,
@@ -1290,6 +1383,67 @@ func (a *App) CancelAIGenerate() {
 		a.aiCancel()
 		a.aiCancel = nil
 	}
+}
+
+// ExtractKeywordsLocalAI uses Ollama to extract core noun keywords from a natural language query.
+func (a *App) ExtractKeywordsLocalAI(query string) string {
+	models := a.GetLocalModels()
+	if len(models) == 0 {
+		return query
+	}
+	model := models[0]
+	for _, m := range models {
+		if strings.Contains(m, "gemma") {
+			model = m
+			break
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	systemPrompt := "다음 문장에서 검색에 사용될 핵심 명사 단어 2~3개만 추출해. 오직 띄어쓰기로 구분된 단어들만 출력해. 부가 설명 금지."
+	
+	reqBody := map[string]interface{}{
+		"model":  model,
+		"prompt": systemPrompt + "\n문장: " + query,
+		"stream": false,
+		"options": map[string]interface{}{
+			"temperature": 0.1,
+		},
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:11434/api/generate", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return query 
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return query
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return query
+	}
+
+	extracted := strings.TrimSpace(result.Response)
+	if extracted == "" || len(extracted) > 50 {
+		return query
+	}
+	extracted = strings.ReplaceAll(extracted, `"`, "")
+	extracted = strings.ReplaceAll(extracted, `'`, "")
+	extracted = strings.ReplaceAll(extracted, `,`, " ")
+	return extracted
 }
 
 // GetLocalModels returns a list of installed models directly from local Ollama avoiding CORS.

@@ -43,8 +43,9 @@ const pluginGroupC: NavItem[] = [
 
 const pluginGroupD: NavItem[] = [
   { id: 'studentmgmt', label: '학생관리', icon: 'fi fi-rr-graduation-cap' },
-  { id: 'counseling', label: '상담', icon: 'fi fi-rr-comments' },
+  { id: 'counseling', label: '상담/생활기록', icon: 'fi fi-rr-comments' },
   { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users' },
+  { id: 'behavior-opinion', label: '행동특성 및 종합의견', icon: 'fi fi-rr-document-signed' },
 ]
 
 const pluginGroupE: NavItem[] = [
@@ -56,7 +57,7 @@ const pluginGroupG: NavItem[] = [
 ]
 
 const pluginGroupH: NavItem[] = [
-  { id: 'schoolevents', label: '투표', icon: 'fi fi-rr-vote-yea' },
+  { id: 'schoolevents', label: '투표/설문', icon: 'fi fi-rr-vote-yea' },
 ]
 
 const pluginGroupI: NavItem[] = [
@@ -290,7 +291,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
             {renderItems(pluginGroupG, 'groupG')}
 
             {/* Group H */}
-            {renderGroupTitle('groupH', 'F · 학교행사·투표')}
+            {renderGroupTitle('groupH', 'F · 학교행사·투표/설문')}
             {renderItems(pluginGroupH, 'groupH')}
 
             {/* Group I */}

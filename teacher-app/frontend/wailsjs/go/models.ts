@@ -52,6 +52,48 @@ export namespace main {
 	        this.monitors = source["monitors"];
 	    }
 	}
+	export class AILog {
+	    id: string;
+	    prompt_type: string;
+	    input_data: string;
+	    generated_content: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AILog(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.prompt_type = source["prompt_type"];
+	        this.input_data = source["input_data"];
+	        this.generated_content = source["generated_content"];
+	        this.created_at = source["created_at"];
+	    }
+	}
+	export class AttendanceRecord {
+	    id: string;
+	    student_id: string;
+	    date: string;
+	    absence_type: string;
+	    remark: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AttendanceRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.student_id = source["student_id"];
+	        this.date = source["date"];
+	        this.absence_type = source["absence_type"];
+	        this.remark = source["remark"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 	export class ConvertToMarkdownResult {
 	    success: boolean;
 	    text: string;
@@ -210,6 +252,24 @@ export namespace main {
 	        this.running = source["running"];
 	        this.path = source["path"];
 	        this.error = source["error"];
+	    }
+	}
+	export class OpinionRecord {
+	    id: string;
+	    student_id: string;
+	    content: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpinionRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.student_id = source["student_id"];
+	        this.content = source["content"];
+	        this.created_at = source["created_at"];
 	    }
 	}
 	export class PdfConvertResult {

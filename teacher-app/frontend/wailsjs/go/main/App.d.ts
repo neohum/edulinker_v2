@@ -26,13 +26,27 @@ export function ConvertToMarkdown(arg1:string,arg2:string):Promise<main.ConvertT
 
 export function ConvertToPdfAndImages(arg1:string,arg2:string):Promise<main.PdfConvertResult>;
 
+export function ConvertWithKordoc(arg1:string,arg2:string):Promise<main.ConvertToMarkdownResult>;
+
+export function DeleteAILog(arg1:string):Promise<void>;
+
+export function DeleteAttendanceRecord(arg1:string):Promise<void>;
+
 export function DeleteDocumentIndex(arg1:string):Promise<void>;
+
+export function DeleteOpinionHistory(arg1:string):Promise<void>;
 
 export function DownloadFile(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 
+export function ExtractKeywordsLocalAI(arg1:string):Promise<string>;
+
 export function GenerateAIStream(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function GenerateAISync(arg1:string,arg2:string):Promise<string>;
+
 export function GetAIBenchmark():Promise<main.AIBenchmark>;
+
+export function GetAILogs():Promise<Array<main.AILog>>;
 
 export function GetFileDataURL(arg1:string):Promise<string>;
 
@@ -40,7 +54,15 @@ export function GetIndexedDocIDs():Promise<Array<string>>;
 
 export function GetLocalModels():Promise<Array<string>>;
 
+export function GetMonthAttendanceRecords(arg1:string):Promise<Array<main.AttendanceRecord>>;
+
+export function GetOpinionHistories(arg1:string):Promise<Array<main.OpinionRecord>>;
+
+export function GetOpinionRecords():Promise<Array<main.OpinionRecord>>;
+
 export function GetPlugins():Promise<Array<main.PluginInfo>>;
+
+export function GetSchoolYearRecords(arg1:number):Promise<Array<main.AttendanceRecord>>;
 
 export function GetSystemInfo():Promise<main.SystemInfo>;
 
@@ -61,6 +83,16 @@ export function PullModel(arg1:string):Promise<main.PullModelResult>;
 export function QuitHwp():Promise<void>;
 
 export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number,arg11:number):Promise<main.LoginResult>;
+
+export function SaveAILog(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SaveAttendanceRecord(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SaveAttendanceRemarks(arg1:Array<string>,arg2:string):Promise<void>;
+
+export function SaveOpinionHistory(arg1:string,arg2:string):Promise<void>;
+
+export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
 
 export function SearchKnowledge(arg1:string,arg2:number):Promise<Array<main.RAGSearchResult>>;
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { apiFetch, getToken } from '../api'
 
@@ -22,13 +22,14 @@ interface Student {
 interface AttendanceRecord {
   id: string
   student_id: string
-  type: 'late' | 'absent' | 'leave'
+  type: string
   reason: string
   is_confirmed: boolean
   date: string
   start_date?: string
   end_date?: string
   absence_type?: string
+  remark?: string
   document_submitted?: boolean
 }
 
@@ -38,25 +39,83 @@ interface AttendancePageProps {
 
 export default function AttendancePage({ user }: AttendancePageProps) {
   const [records, setRecords] = useState<AttendanceRecord[]>([])
+  const [yearlyRecords, setYearlyRecords] = useState<AttendanceRecord[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [editForms, setEditForms] = useState<Record<string, { start_date: string, end_date: string, absence_type: string, document_submitted: boolean }>>({})
+  
+  // Date State
+  const [selectedYearMonth, setSelectedYearMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-  const [newForm, setNewForm] = useState({
-    student_id: '',
-    absence_type: '질병결석',
-    start_date: new Date().toISOString().slice(0, 10),
-    end_date: new Date().toISOString().slice(0, 10),
-    document_submitted: false,
-    reason: ''
-  })
+  const [stampMode, setStampMode] = useState<string | null>(null);
+  const [showStats, setShowStats] = useState(false);
+
+  const [popover, setPopover] = useState<{ studentId: string; dateStr: string; record?: AttendanceRecord; x: number; y: number } | null>(null);
+
+  // Month Selector Tabs (March to Feb)
+  const currentAcademicYear = useMemo(() => {
+    const today = new Date();
+    return today.getMonth() < 2 ? today.getFullYear() - 1 : today.getFullYear();
+  }, []);
+
+  const monthOptions = useMemo(() => {
+    const options = [];
+    for (let i = 3; i <= 14; i++) {
+      const y = i > 12 ? currentAcademicYear + 1 : currentAcademicYear;
+      const m = i > 12 ? i - 12 : i;
+      options.push({ label: `${m}월`, value: `${y}-${String(m).padStart(2, '0')}` });
+    }
+    return options;
+  }, [currentAcademicYear]);
+
+  // Generate days including weekends and holidays
+  const monthDays = useMemo(() => {
+    const [yearStr, monthStr] = selectedYearMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    // Hardcoded holidays
+    const holidays = [
+      '2026-03-02', // 3.1절 대체휴무
+      '2026-05-05', // 어린이날
+      '2026-05-25', // 부처님오신날 대체휴무
+      '2026-06-06', // 현충일
+      '2026-08-15', // 광복절
+      '2026-09-24', '2026-09-25', '2026-09-26', // 추석 연휴
+      '2026-10-03', // 개천절
+      '2026-10-09', // 한글날
+      '2026-12-25', // 성탄절
+    ];
+
+    const days = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      const dayOfWeek = date.getDay();
+      const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
+      const isHoliday = holidays.includes(dateStr);
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      
+      days.push({
+        dateStr,
+        day: d,
+        dayOfWeek,
+        isDisabled: isWeekend || isHoliday,
+        isHoliday,
+      });
+    }
+    return days;
+  }, [selectedYearMonth]);
 
   useEffect(() => {
     fetchStudents()
-    fetchToday()
   }, [])
+
+  useEffect(() => {
+    if (user) fetchMonthRecords(selectedYearMonth)
+  }, [selectedYearMonth, user])
 
   const fetchStudents = async () => {
     try {
@@ -76,31 +135,23 @@ export default function AttendancePage({ user }: AttendancePageProps) {
     } catch (e) { console.error(e) }
   }
 
-  const fetchToday = async () => {
-    try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/attendance/today`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setRecords(data || [])
+  const getSchoolYear = (ym: string) => {
+    const [y, m] = ym.split('-');
+    let year = parseInt(y, 10);
+    if (parseInt(m, 10) < 3) year -= 1;
+    return year;
+  }
 
-        // Initialize edit forms for unconfirmed records
-        const forms: typeof editForms = {}
-        const todayStr = new Date().toISOString().slice(0, 10)
-          ; (data || []).forEach((r: AttendanceRecord) => {
-            if (!r.is_confirmed) {
-              forms[r.id] = {
-                start_date: r.start_date ? r.start_date.split('T')[0] : r.date.split('T')[0] || todayStr,
-                end_date: r.end_date ? r.end_date.split('T')[0] : r.date.split('T')[0] || todayStr,
-                absence_type: r.absence_type || '질병결석',
-                document_submitted: r.document_submitted || false
-              }
-            }
-          })
-        setEditForms(forms)
-      }
+  const fetchMonthRecords = async (ym: string) => {
+    setLoading(true)
+    try {
+      const schoolYear = getSchoolYear(ym);
+      const [mData, yData] = await Promise.all([
+        (window as any).go.main.App.GetMonthAttendanceRecords(ym),
+        (window as any).go.main.App.GetSchoolYearRecords(schoolYear)
+      ]);
+      setRecords(mData || [])
+      setYearlyRecords(yData || [])
     } catch (e) {
       console.error(e)
     } finally {
@@ -108,261 +159,411 @@ export default function AttendancePage({ user }: AttendancePageProps) {
     }
   }
 
-  const handleConfirm = async (id: string) => {
-    try {
-      const token = await getToken()
-      const form = editForms[id] || {}
-
-      const res = await fetch(`http://localhost:5200/api/plugins/attendance/${id}/confirm`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          start_date: form.start_date ? new Date(form.start_date).toISOString() : null,
-          end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
-          absence_type: form.absence_type || '',
-          document_submitted: !!form.document_submitted
-        })
-      })
-      if (res.ok) {
-        toast.success('승인되었습니다.')
-        fetchToday()
-      } else {
-        toast.error('승인에 실패했습니다.')
-      }
-    } catch (e) {
-      toast.error('서버에 연결할 수 없습니다.')
-      console.error(e)
-    }
+  const getRecordForDate = (studentId: string, dateStr: string) => {
+    return records.find(r => r.student_id === studentId && r.date === dateStr);
   }
 
-  const handleCreate = async () => {
-    if (!newForm.student_id) { toast.error('학생을 선택해주세요.'); return }
-    if (!newForm.reason.trim()) { toast.error('사유를 입력해주세요.'); return }
-    setSubmitting(true)
+  const studentStats = useMemo(() => {
+    const stats: { student: Student; events: { type: string, startDate: string, endDate: string, count: number, recordIds: string[], remark: string }[], yearlyExperienceCount: number }[] = [];
+    const sortedStudents = [...students].sort((a,b) => a.number - b.number);
+    
+    for (const student of sortedStudents) {
+      const sRecords = records.filter(r => r.student_id === student.id).sort((a,b) => a.date.localeCompare(b.date));
+      if (sRecords.length === 0) continue;
+      
+      const events: { type: string, startDate: string, endDate: string, count: number, recordIds: string[], remark: string }[] = [];
+      let currentEvent: any = null;
+      
+      for (const r of sRecords) {
+        const rRemark = r.remark || (r.absence_type === '교외체험학습' ? '교외체험학습' : '');
+        if (!currentEvent) {
+          currentEvent = { type: r.absence_type, startDate: r.date, endDate: r.date, count: 1, recordIds: [r.id], remark: rRemark };
+        } else {
+          const startIdx = monthDays.findIndex(d => d.dateStr === currentEvent.endDate);
+          const endIdx = monthDays.findIndex(d => d.dateStr === r.date);
+          
+          let isContinuous = false;
+          if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            isContinuous = true;
+            for (let i = startIdx + 1; i < endIdx; i++) {
+              if (!monthDays[i].isDisabled) {
+                isContinuous = false;
+                break;
+              }
+            }
+          }
+          
+          if (isContinuous && currentEvent.type === r.absence_type && currentEvent.remark === rRemark) {
+            currentEvent.endDate = r.date;
+            currentEvent.count += 1;
+            currentEvent.recordIds.push(r.id);
+          } else {
+            events.push(currentEvent);
+            currentEvent = { type: r.absence_type, startDate: r.date, endDate: r.date, count: 1, recordIds: [r.id], remark: rRemark };
+          }
+        }
+      }
+      if (currentEvent) events.push(currentEvent);
+      
+      const yearlyExperienceCount = yearlyRecords.filter(r => r.student_id === student.id && r.absence_type === '교외체험학습').length;
+      
+      stats.push({ student, events, yearlyExperienceCount });
+    }
+    return stats;
+  }, [records, yearlyRecords, students, monthDays]);
 
+  const handleCellClick = (e: React.MouseEvent, studentId: string, dateStr: string, isDisabled?: boolean) => {
+    if (isDisabled) return;
+
+    if (stampMode) {
+      handleStampAttendance(studentId, dateStr, stampMode);
+      return;
+    }
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const record = getRecordForDate(studentId, dateStr);
+    
+    // Calculate popover position preventing off-screen overflow
+    let x = rect.left;
+    if (x + 280 > window.innerWidth) x = window.innerWidth - 280;
+    
+    let y = rect.bottom + 4;
+    if (y + 190 > window.innerHeight) y = rect.top - 190 - 4; // popover displays above cell instead
+    
+    setPopover({ studentId, dateStr, record, x, y });
+  }
+  
+  const handleSaveAttendance = async (absenceType: string) => {
+    if (!popover) return;
     try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/attendance/report`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          student_id: newForm.student_id,
-          type: 'absent', // Default mapped value since teacher inputs detail
-          reason: newForm.reason,
-          start_date: new Date(newForm.start_date).toISOString(),
-          end_date: new Date(newForm.end_date).toISOString(),
-          absence_type: newForm.absence_type,
-          document_submitted: newForm.document_submitted
-        })
-      })
-      if (res.ok) {
-        toast.success('출결 기록이 등록되었습니다.')
-        setShowForm(false)
-        setNewForm({
-          student_id: '',
-          absence_type: '질병결석',
-          start_date: new Date().toISOString().slice(0, 10),
-          end_date: new Date().toISOString().slice(0, 10),
-          document_submitted: false,
-          reason: ''
-        })
-        fetchToday()
+      await (window as any).go.main.App.SaveAttendanceRecord(popover.studentId, popover.dateStr, absenceType);
+      toast.success(`[${popover.dateStr}] ${absenceType} 처리되었습니다.`);
+      setPopover(null);
+      fetchMonthRecords(selectedYearMonth);
+    } catch (e) {
+      toast.error('저장 실패');
+    }
+  };
+
+  const handleStampAttendance = async (studentId: string, dateStr: string, mode: string) => {
+    try {
+      if (mode === '초기화') {
+        const record = getRecordForDate(studentId, dateStr);
+        if (record) {
+          await (window as any).go.main.App.DeleteAttendanceRecord(record.id);
+          fetchMonthRecords(selectedYearMonth);
+        }
       } else {
-        toast.error('저장에 실패했습니다.')
+        await (window as any).go.main.App.SaveAttendanceRecord(studentId, dateStr, mode);
+        fetchMonthRecords(selectedYearMonth);
       }
     } catch (e) {
-      toast.error('서버 연결 실패')
-    } finally {
-      setSubmitting(false)
+      toast.error('단축 입력 실패: 오류');
     }
-  }
+  };
 
-  const getTypeLabel = (type: string) => {
+  const handleDeleteRecord = async (recordId: string) => {
+    try {
+      await (window as any).go.main.App.DeleteAttendanceRecord(recordId);
+      toast.success('초기화 (출석 상태) 되었습니다.');
+      setPopover(null);
+      fetchMonthRecords(selectedYearMonth);
+    } catch (e) {
+      toast.error('초기화에 실패했습니다.');
+    }
+  };
+
+  const getBadgeStyle = (type: string) => {
     switch (type) {
-      case 'late': return <span style={{ background: '#fef9c3', color: '#a16207', padding: '4px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>지각</span>
-      case 'absent': return <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '4px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>결석</span>
-      case 'leave': return <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '4px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>조퇴</span>
-      default: return null
+      case '병결':
+      case '질병결석': return { bg: '#fee2e2', color: '#b91c1c', icon: 'fi-rr-stethoscope' };
+      case '교외체험학습': return { bg: '#e0e7ff', color: '#4338ca', icon: 'fi-rr-car' };
+      case '기타결석':
+      case '기타': return { bg: '#fef3c7', color: '#a16207', icon: 'fi-rr-document' };
+      case '인정결석': return { bg: '#dcfce7', color: '#15803d', icon: 'fi-rr-graduation-cap' };
+      case '미인정결석': return { bg: '#fce7f3', color: '#be123c', icon: 'fi-rr-cross' };
+      default: return { bg: '#f1f5f9', color: '#475569', icon: 'fi-rr-calendar-check' };
     }
-  }
+  };
+
+  const dayOfWeekNames = ['일', '월', '화', '수', '목', '금', '토'];
 
   return (
-    <div style={{ padding: 24, position: 'relative' }}>
+    <div style={{ padding: 24, position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h3 style={{ fontSize: 20, fontWeight: 700 }}><i className="fi fi-rr-alarm-clock" style={{ marginRight: 8 }} />오늘의 출결 접수 내역</h3>
-        <button className="btn-primary" onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8 }}>
-          <i className="fi fi-rr-plus" /> 출결 새로 등록
-        </button>
-      </div>
-
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}><i className="fi fi-rr-spinner" /> 로딩 중...</div>
-      ) : records.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', background: 'white', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)' }}>
-          오늘 접수된 근태 신고가 없습니다.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {records.map(r => (
-            <div key={r.id} style={{ padding: '20px', background: 'white', borderRadius: 12, border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                {getTypeLabel(r.type)}
-                {r.is_confirmed ? (
-                  <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 'bold' }}><i className="fi fi-rr-check-circle" /> 확인완료</span>
-                ) : (
-                  <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 'bold' }}><i className="fi fi-rr-exclamation" /> 미확인</span>
-                )}
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>학생 ID: {r.student_id.substring(0, 8)}...</div>
-              <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>사유: {r.reason}</div>
-
-              {r.is_confirmed ? (
-                <div style={{ background: 'var(--bg-primary)', padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px 8px' }}>
-                    <div style={{ color: 'var(--text-muted)' }}>결석 종류:</div>
-                    <div style={{ fontWeight: 600 }}>{r.absence_type || '-'}</div>
-                    <div style={{ color: 'var(--text-muted)' }}>결석 기간:</div>
-                    <div style={{ fontWeight: 600 }}>
-                      {r.start_date ? new Date(r.start_date).toLocaleDateString() : '-'} ~ {r.end_date ? new Date(r.end_date).toLocaleDateString() : '-'}
-                    </div>
-                    <div style={{ color: 'var(--text-muted)' }}>관련 서류:</div>
-                    <div style={{ fontWeight: 600, color: r.document_submitted ? '#16a34a' : '#ea580c' }}>
-                      {r.document_submitted ? '제출 완료' : '미제출'}
-                    </div>
-                  </div>
-                </div>
-              ) : editForms[r.id] && (
-                <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, marginBottom: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>결석 종류</label>
-                    <select
-                      value={editForms[r.id].absence_type}
-                      onChange={e => setEditForms(prev => ({ ...prev, [r.id]: { ...prev[r.id], absence_type: e.target.value } }))}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }}
-                    >
-                      <option value="질병결석">질병결석</option>
-                      <option value="인정결석">출석인정결석</option>
-                      <option value="미인정결석">미인정결석</option>
-                      <option value="기타결석">기타결석</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>결석 기간</label>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input
-                        type="date"
-                        value={editForms[r.id].start_date}
-                        onChange={e => setEditForms(prev => ({ ...prev, [r.id]: { ...prev[r.id], start_date: e.target.value } }))}
-                        style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }}
-                      />
-                      <span style={{ color: 'var(--text-muted)' }}>~</span>
-                      <input
-                        type="date"
-                        value={editForms[r.id].end_date}
-                        onChange={e => setEditForms(prev => ({ ...prev, [r.id]: { ...prev[r.id], end_date: e.target.value } }))}
-                        style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                    <input
-                      type="checkbox"
-                      id={`doc_${r.id}`}
-                      checked={editForms[r.id].document_submitted}
-                      onChange={e => setEditForms(prev => ({ ...prev, [r.id]: { ...prev[r.id], document_submitted: e.target.checked } }))}
-                      style={{ width: 16, height: 16, cursor: 'pointer' }}
-                    />
-                    <label htmlFor={`doc_${r.id}`} style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>질병/결석 관련 증빙 서류 접수 확인</label>
-                  </div>
-                </div>
-              )}
-
-              {!r.is_confirmed && (
-                <button onClick={() => handleConfirm(r.id)} style={{ width: '100%', background: '#10b981', color: 'white', padding: '10px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-                  입력 내용 저장 및 승인
-                </button>
-              )}
-            </div>
+        <h3 style={{ fontSize: 22, fontWeight: 700 }}><i className="fi fi-rr-calendar-check" style={{ marginRight: 8 }} />월별 출결 현황</h3>
+        
+        <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 4, borderRadius: 12 }}>
+          {monthOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSelectedYearMonth(opt.value)}
+              style={{
+                padding: '6px 16px',
+                borderRadius: 8,
+                border: 'none',
+                background: selectedYearMonth === opt.value ? 'white' : 'transparent',
+                fontWeight: selectedYearMonth === opt.value ? 700 : 500,
+                color: selectedYearMonth === opt.value ? '#3b82f6' : '#64748b',
+                boxShadow: selectedYearMonth === opt.value ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: 14
+              }}
+            >
+              {opt.label}
+            </button>
           ))}
         </div>
+      </div>
+
+      {/* Stamp Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, background: '#f8fafc', padding: '12px 16px', borderRadius: 12, border: '1px solid #cbd5e1' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <i className="fi fi-rr-magic-wand" /> 연속 선택 옵션
+        </div>
+        <div style={{ width: 1, height: 16, background: '#cbd5e1', margin: '0 4px' }} />
+        <button
+          onClick={() => setStampMode(null)}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === null ? '#3b82f6' : 'white', color: stampMode === null ? 'white' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-pointer" /> 일반</button>
+        
+        <button
+          onClick={() => setStampMode('질병결석')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '질병결석' ? '#fee2e2' : 'white', color: stampMode === '질병결석' ? '#b91c1c' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-stethoscope" /> 병결</button>
+        
+        <button
+          onClick={() => setStampMode('교외체험학습')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '교외체험학습' ? '#e0e7ff' : 'white', color: stampMode === '교외체험학습' ? '#4338ca' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-car" /> 체험학습</button>
+        
+        <button
+          onClick={() => setStampMode('기타결석')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '기타결석' ? '#fef3c7' : 'white', color: stampMode === '기타결석' ? '#a16207' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-document" /> 기타결석</button>
+        
+        <button
+          onClick={() => setStampMode('초기화')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '초기화' ? '#f1f5f9' : 'white', color: stampMode === '초기화' ? '#475569' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-eraser" /> 지우개</button>
+
+        <div style={{ width: 1, height: 16, background: '#cbd5e1', margin: '0 4px' }} />
+        
+        <button
+          onClick={() => setShowStats(true)}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: 'white', color: '#3b82f6', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+        ><i className="fi fi-rr-stats" /> 통계보기/비고 입력</button>
+      </div>
+
+      <div style={{ flex: 1, background: 'white', borderRadius: 16, border: '1px solid #cbd5e1', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}><i className="fi fi-rr-spinner" /> 로딩 중...</div>
+        ) : (
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800, border: '1px solid #cbd5e1' }}>
+              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 20, boxShadow: '0 1px 0 #cbd5e1' }}>
+                <tr>
+                  <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: '#475569', borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', minWidth: 140, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 30 }}>우리 반 학생</th>
+                  {monthDays.map(d => {
+                    let color = '#64748b'; // default grey
+                    let dayColor = '#0f172a';
+                    if (d.dayOfWeek === 0 || d.isHoliday) {
+                      color = '#ef4444'; // red for Sunday & Holiday
+                      dayColor = '#ef4444';
+                    } else if (d.dayOfWeek === 6) {
+                      color = '#3b82f6'; // blue for Saturday
+                      dayColor = '#3b82f6';
+                    }
+                    
+                    return (
+                      <th key={d.dateStr} style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 600, color, minWidth: 45, borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', background: d.isDisabled ? '#f8fafc' : 'transparent' }}>
+                        <div style={{ fontSize: 11, marginBottom: 2 }}>{dayOfWeekNames[d.dayOfWeek]}</div>
+                        <div style={{ fontSize: 13, color: dayColor }}>{d.day}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {students.map(student => (
+                  <tr key={student.id} style={{ borderBottom: '1px solid #cbd5e1' }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 600, borderRight: '1px solid #cbd5e1', position: 'sticky', left: 0, background: 'white', zIndex: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12, minWidth: 20 }}>{student.number}번</span>
+                        <span style={{ fontSize: 14, color: '#1e293b' }}>{student.name}</span>
+                      </div>
+                    </td>
+                    {monthDays.map(d => {
+                      const record = getRecordForDate(student.id, d.dateStr);
+                      const cellBg = d.isDisabled ? '#f1f5f9' : 'white';
+                      return (
+                        <td key={d.dateStr}
+                          title={`${d.day}일 - ${student.number}번 ${student.name}${d.isDisabled ? ' (휴일/주말)' : ''}`}
+                          onClick={(e) => handleCellClick(e, student.id, d.dateStr, d.isDisabled)}
+                          style={{
+                            padding: '4px',
+                            textAlign: 'center',
+                            borderRight: '1px solid #cbd5e1',
+                            cursor: d.isDisabled ? 'not-allowed' : 'pointer',
+                            background: cellBg,
+                            transition: 'all 0.1s'
+                          }}
+                          onMouseOver={e => { if (!d.isDisabled) e.currentTarget.style.background = '#f8fafc' }}
+                          onMouseOut={e => { if (!d.isDisabled) e.currentTarget.style.background = cellBg }}
+                        >
+                          <div style={{
+                            width: '100%', height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4
+                          }}>
+                            {record ? (
+                                (() => {
+                                  const typeLabel = record.absence_type || '결석';
+                                  const style = getBadgeStyle(typeLabel);
+                                  return (
+                                    <div title={typeLabel} style={{ background: style.bg, color: style.color, fontSize: 13, padding: '4px', borderRadius: 4, width: '90%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <i className={`fi ${style.icon}`} />
+                                    </div>
+                                  )
+                                })()
+                            ) : null}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                {students.length === 0 && (
+                  <tr>
+                    <td colSpan={monthDays.length + 1} style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                      등록된 학생이 없거나 권한이 없습니다. (학생관리 페이지 확인)
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {popover && (
+        <>
+          <div onClick={() => setPopover(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} />
+          <div style={{
+            position: 'fixed', top: popover.y, left: popover.x,
+            background: 'white', padding: 16, borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.25)', border: '1px solid #cbd5e1', zIndex: 1000, width: 260
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>📅 {popover.dateStr} 출결 입력</span>
+              <button onClick={() => setPopover(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16 }}>✕</button>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {['질병결석', '교외체험학습', '인정결석', '미인정결석', '기타결석'].map(type => (
+                <button
+                  key={type}
+                  onClick={() => handleSaveAttendance(type)}
+                  style={{
+                    padding: '10px 8px', 
+                    background: popover.record?.absence_type === type ? '#eff6ff' : '#f8fafc',
+                    color: popover.record?.absence_type === type ? '#2563eb' : '#475569',
+                    border: `1px solid ${popover.record?.absence_type === type ? '#93c5fd' : '#e2e8f0'}`,
+                    borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.1s'
+                  }}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            {popover.record && (
+             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                <button onClick={() => handleDeleteRecord(popover.record!.id)} style={{ width: '100%', padding: '10px 8px', background: 'white', color: '#ef4444', border: '1px dashed #fca5a5', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  초기화 (정상 출석으로 변경)
+                </button>
+             </div>
+            )}
+          </div>
+        </>
       )}
 
-      {/* 출결 새로 등록 모달 */}
-      {showForm && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="card" style={{ width: 500, maxWidth: '90%', padding: '24px', background: 'var(--bg-primary)', borderRadius: 16 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>출결 및 결석 확인서 새로 등록</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>학생 선택 *</label>
-                <select
-                  value={newForm.student_id}
-                  onChange={e => setNewForm(f => ({ ...f, student_id: e.target.value }))}
-                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}
-                >
-                  <option value="">학생을 선택하세요</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.grade}학년 {s.class_num}반 {s.number}번 {s.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>결석 종류 *</label>
-                <select
-                  value={newForm.absence_type}
-                  onChange={e => setNewForm(f => ({ ...f, absence_type: e.target.value }))}
-                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}
-                >
-                  <option value="질병결석">질병결석</option>
-                  <option value="인정결석">출석인정결석</option>
-                  <option value="미인정결석">미인정결석</option>
-                  <option value="기타결석">기타결석</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>결석 기간 *</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="date" value={newForm.start_date} onChange={e => setNewForm(f => ({ ...f, start_date: e.target.value }))}
-                    style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
-                  <span>~</span>
-                  <input type="date" value={newForm.end_date} onChange={e => setNewForm(f => ({ ...f, end_date: e.target.value }))}
-                    style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>사유 *</label>
-                <textarea rows={2} value={newForm.reason} onChange={e => setNewForm(f => ({ ...f, reason: e.target.value }))}
-                  placeholder="상세 사유 입력"
-                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, resize: 'vertical' }} />
-              </div>
-
-              <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" id="doc_check" checked={newForm.document_submitted}
-                    onChange={e => setNewForm(f => ({ ...f, document_submitted: e.target.checked }))}
-                    style={{ width: 18, height: 18, cursor: 'pointer' }} />
-                  <label htmlFor="doc_check" style={{ fontSize: 14, fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>질병/결석 관련 증빙 서류 접수 확인</label>
-                </div>
-              </div>
+      {showStats && (
+        <>
+          <div onClick={() => setShowStats(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 999 }} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            background: 'white', padding: 24, borderRadius: 16, boxShadow: '0 10px 30px rgba(0,0,0,0.25)', border: '1px solid #cbd5e1', zIndex: 1000, width: 540, maxHeight: '80vh', display: 'flex', flexDirection: 'column'
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>📊 {selectedYearMonth} 출결 통계 및 비고</span>
+              <button onClick={() => setShowStats(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 18 }}>✕</button>
             </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 24 }}>
-              <button onClick={() => setShowForm(false)} className="btn-secondary" style={{ padding: '10px 20px', borderRadius: 8 }}>취소</button>
-              <button onClick={handleCreate} disabled={submitting} className="btn-primary" style={{ padding: '10px 20px', borderRadius: 8 }}>
-                {submitting ? '저장 중...' : '저장 및 확정'}
-              </button>
+            
+            <div style={{ flex: 1, overflow: 'auto', paddingRight: 8 }}>
+              {studentStats.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>해당 달에 등록된 출결/결석 기록이 없습니다.</div>
+              ) : (
+                studentStats.map(({ student, events, yearlyExperienceCount }) => (
+                  <div key={student.id} style={{ marginBottom: 16, borderBottom: '1px solid #f1f5f9', paddingBottom: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: '#64748b' }}>{student.number}번</span> {student.name}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {events.map((ev, idx) => {
+                        const style = getBadgeStyle(ev.type || '결석');
+                        return (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, background: '#f8fafc', padding: '6px 12px', borderRadius: 6 }}>
+                            <div style={{ background: style.bg, color: style.color, fontSize: 11, fontWeight: 700, padding: '4px 8px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <i className={`fi ${style.icon}`} /> {ev.type}
+                            </div>
+                            <span style={{ color: '#475569', fontWeight: 600, flex: 1 }}>
+                              {ev.startDate === ev.endDate 
+                                ? ev.startDate 
+                                : `${ev.startDate} ~ ${ev.endDate}`}
+                            </span>
+                            <span style={{ color: '#3b82f6', fontWeight: 700, marginRight: 8, minWidth: 28, textAlign: 'right' }}>
+                              {ev.count}일 {ev.type === '교외체험학습' && <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 2 }}>( {yearlyExperienceCount})</span>}
+                            </span>
+                            <div style={{ flex: 1.5 }}>
+                              <input 
+                                type="text" 
+                                className="remark-input"
+                                defaultValue={ev.remark}
+                                placeholder="비고 (엔터, 다음칸 자동 이동)"
+                                onBlur={async (e) => {
+                                  if (e.target.value !== ev.remark) {
+                                    try {
+                                      await (window as any).go.main.App.SaveAttendanceRemarks(ev.recordIds, e.target.value);
+                                      toast.success('비고가 저장되었습니다.');
+                                      fetchMonthRecords(selectedYearMonth);
+                                    } catch(err) {
+                                      toast.error('비고 저장 실패');
+                                    }
+                                  }
+                                }}
+                                onKeyDown={(e) => { 
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const inputs = Array.from(document.querySelectorAll('.remark-input')) as HTMLInputElement[];
+                                    const idx = inputs.indexOf(e.currentTarget);
+                                    if (idx !== -1 && idx < inputs.length - 1) {
+                                      inputs[idx + 1].focus();
+                                    } else {
+                                      e.currentTarget.blur();
+                                    }
+                                  }
+                                }}
+                                style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, outline: 'none' }}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

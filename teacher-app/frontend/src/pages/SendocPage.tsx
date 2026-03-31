@@ -311,7 +311,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                   canvas.width = viewport.width
                   canvas.height = viewport.height
                   const ctx = canvas.getContext('2d')!
-                  await page.render({ canvasContext: ctx, viewport }).promise
+                  await page.render({ canvasContext: ctx, viewport } as any).promise
                   const dataUrl = canvas.toDataURL('image/png')
                   localPages.push(dataUrl.split(',')[1]) // extract base64 chunk
                 }
@@ -617,29 +617,37 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
   }
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!title.trim()) return toast.error('제목을 입력하세요.')
     if (selectedUsers.length === 0) return toast.error('수신자를 선택하세요.')
+    
+    // 즉각적인 UI 전환 (백그라운드 비동기 처리)
+    toast.info('문서를 서버로 전송하고 있습니다...')
+    setViewMode('list')
+    setShowRecipientModal(false)
     setIsSending(true)
-    try {
-      const res = await apiFetch('/api/plugins/sendoc', {
-        method: 'POST',
-        body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
-      })
-      if (res.ok) { 
-        toast.success('발송 완료!')
-        setViewMode('list')
-        fetchDocs()
-        setShowRecipientModal(false) 
-      } else {
-        const errorData = await res.json().catch(() => ({}))
-        toast.error('발송 실패: ' + (errorData.error || res.statusText))
+    
+    const sendData = async () => {
+      try {
+        const res = await apiFetch('/api/plugins/sendoc', {
+          method: 'POST',
+          body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
+        })
+        if (res.ok) { 
+          toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
+          fetchDocs()
+        } else {
+          const errorData = await res.json().catch(() => ({}))
+          toast.error(`'${title}' 발송 실패: ` + (errorData.error || res.statusText))
+        }
+      } catch (e: any) { 
+          toast.error(`'${title}' 발송 오류: ` + (e.message || '알 수 없는 오류'))
+      } finally {
+          setIsSending(false)
       }
-    } catch (e: any) { 
-        toast.error('발송 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
-    } finally {
-        setIsSending(false)
     }
+
+    sendData()
   }
 
   const handleSubmitSignature = async () => {

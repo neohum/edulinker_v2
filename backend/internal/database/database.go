@@ -89,6 +89,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.WeeklyStudyPlan{},
 		&models.EvaluationRecord{},
 		&models.SchoolVoting{},
+		&models.SchoolVotingResponse{},
 		&models.EventRecord{},
 		&models.ParentStudent{},
 		&models.RegisteredDevice{},

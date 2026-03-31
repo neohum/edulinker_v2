@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import ReactMarkdown from 'react-markdown'
 import { getToken, apiFetch } from '../api'
 import type { UserInfo } from '../App'
 
@@ -26,12 +27,12 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
   const [logs, setLogs] = useState<AILog[]>([])
   const [loading, setLoading] = useState(true)
   const [promptType, setPromptType] = useState('general')
-  const [isFetchingData, setIsFetchingData] = useState(false)
   const [selectedModel, setSelectedModel] = useState('auto')
   const [inputData, setInputData] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generatedDraft, setGeneratedDraft] = useState('')
   const [usedModel, setUsedModel] = useState('')
+  const [viewMode, setViewMode] = useState<'markdown' | 'raw'>('markdown')
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const uiUpdateRef = useRef<any>(null)
@@ -90,17 +91,29 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
 
   const fetchLogs = async () => {
     try {
-      const token = await getToken()
-      const res = await fetch('http://localhost:5200/api/plugins/aianalysis/logs', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.GetAILogs) {
+        const data = await wailsApp.GetAILogs()
         setLogs(data || [])
       }
     } catch (e) {
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteLog = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("정말 이 생성 내역을 삭제하시겠습니까? (로컬 앱 데이터)")) return;
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.DeleteAILog) {
+        await wailsApp.DeleteAILog(id)
+        toast.success("내역이 삭제되었습니다.");
+        fetchLogs();
+      }
+    } catch (e) {
+      toast.error("삭제 중 오류가 발생했습니다.");
     }
   }
 
@@ -117,68 +130,43 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
     return safeModel || aiStatus.installedModels[0] || 'gemma3:4b'
   }
 
-  const handleFetchStudentData = async () => {
-    setIsFetchingData(true)
-    try {
-      let url = '/api/core/users?role=student&page_size=200'
-      if (user?.grade) url += `&grade=${user.grade}`
-      if (user?.classNum) url += `&class_num=${user.classNum}`
-
-      const res = await apiFetch(url)
-      if (!res.ok) throw new Error('학생 목록을 불러올 수 없습니다.')
-      const data = await res.json()
-
-      const list = (data.users || [])
-        .filter((s: any) => (!user?.grade || s.grade === user.grade) && (!user?.classNum || s.class_num === user.classNum))
-        .sort((a: any, b: any) => a.number - b.number)
-
-      if (list.length === 0) {
-        toast.error('등록된 학생이 없습니다. 학생 관리에 학생을 먼저 등록해주세요.')
-        setIsFetchingData(false)
-        return
-      }
-
-      toast.info(`총 ${list.length}명 학생의 데이터 수집을 시작합니다... (잠시만 기다려주세요)`)
-
-      const studentContexts = await Promise.all(list.map(async (student: any) => {
-        const cRes = await apiFetch(`/api/plugins/studentmgmt/counseling?student_id=${student.id}`)
-        let cLogs = []
-        if (cRes.ok) cLogs = await cRes.json()
-
-        const eRes = await apiFetch(`/api/plugins/studentmgmt/evaluation?student_id=${student.id}`)
-        let eLogs = []
-        if (eRes.ok) eLogs = await eRes.json()
-
-        let context = `[${student.number}번 ${student.name} 학생]\n`
-        context += `- 상담 기록: ` + (!cLogs || cLogs.length === 0 ? '없음' : cLogs.map((c: any) => `${c.date} [${c.category}] 내용: ${c.content} / 결과: ${c.result || '-'}`).join(' | ')) + '\n'
-        context += `- 수행평가 기록: ` + (!eLogs || eLogs.length === 0 ? '없음' : eLogs.map((e: any) => `${e.subject} ${e.title} (${e.score}/${e.max_score}) ${e.memo ? '- ' + e.memo : ''}`).join(' | ')) + '\n'
-
-        return context
-      }))
-
-      const combinedData = studentContexts.join('\n')
-      const systemPromptPrefix = `다음은 우리 반 전체 학생들의 상담 기록과 수행평가 기록입니다. 이를 바탕으로 각 학생별 교과지도 사항과 학생 종합 평가를 학부모 통지서나 학교생활기록부에 적합한 전문적인 어조로 상세히 작성해주세요:\n\n`
-
-      setInputData(systemPromptPrefix + combinedData)
-      toast.success('모든 학생 데이터를 성공적으로 반영했습니다. 이제 AI 초안 생성하기를 클릭하세요!')
-    } catch (e: any) {
-      toast.error(e.message || '데이터 수집 중 오류가 발생했습니다.')
-    } finally {
-      setIsFetchingData(false)
-    }
-  }
-
   const autoSaveToDB = async (finalContent: string) => {
     if (!finalContent.trim()) return
     try {
-      const token = await getToken()
-      await fetch('http://localhost:5200/api/plugins/aianalysis/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ prompt_type: promptType, input_data: inputData, generated_content: finalContent })
-      })
-      fetchLogs()
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.SaveAILog) {
+        await wailsApp.SaveAILog(promptType, inputData, finalContent)
+        fetchLogs()
+      }
     } catch (e) { }
+  }
+
+  const handleCopyContent = async () => {
+    if (!generatedDraft) return;
+    try {
+      if (viewMode === 'markdown') {
+        const mdDiv = document.querySelector('.markdown-content');
+        if (mdDiv) {
+          // To ensure proper styling on paste, we can wrap the HTML
+          const html = `<div style="font-family: sans-serif; line-height: 1.6;">${mdDiv.innerHTML}</div>`;
+          const blobHtml = new Blob([html], { type: 'text/html' });
+          const blobText = new Blob([generatedDraft], { type: 'text/plain' });
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': blobHtml,
+              'text/plain': blobText
+            })
+          ]);
+          toast.success('마크다운 서식이 유지된 상태로 복사되었습니다! (한글/워드에 붙여넣어 보세요)');
+          return;
+        }
+      }
+      
+      await navigator.clipboard.writeText(generatedDraft);
+      toast.success('단순 텍스트가 원본 기호와 함께 복사되었습니다.');
+    } catch (e) {
+      toast.error('복사 중 오류가 발생했습니다.');
+    }
   }
 
   const [pullingModel, setPullingModel] = useState<string | null>(null)
@@ -237,7 +225,30 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
     }, 40)
 
     const wailsApp = (window as any).go?.main?.App
-    const systemPrompt = '당신은 숙련되고 유능한 교사이자 교육 전문가입니다. 사용자가 입력한 요청(프롬프트)에 맞춰 학교 업무, 생활기록부, 창의적 체험활동, 공문서 등 전문적이고 완성도 높은 초안을 작성해주세요.'
+    let finalSystemPrompt = '당신은 숙련되고 유능한 교사이자 교육 전문가입니다. 사용자가 입력한 요청(프롬프트)에 맞춰 학교 업무, 생활기록부, 창의적 체험활동, 공문서 등 전문적이고 완성도 높은 초안을 작성해주세요.'
+
+    if (promptType === 'knowledge_based') {
+      try {
+        toast.info('지식 베이스에서 관련 규정을 검색하고 있습니다...');
+        let keywords = inputData;
+        if (wailsApp?.ExtractKeywordsLocalAI && inputData.includes(' ') && inputData.length > 8) {
+          const extracted = await wailsApp.ExtractKeywordsLocalAI(inputData);
+          if (extracted && extracted !== inputData) keywords = extracted;
+        }
+        if (wailsApp?.SearchKnowledge) {
+          const raw = await wailsApp.SearchKnowledge(keywords, 3);
+          if (raw && raw.length > 0) {
+            const context = raw.map((r: any) => `[관련 문서 발췌: ${r.doc_title || '규정'}]\n${r.heading_context || ''}\n${r.display_text}`).join('\n\n');
+            finalSystemPrompt += `\n\n<참고 자료>\n다음은 우리 학교의 실제 규정 및 업무 정보입니다. 이 내용을 최우선으로 참고하여 문서를 작성하세요:\n${context}\n</참고 자료>`;
+            toast.success('관련 규정을 성공적으로 참조했습니다. 문서 초안 생성을 시작합니다.');
+          } else {
+            toast.info('관련 규정을 찾을 수 없어 일반 지식 기반으로 작성합니다.');
+          }
+        }
+      } catch (e: any) {
+        console.error(e);
+      }
+    }
 
     if (wailsApp?.GenerateAIStream) {
       // === Wails native path: Go calls Ollama directly (no CORS) ===
@@ -264,7 +275,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
           toast.error(errMsg)
         })
       }
-      wailsApp.GenerateAIStream(model, systemPrompt, inputData)
+      wailsApp.GenerateAIStream(model, finalSystemPrompt, inputData)
 
     } else {
       // === Fallback: direct fetch (browser dev mode only) ===
@@ -278,11 +289,11 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
           body: JSON.stringify({
             model,
             messages: [
-              { role: 'system', content: systemPrompt },
+              { role: 'system', content: finalSystemPrompt },
               { role: 'user', content: inputData }
             ],
             stream: true,
-            options: { num_ctx: 1024, num_predict: 512, temperature: 0.6, top_k: 20, top_p: 0.5 }
+            options: { num_ctx: 4096, num_predict: 2048, temperature: 0.6, top_k: 20, top_p: 0.5 }
           })
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -396,40 +407,31 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>작성 모드</label>
                 <select value={promptType} onChange={e => setPromptType(e.target.value)} disabled={generating} style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <option value="general">일반 자유 작성</option>
-                  <option value="student_evaluation">반 전체 학생 데이터 기반 종합 평가</option>
+                  <option value="knowledge_based">업무 규칙/정보(지식베이스) 기반 작성</option>
                 </select>
               </div>
             </div>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>프롬프트 입력 (요청 사항)</label>
-                {promptType === 'student_evaluation' && (
-                  <button
-                    onClick={handleFetchStudentData}
-                    disabled={generating || isFetchingData}
-                    className="btn-secondary"
-                    style={{ padding: '6px 12px', fontSize: 12, borderRadius: 20, display: 'flex', alignItems: 'center', gap: 6, margin: 0, fontWeight: 600, color: 'var(--accent-blue)', background: 'rgba(59, 130, 246, 0.1)' }}
-                  >
-                    <i className={isFetchingData ? "fi fi-rr-spinner fi-spin" : "fi fi-rr-users"} />
-                    {isFetchingData ? '학생 데이터 수집 및 병합 중...' : '학생 상담/평가 기록 통째로 불러오기'}
-                  </button>
-                )}
               </div>
               <textarea rows={6} value={inputData} onChange={e => setInputData(e.target.value)} disabled={generating} placeholder="원하시는 문서 내용, 목적이나 학생 관찰 기록을 자유롭게 입력해주세요..." style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
             </div>
             {!generating ? (
-              <button
-                onClick={handleGenerate}
-                disabled={!inputData.trim() || !hasAnySupportedModel() || isFetchingData}
-                style={{ background: 'linear-gradient(to right, #6366f1, #8b5cf6)', color: 'white', padding: '12px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: (!inputData.trim() || !hasAnySupportedModel() || isFetchingData) ? 'not-allowed' : 'pointer', opacity: (!inputData.trim() || !hasAnySupportedModel() || isFetchingData) ? 0.6 : 1 }}
-              >
-                <i className="fi fi-rr-magic-wand" style={{ marginRight: 8 }} /> AI 초안 생성 시작
-              </button>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  onClick={handleGenerate}
+                  disabled={!inputData.trim() || !hasAnySupportedModel()}
+                  style={{ flex: 1, background: 'linear-gradient(to right, #6366f1, #8b5cf6)', color: 'white', padding: '12px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: (!inputData.trim() || !hasAnySupportedModel()) ? 'not-allowed' : 'pointer', opacity: (!inputData.trim() || !hasAnySupportedModel()) ? 0.6 : 1 }}
+                >
+                  <i className="fi fi-rr-magic-wand" style={{ marginRight: 8 }} /> AI 문서 작성 시작
+                </button>
+              </div>
             ) : (
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ flex: 1, background: '#f1f5f9', color: '#475569', padding: '12px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontWeight: 600, fontSize: 14 }}>
                   <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
-                  실시간 생성 중...
+                  {'실시간 생성 중...'}
                   <span style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{elapsedSecs}s</span>
                 </div>
                 <button onClick={handleCancel} style={{ padding: '0 24px', background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>취소</button>
@@ -440,11 +442,31 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
           {(generatedDraft || generating) && (
             <div style={{ background: '#f8fafc', padding: 20, borderRadius: 12, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>생성 결과</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>모델: <span style={{ fontWeight: 700 }}>{usedModel}</span></div>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <button 
+                      onClick={handleCopyContent} 
+                      style={{ background: 'white', border: '1px solid var(--border)', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}
+                      onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
+                      onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                    >
+                      <i className="fi fi-rr-copy" /> 내용 복사하기
+                    </button>
+                    <div style={{ display: 'flex', background: '#f1f5f9', padding: 3, borderRadius: 6 }}>
+                      <button onClick={() => setViewMode('markdown')} style={{ background: viewMode === 'markdown' ? 'white' : 'transparent', border: 'none', padding: '4px 12px', borderRadius: 4, fontSize: 12, fontWeight: viewMode === 'markdown' ? 600 : 500, color: viewMode === 'markdown' ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', boxShadow: viewMode === 'markdown' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>마크다운 뷰어</button>
+                      <button onClick={() => setViewMode('raw')} style={{ background: viewMode === 'raw' ? 'white' : 'transparent', border: 'none', padding: '4px 12px', borderRadius: 4, fontSize: 12, fontWeight: viewMode === 'raw' ? 600 : 500, color: viewMode === 'raw' ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', boxShadow: viewMode === 'raw' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>텍스트 편집</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>모델: <span style={{ fontWeight: 700 }}>{usedModel}</span></div>
+                  </div>
                 </div>
-                <textarea rows={10} value={generatedDraft} onChange={e => setGeneratedDraft(e.target.value)} placeholder="생성 중..." style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', lineHeight: 1.6, background: generating ? '#fff' : 'transparent' }} />
+                {viewMode === 'markdown' ? (
+                  <div className="markdown-content" style={{ width: '100%', padding: '16px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', minHeight: '200px', maxHeight: '500px', overflowY: 'auto', fontSize: 14, lineHeight: 1.6 }}>
+                    <ReactMarkdown>{generatedDraft || (generating ? '생성 중...' : '')}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <textarea rows={10} value={generatedDraft} onChange={e => setGeneratedDraft(e.target.value)} placeholder="생성 중..." style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', lineHeight: 1.6, background: generating ? '#fff' : 'transparent' }} />
+                )}
               </div>
               <div style={{ fontSize: 12, color: '#10b981', fontWeight: 600, textAlign: 'center' }}><i className="fi fi-rr-check-circle" style={{ marginRight: 4 }} /> 생성 완료 시 자동으로 저장됩니다.</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>
@@ -471,8 +493,19 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                   onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-blue)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
                   onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)' }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-                    {log.prompt_type === 'general' ? '일반 문서' : log.prompt_type} · {new Date(log.created_at).toLocaleString()}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                      {log.prompt_type === 'general' ? '일반 문서' : log.prompt_type} · {new Date(log.created_at).toLocaleString()}
+                    </div>
+                    <button 
+                      onClick={(e) => handleDeleteLog(log.id, e)}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s', fontSize: 14 }}
+                      onMouseOver={e => e.currentTarget.style.color = '#ef4444'}
+                      onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}
+                      title="삭제"
+                    >
+                      <i className="fi fi-rr-trash" />
+                    </button>
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {log.generated_content}

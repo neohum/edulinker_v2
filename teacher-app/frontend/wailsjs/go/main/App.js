@@ -50,20 +50,48 @@ export function ConvertToPdfAndImages(arg1, arg2) {
   return window['go']['main']['App']['ConvertToPdfAndImages'](arg1, arg2);
 }
 
+export function ConvertWithKordoc(arg1, arg2) {
+  return window['go']['main']['App']['ConvertWithKordoc'](arg1, arg2);
+}
+
+export function DeleteAILog(arg1) {
+  return window['go']['main']['App']['DeleteAILog'](arg1);
+}
+
+export function DeleteAttendanceRecord(arg1) {
+  return window['go']['main']['App']['DeleteAttendanceRecord'](arg1);
+}
+
 export function DeleteDocumentIndex(arg1) {
   return window['go']['main']['App']['DeleteDocumentIndex'](arg1);
+}
+
+export function DeleteOpinionHistory(arg1) {
+  return window['go']['main']['App']['DeleteOpinionHistory'](arg1);
 }
 
 export function DownloadFile(arg1, arg2) {
   return window['go']['main']['App']['DownloadFile'](arg1, arg2);
 }
 
+export function ExtractKeywordsLocalAI(arg1) {
+  return window['go']['main']['App']['ExtractKeywordsLocalAI'](arg1);
+}
+
 export function GenerateAIStream(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateAIStream'](arg1, arg2, arg3);
 }
 
+export function GenerateAISync(arg1, arg2) {
+  return window['go']['main']['App']['GenerateAISync'](arg1, arg2);
+}
+
 export function GetAIBenchmark() {
   return window['go']['main']['App']['GetAIBenchmark']();
+}
+
+export function GetAILogs() {
+  return window['go']['main']['App']['GetAILogs']();
 }
 
 export function GetFileDataURL(arg1) {
@@ -78,8 +106,24 @@ export function GetLocalModels() {
   return window['go']['main']['App']['GetLocalModels']();
 }
 
+export function GetMonthAttendanceRecords(arg1) {
+  return window['go']['main']['App']['GetMonthAttendanceRecords'](arg1);
+}
+
+export function GetOpinionHistories(arg1) {
+  return window['go']['main']['App']['GetOpinionHistories'](arg1);
+}
+
+export function GetOpinionRecords() {
+  return window['go']['main']['App']['GetOpinionRecords']();
+}
+
 export function GetPlugins() {
   return window['go']['main']['App']['GetPlugins']();
+}
+
+export function GetSchoolYearRecords(arg1) {
+  return window['go']['main']['App']['GetSchoolYearRecords'](arg1);
 }
 
 export function GetSystemInfo() {
@@ -120,6 +164,26 @@ export function QuitHwp() {
 
 export function Register(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11) {
   return window['go']['main']['App']['Register'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
+}
+
+export function SaveAILog(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveAILog'](arg1, arg2, arg3);
+}
+
+export function SaveAttendanceRecord(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveAttendanceRecord'](arg1, arg2, arg3);
+}
+
+export function SaveAttendanceRemarks(arg1, arg2) {
+  return window['go']['main']['App']['SaveAttendanceRemarks'](arg1, arg2);
+}
+
+export function SaveOpinionHistory(arg1, arg2) {
+  return window['go']['main']['App']['SaveOpinionHistory'](arg1, arg2);
+}
+
+export function SaveOpinionRecord(arg1, arg2) {
+  return window['go']['main']['App']['SaveOpinionRecord'](arg1, arg2);
 }
 
 export function SearchKnowledge(arg1, arg2) {
