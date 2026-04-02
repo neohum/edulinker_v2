@@ -60,7 +60,10 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 }
 
 func (p *Plugin) listWeeklyPlans(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var plans []models.WeeklyStudyPlan
 	if err := p.db.Preload("Teacher").Where("school_id = ?", schoolID).Order("week_start desc").Find(&plans).Error; err != nil {
@@ -71,8 +74,14 @@ func (p *Plugin) listWeeklyPlans(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) createWeeklyPlan(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var plan models.WeeklyStudyPlan
 	if err := c.BodyParser(&plan); err != nil {
@@ -96,7 +105,10 @@ func (p *Plugin) createWeeklyPlan(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listEvaluations(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var evals []models.EvaluationRecord
 	if err := p.db.Preload("Student").Where("teacher_id = ?", teacherID).Order("created_at desc").Find(&evals).Error; err != nil {
@@ -107,8 +119,14 @@ func (p *Plugin) listEvaluations(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) createEvaluation(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var eval models.EvaluationRecord
 	if err := c.BodyParser(&eval); err != nil {

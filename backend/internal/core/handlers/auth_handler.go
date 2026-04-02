@@ -1,9 +1,8 @@
 package handlers
 
 import (
-	"log"
-
 	"github.com/edulinker/backend/internal/core/auth"
+	applogger "github.com/edulinker/backend/internal/core/logger"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -88,13 +87,13 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	token, err := h.authSvc.GenerateToken(&user)
 	if err != nil {
-		log.Printf("failed to generate token: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to generate token")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
 
 	refreshToken, err := h.authSvc.GenerateRefreshToken(&user)
 	if err != nil {
-		log.Printf("failed to generate refresh token: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to generate refresh token")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
 
@@ -133,7 +132,7 @@ func (h *AuthHandler) Refresh(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	claims, err := h.authSvc.ValidateToken(req.RefreshToken)
+	claims, err := h.authSvc.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid refresh token"})
 	}
@@ -205,7 +204,7 @@ func (h *AuthHandler) StudentLogin(c *fiber.Ctx) error {
 	}
 
 	// 4. PIN Check (If set)
-	if user.PIN != "" && user.PIN != req.PIN {
+	if user.PIN != "" && bcrypt.CompareHashAndPassword([]byte(user.PIN), []byte(req.PIN)) != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "PIN 번호가 일치하지 않습니다"})
 	}
 
@@ -215,13 +214,13 @@ func (h *AuthHandler) StudentLogin(c *fiber.Ctx) error {
 
 	token, err := h.authSvc.GenerateToken(&user)
 	if err != nil {
-		log.Printf("failed to generate token: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to generate token")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "서버 오류"})
 	}
 
 	refreshToken, err := h.authSvc.GenerateRefreshToken(&user)
 	if err != nil {
-		log.Printf("failed to generate refresh token: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to generate refresh token")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "서버 오류"})
 	}
 
@@ -288,7 +287,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		ClassPhone:   req.ClassPhone,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
-		log.Printf("failed to create user: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to create user")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "회원가입에 실패했습니다"})
 	}
 

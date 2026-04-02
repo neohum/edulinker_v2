@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -107,7 +108,11 @@ func main() {
 	}
 
 	// Initialize AI Gateway (Proxy to local Ollama)
-	aiSvc := aigateway.NewService("http://localhost:11434")
+	ollamaURL := strings.TrimRight(os.Getenv("OLLAMA_URL"), "/")
+	if ollamaURL == "" {
+		ollamaURL = "http://localhost:11434"
+	}
+	aiSvc := aigateway.NewService(ollamaURL)
 
 	// Initialize RAG Service
 	ragSvc := rag.NewService(db, aiSvc)
@@ -132,7 +137,7 @@ func main() {
 	classPlugin := classmgmt.New(db, ragSvc)
 	resourcePlugin := resourcemgmt.New(db)
 	adminPlugin := schooladmin.New(db)
-	knowledgePlugin := knowledge.New(db)
+	knowledgePlugin := knowledge.New(db, ollamaURL)
 
 	pluginMgr.Register(msgPlugin)
 	pluginMgr.Register(todoPlugin)
@@ -172,7 +177,7 @@ func main() {
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
 		AppName:      "edulinker API v1.0.0",
-		BodyLimit:    1024 * 1024 * 1024, // 1GB
+		BodyLimit:    100 * 1024 * 1024, // 100MB (covers file uploads; was 1GB)
 		ReadTimeout:  10 * time.Minute,
 		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  2 * time.Minute,
@@ -186,7 +191,18 @@ func main() {
 	app.Use(applogger.RequestLoggerMiddleware())
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
-			return true // Allow all origins including Wails desktop webview (wails://, http://wails.localhost)
+			// Always allow Wails desktop webview schemes
+			if origin == "wails://wails" || origin == "http://wails.localhost" {
+				return true
+			}
+			// Allow origins from CORS_ORIGINS env var
+			allowedOrigins := cfg.CORS.Origins
+			for _, o := range strings.Split(allowedOrigins, ",") {
+				if strings.TrimSpace(o) == origin {
+					return true
+				}
+			}
+			return false
 		},
 		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Device-ID",
@@ -251,7 +267,7 @@ func main() {
 	authRoutes.Post("/student-login", authHandler.StudentLogin)
 	authRoutes.Post("/refresh", authHandler.Refresh)
 	authRoutes.Post("/register", authHandler.Register)
-	api.Post("/setup", schoolHandler.SetupSchool)
+	api.Post("/setup", middleware.AuthRateLimiter(cfg.RateLimit.AuthPerMin), schoolHandler.SetupSchool)
 
 	// --- Public parent routes (no auth) ---
 	parentHandler := handlers.NewParentHandler(db)

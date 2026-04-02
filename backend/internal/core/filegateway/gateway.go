@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,28 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
 )
+
+// allowedExtensions is the set of file extensions permitted for upload.
+var allowedExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+	".pdf": true,
+	".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
+	".hwp": true, ".hwpx": true,
+	".txt": true, ".csv": true,
+	".zip": true,
+	".mp4": true, ".mp3": true,
+}
+
+// allowedMIMEPrefixes are MIME type prefixes accepted after magic-byte detection.
+var allowedMIMEPrefixes = []string{
+	"image/", "video/", "audio/",
+	"application/pdf",
+	"application/zip",
+	"application/msword",
+	"application/vnd.",
+	"text/plain", "text/csv",
+	"application/octet-stream", // fallback for HWP and other binary formats
+}
 
 // StorageType determines where a file is stored.
 type StorageType string
@@ -139,8 +162,37 @@ func (gw *Gateway) Upload(
 	pluginID string,
 	storageHint string,
 ) (*FileRecord, error) {
+	// Validate file extension
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if !allowedExtensions[ext] {
+		return nil, fmt.Errorf("file type not allowed: %s", ext)
+	}
+
+	// Validate actual file content via magic bytes (first 512 bytes)
+	buf := make([]byte, 512)
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("failed to read file header")
+	}
+	detectedMIME := http.DetectContentType(buf[:n])
+	mimeAllowed := false
+	for _, prefix := range allowedMIMEPrefixes {
+		if strings.HasPrefix(detectedMIME, prefix) {
+			mimeAllowed = true
+			break
+		}
+	}
+	if !mimeAllowed {
+		return nil, fmt.Errorf("file content type not allowed: %s", detectedMIME)
+	}
+	// Reset read position after magic-byte check
+	if seeker, ok := file.(io.Seeker); ok {
+		if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("failed to reset file position")
+		}
+	}
+
 	// Generate unique object key
-	ext := filepath.Ext(header.Filename)
 	objectKey := fmt.Sprintf("%s/%s/%s/%s%s",
 		pluginID,
 		schoolID.String(),

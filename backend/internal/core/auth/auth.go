@@ -14,11 +14,20 @@ var (
 	ErrInvalidCreds = errors.New("invalid credentials")
 )
 
+// TokenType distinguishes access tokens from refresh tokens.
+type TokenType string
+
+const (
+	TokenTypeAccess  TokenType = "access"
+	TokenTypeRefresh TokenType = "refresh"
+)
+
 // Claims contains JWT token claims.
 type Claims struct {
-	UserID   uuid.UUID   `json:"user_id"`
-	SchoolID uuid.UUID   `json:"school_id"`
-	Role     models.Role `json:"role"`
+	UserID    uuid.UUID   `json:"user_id"`
+	SchoolID  uuid.UUID   `json:"school_id"`
+	Role      models.Role `json:"role"`
+	TokenType TokenType   `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
@@ -41,9 +50,10 @@ func NewService(secret string, expiryHours, refreshExpiryHr int) *Service {
 // GenerateToken creates a new JWT access token.
 func (s *Service) GenerateToken(user *models.User) (string, error) {
 	claims := &Claims{
-		UserID:   user.ID,
-		SchoolID: user.SchoolID,
-		Role:     user.Role,
+		UserID:    user.ID,
+		SchoolID:  user.SchoolID,
+		Role:      user.Role,
+		TokenType: TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(s.expiryHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -58,9 +68,10 @@ func (s *Service) GenerateToken(user *models.User) (string, error) {
 // GenerateRefreshToken creates a longer-lived refresh token.
 func (s *Service) GenerateRefreshToken(user *models.User) (string, error) {
 	claims := &Claims{
-		UserID:   user.ID,
-		SchoolID: user.SchoolID,
-		Role:     user.Role,
+		UserID:    user.ID,
+		SchoolID:  user.SchoolID,
+		Role:      user.Role,
+		TokenType: TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(s.refreshExpiryHr) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -74,6 +85,15 @@ func (s *Service) GenerateRefreshToken(user *models.User) (string, error) {
 
 // ValidateToken parses and validates a JWT token string.
 func (s *Service) ValidateToken(tokenStr string) (*Claims, error) {
+	return s.validateTokenWithType(tokenStr, TokenTypeAccess)
+}
+
+// ValidateRefreshToken parses and validates a refresh token.
+func (s *Service) ValidateRefreshToken(tokenStr string) (*Claims, error) {
+	return s.validateTokenWithType(tokenStr, TokenTypeRefresh)
+}
+
+func (s *Service) validateTokenWithType(tokenStr string, expectedType TokenType) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidToken
@@ -86,6 +106,10 @@ func (s *Service) ValidateToken(tokenStr string) (*Claims, error) {
 
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	if claims.TokenType != expectedType {
 		return nil, ErrInvalidToken
 	}
 

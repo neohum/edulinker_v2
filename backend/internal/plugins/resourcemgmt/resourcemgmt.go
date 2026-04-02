@@ -36,14 +36,20 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 }
 
 func (p *Plugin) listFacilities(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var facilities []models.Facility
 	p.db.Where("school_id = ?", schoolID).Find(&facilities)
 	return c.JSON(facilities)
 }
 
 func (p *Plugin) addFacility(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var facility models.Facility
 	if err := c.BodyParser(&facility); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
@@ -54,7 +60,10 @@ func (p *Plugin) addFacility(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) reserveFacility(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var res models.FacilityReservation
 	if err := c.BodyParser(&res); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})

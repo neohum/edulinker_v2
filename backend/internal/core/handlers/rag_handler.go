@@ -40,7 +40,7 @@ func (h *RAGHandler) Query(c *fiber.Ctx) error {
 
 	answer, chunks, err := h.ragSvc.Query(req.SchoolID, req.Question)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "AI query failed"})
 	}
 
 	sources := []fiber.Map{}

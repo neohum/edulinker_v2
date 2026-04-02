@@ -65,8 +65,14 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 }
 
 func (p *Plugin) listVotings(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
-	userID := c.Locals("userID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var votings []models.SchoolVoting
 	query := p.db.Where("school_id = ?", schoolID).Order("created_at desc")
@@ -133,8 +139,14 @@ func (p *Plugin) listVotings(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) createVoting(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var vote models.SchoolVoting
 	if err := c.BodyParser(&vote); err != nil {
@@ -163,7 +175,10 @@ func (p *Plugin) deleteVoting(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid voting ID"})
 	}
 
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var vote models.SchoolVoting
 	if err := p.db.First(&vote, "id = ?", votingID).Error; err != nil {
@@ -206,7 +221,10 @@ func (p *Plugin) submitVote(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid voting ID"})
 	}
 
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var payload struct {
 		OptionIdx int    `json:"option_idx"`
@@ -282,7 +300,10 @@ func (p *Plugin) getVotingStats(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listEventRecords(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var records []models.EventRecord
 	if err := p.db.Where("school_id = ?", schoolID).Order("created_at desc").Find(&records).Error; err != nil {
@@ -293,8 +314,14 @@ func (p *Plugin) listEventRecords(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) createEventRecord(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var record models.EventRecord
 	if err := c.BodyParser(&record); err != nil {

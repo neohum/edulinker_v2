@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
+	applogger "github.com/edulinker/backend/internal/core/logger"
 	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -107,7 +107,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("failed to hash password: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to hash password")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
 
@@ -131,7 +131,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
-		log.Printf("failed to create user: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to create user")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create user"})
 	}
 
@@ -281,7 +281,11 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 		user.Number = *req.Number
 	}
 	if req.PIN != nil {
-		user.PIN = *req.PIN
+		pinHash, err := bcrypt.GenerateFromPassword([]byte(*req.PIN), bcrypt.DefaultCost)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+		}
+		user.PIN = string(pinHash)
 	}
 	if req.ParentPhone != nil {
 		user.ParentPhone = *req.ParentPhone
@@ -391,13 +395,19 @@ func (h *UserHandler) AddStudent(c *fiber.Ctx) error {
 		Class:       req.ClassNum,
 		Number:      req.Number,
 		Gender:      req.Gender,
-		PIN:         req.PIN,
 		ParentPhone: req.ParentPhone,
 		IsActive:    true,
 	}
+	if req.PIN != "" {
+		pinHash, err := bcrypt.GenerateFromPassword([]byte(req.PIN), bcrypt.DefaultCost)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+		}
+		student.PIN = string(pinHash)
+	}
 
 	if err := h.db.Create(&student).Error; err != nil {
-		log.Printf("failed to create student: %v", err)
+		applogger.Log.Error().Err(err).Msg("failed to create student")
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "학생 등록에 실패했습니다"})
 	}
 
@@ -546,9 +556,11 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 				existing.ParentPhone = parentPhone
 				updated = true
 			}
-			if pin != "" && existing.PIN != pin {
-				existing.PIN = pin
-				updated = true
+			if pin != "" && bcrypt.CompareHashAndPassword([]byte(existing.PIN), []byte(pin)) != nil {
+				if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
+					existing.PIN = string(pinHash)
+					updated = true
+				}
 			}
 			if updated {
 				h.db.Save(&existing)
@@ -567,12 +579,16 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			Number:      number,
 			Gender:      gender,
 			ParentPhone: parentPhone,
-			PIN:         pin,
 			IsActive:    true,
+		}
+		if pin != "" {
+			if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
+				student.PIN = string(pinHash)
+			}
 		}
 
 		if err := h.db.Create(&student).Error; err != nil {
-			log.Printf("failed to create student row %d: %v", rowNum, err)
+			applogger.Log.Error().Err(err).Int("row", rowNum).Msg("failed to create student row")
 			result.Errors = append(result.Errors, fmt.Sprintf("%d행: 저장 실패 - %s", rowNum, name))
 			continue
 		}

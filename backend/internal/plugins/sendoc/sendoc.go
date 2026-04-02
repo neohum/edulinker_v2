@@ -149,8 +149,14 @@ func (p *Plugin) RegisterPublicRoutes(router fiber.Router) {
 // ── Handlers ──
 
 func (p *Plugin) createDocument(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var req struct {
 		Title             string      `json:"title"`
@@ -199,8 +205,14 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listDocuments(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var docs []models.Sendoc
 	if err := p.db.Preload("Author").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
@@ -222,7 +234,10 @@ func (p *Plugin) getSignatures(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var recipients []models.SendocRecipient
 	if err := p.db.Preload("User").Preload("Sendoc").Preload("Sendoc.Author").
@@ -274,7 +289,10 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) submitSignature(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	docID := c.Params("id")
 
 	var req struct {
@@ -356,7 +374,10 @@ func (p *Plugin) publicSubmitSignature(c *fiber.Ctx) error {
 
 func (p *Plugin) downloadPDF(c *fiber.Ctx) error {
 	docID := c.Params("id")
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var doc models.Sendoc
 	if err := p.db.Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
@@ -414,8 +435,14 @@ func (p *Plugin) downloadPDF(c *fiber.Ctx) error {
 
 func (p *Plugin) deleteDocument(c *fiber.Ctx) error {
 	docID := c.Params("id")
-	schoolID := c.Locals("schoolID").(uuid.UUID)
-	userID := c.Locals("userID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var doc models.Sendoc
 	if err := p.db.Where("id = ? AND school_id = ? AND author_id = ?", docID, schoolID, userID).First(&doc).Error; err != nil {
@@ -432,8 +459,14 @@ func (p *Plugin) deleteDocument(c *fiber.Ctx) error {
 
 func (p *Plugin) recallDocument(c *fiber.Ctx) error {
 	docID := c.Params("id")
-	schoolID := c.Locals("schoolID").(uuid.UUID)
-	userID := c.Locals("userID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var doc models.Sendoc
 	if err := p.db.Where("id = ? AND school_id = ? AND author_id = ?", docID, schoolID, userID).First(&doc).Error; err != nil {
@@ -454,7 +487,10 @@ func (p *Plugin) recallDocument(c *fiber.Ctx) error {
 
 func (p *Plugin) deletePendingDocument(c *fiber.Ctx) error {
 	docID := c.Params("id")
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var recipient models.SendocRecipient
 	if err := p.db.Where("sendoc_id = ? AND user_id = ?", docID, userID).First(&recipient).Error; err != nil {

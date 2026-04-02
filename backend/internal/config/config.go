@@ -91,7 +91,7 @@ func Load() (*Config, error) {
 	godotenv.Load("../../.env")
 
 	// Essential configuration check
-	requiredEnvs := []string{"JWT_SECRET", "DB_PASSWORD"}
+	requiredEnvs := []string{"JWT_SECRET", "DB_PASSWORD", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY"}
 	for _, env := range requiredEnvs {
 		if os.Getenv(env) == "" {
 			return nil, fmt.Errorf("essential environment variable %s is missing", env)
@@ -119,8 +119,8 @@ func Load() (*Config, error) {
 		},
 		MinIO: MinIOConfig{
 			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
-			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"), // Local dev default
+			AccessKey: os.Getenv("MINIO_ACCESS_KEY"),
+			SecretKey: os.Getenv("MINIO_SECRET_KEY"),
 			Bucket:    getEnv("MINIO_BUCKET", "edulinker-local"),
 			UseSSL:    false,
 		},

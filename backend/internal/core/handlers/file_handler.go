@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"io"
+	"mime"
+	"net/url"
 
 	"github.com/edulinker/backend/internal/core/filegateway"
 	"github.com/gofiber/fiber/v2"
@@ -39,7 +41,7 @@ func (h *FileHandler) Upload(c *fiber.Ctx) error {
 
 	record, err := h.gw.Upload(src, file, schoolID, userID, pluginID, storageHint)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to upload file"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(record)
@@ -54,7 +56,7 @@ func (h *FileHandler) Download(c *fiber.Ctx) error {
 
 	record, reader, err := h.gw.Download(fileID)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "file not found"})
 	}
 	defer reader.Close()
 
@@ -66,7 +68,10 @@ func (h *FileHandler) Download(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", record.ContentType)
 	c.Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	c.Set("Content-Disposition", "inline; filename=\""+record.FileName+"\"")
+	c.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{
+		"filename":  record.FileName,
+		"filename*": "UTF-8''" + url.PathEscape(record.FileName),
+	}))
 
 	return c.Send(data)
 }
@@ -79,7 +84,7 @@ func (h *FileHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	if err := h.gw.Delete(fileID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete file"})
 	}
 
 	return c.JSON(fiber.Map{"message": "file deleted"})

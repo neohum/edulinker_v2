@@ -75,7 +75,7 @@ func TestGenerateRefreshToken_LongerExpiry(t *testing.T) {
 	refreshStr, _ := svc.GenerateRefreshToken(user)
 
 	accessClaims, _ := svc.ValidateToken(accessStr)
-	refreshClaims, _ := svc.ValidateToken(refreshStr)
+	refreshClaims, _ := svc.ValidateRefreshToken(refreshStr)
 
 	accessExp := accessClaims.ExpiresAt.Time
 	refreshExp := refreshClaims.ExpiresAt.Time

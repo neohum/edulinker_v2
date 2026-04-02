@@ -56,8 +56,14 @@ func (p *Plugin) listCounselingLogs(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) addCounselingLog(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	studentUUID, err := uuid.Parse(c.Params("studentID"))
 	if err != nil {
@@ -92,7 +98,10 @@ func (p *Plugin) listAbsences(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) addAbsence(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	studentUUID, err := uuid.Parse(c.Params("studentID"))
 	if err != nil {

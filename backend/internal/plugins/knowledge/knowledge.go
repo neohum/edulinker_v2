@@ -39,11 +39,12 @@ type OllamaEmbedResponse struct {
 }
 
 type Plugin struct {
-	db *gorm.DB
+	db        *gorm.DB
+	ollamaURL string
 }
 
-func New(db *gorm.DB) *Plugin {
-	return &Plugin{db: db}
+func New(db *gorm.DB, ollamaURL string) *Plugin {
+	return &Plugin{db: db, ollamaURL: ollamaURL}
 }
 
 func (p *Plugin) ID() string      { return "knowledge" }
@@ -224,7 +225,7 @@ func (p *Plugin) queryChat(c *fiber.Ctx) error {
 			"stream": true,
 		})
 
-		resp, err := http.Post("http://localhost:11434/api/chat", "application/json", bytes.NewBuffer(ollamaReqBody))
+		resp, err := http.Post(p.ollamaURL+"/api/chat", "application/json", bytes.NewBuffer(ollamaReqBody))
 		if err != nil {
 			return
 		}

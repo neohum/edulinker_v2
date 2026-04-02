@@ -43,7 +43,10 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 }
 
 func (p *Plugin) listAnalysisLogs(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var analysisLogs []models.AIAnalysisLog
 	if err := p.db.Where("teacher_id = ?", teacherID).Order("created_at desc").Find(&analysisLogs).Error; err != nil {
@@ -54,8 +57,14 @@ func (p *Plugin) listAnalysisLogs(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) generateAndLogAnalysis(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var req struct {
 		PromptType       string `json:"prompt_type"`
@@ -90,7 +99,10 @@ func (p *Plugin) generateAndLogAnalysis(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) deleteAnalysisLog(c *fiber.Ctx) error {
-	teacherID := c.Locals("userID").(uuid.UUID)
+	teacherID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	logID := c.Params("id")
 
 	var alog models.AIAnalysisLog

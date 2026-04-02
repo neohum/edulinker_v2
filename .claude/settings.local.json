@@ -58,7 +58,9 @@
       "Read(//e/works/project/edulinker/teacher-app/%APPDATA%/**)",
       "Read(//e/works/project/edulinker/teacher-app/$APPDATA/**)",
       "Bash(python3:*)",
-      "Bash(find E:/works/project/edulinker -type f -name *.tsx)"
+      "Bash(find E:/works/project/edulinker -type f -name *.tsx)",
+      "Bash(find /d/works/edulinker_v2 -name *test* -o -name *spec* -o -name jest.config.* -o -name vitest.config.* -o -name pytest.ini)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

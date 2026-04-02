@@ -38,8 +38,14 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 }
 
 func (p *Plugin) createHandover(c *fiber.Ctx) error {
-	fromUserID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	fromUserID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var handover models.TaskHandover
 	if err := c.BodyParser(&handover); err != nil {
@@ -52,7 +58,10 @@ func (p *Plugin) createHandover(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listReceivedHandovers(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var handovers []models.TaskHandover
 	p.db.Preload("FromUser").Where("to_user_id = ?", userID).Find(&handovers)
 	return c.JSON(handovers)
@@ -60,7 +69,10 @@ func (p *Plugin) listReceivedHandovers(c *fiber.Ctx) error {
 
 func (p *Plugin) confirmHandover(c *fiber.Ctx) error {
 	id := c.Params("id")
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	if err := p.db.Model(&models.TaskHandover{}).Where("id = ? AND to_user_id = ?", id, userID).Update("is_confirmed", true).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to confirm"})
 	}
@@ -68,8 +80,14 @@ func (p *Plugin) confirmHandover(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) submitEvaluation(c *fiber.Ctx) error {
-	evaluatorID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	evaluatorID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var eval models.MultiEvaluation
 	if err := c.BodyParser(&eval); err != nil {
@@ -83,7 +101,10 @@ func (p *Plugin) submitEvaluation(c *fiber.Ctx) error {
 
 func (p *Plugin) listEvaluationsForTeacher(c *fiber.Ctx) error {
 	// Simple authorization: only Admins or designated evaluators (logic can be expanded)
-	role := c.Locals("role").(string)
+	role, ok := c.Locals("role").(string)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	if role != string(models.RoleAdmin) {
 		return c.Status(403).JSON(fiber.Map{"error": "인사 자료는 관리자만 열람할 수 있습니다."})
 	}

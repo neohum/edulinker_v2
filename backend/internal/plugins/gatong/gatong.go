@@ -53,7 +53,10 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 }
 
 func (p *Plugin) addToTodo(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	gatongID := c.Params("id")
 
 	var gatong models.Gatong
@@ -83,8 +86,14 @@ func (p *Plugin) addToTodo(c *fiber.Ctx) error {
 // Handlers
 
 func (p *Plugin) createGatong(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var req struct {
 		Title      string                `json:"title"`
@@ -128,7 +137,10 @@ func (p *Plugin) createGatong(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listGatongs(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var gatongs []models.Gatong
 	if err := p.db.Preload("Targets").Preload("Author").Where("school_id = ?", schoolID).Order("created_at desc").Find(&gatongs).Error; err != nil {
@@ -150,9 +162,18 @@ func (p *Plugin) getResponses(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listGatongsForUser(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
-	role := c.Locals("role").(string)
-	userID := c.Locals("userID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	role, ok := c.Locals("role").(string)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 
 	var gatongs []models.Gatong
 
@@ -173,7 +194,10 @@ func (p *Plugin) listGatongsForUser(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) submitResponse(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uuid.UUID)
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	gatongID := c.Params("id")
 
 	var req struct {

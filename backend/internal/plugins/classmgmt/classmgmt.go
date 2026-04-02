@@ -39,7 +39,10 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 }
 
 func (p *Plugin) createSession(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var session models.ClassAssignmentSession
 	if err := c.BodyParser(&session); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
@@ -50,14 +53,20 @@ func (p *Plugin) createSession(c *fiber.Ctx) error {
 }
 
 func (p *Plugin) listSessions(c *fiber.Ctx) error {
-	schoolID := c.Locals("schoolID").(uuid.UUID)
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var sessions []models.ClassAssignmentSession
 	p.db.Where("school_id = ?", schoolID).Find(&sessions)
 	return c.JSON(sessions)
 }
 
 func (p *Plugin) submitParentRequest(c *fiber.Ctx) error {
-	parentID := c.Locals("userID").(uuid.UUID)
+	parentID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
 	var req models.ParentClassRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
