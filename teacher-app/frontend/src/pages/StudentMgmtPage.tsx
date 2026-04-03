@@ -73,8 +73,8 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const downloadTemplate = async () => {
     try {
-      const res = await apiFetch('/api/core/users/student-template')
-      if (!res.ok) { toast.error('양식 다운로드에 실패했습니다.'); return }
+      const res = await fetch('/student_template.xlsx')
+      if (!res.ok) { toast.error('서버에서 양식 파일을 찾을 수 없습니다.'); return }
       const blob = await res.blob()
 
       // Convert to base64 and save via Wails native dialog
