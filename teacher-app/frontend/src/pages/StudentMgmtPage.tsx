@@ -78,8 +78,12 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = 'student_template.xlsx'; a.click()
-      URL.revokeObjectURL(url)
+      a.href = url
+      a.download = 'student_template.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch { toast.error('다운로드 오류가 발생했습니다.') }
   }
 
