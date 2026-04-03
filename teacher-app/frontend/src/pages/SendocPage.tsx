@@ -560,9 +560,9 @@ export default function SendocPage({ user }: SendocPageProps) {
             setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
             isMultiPage = true;
           }
-        } catch {}
+        } catch { }
       }
-      
+
       if (!isMultiPage) {
         setPageImages([]);
         const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
@@ -602,9 +602,9 @@ export default function SendocPage({ user }: SendocPageProps) {
             setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
             isMultiPage = true;
           }
-        } catch {}
+        } catch { }
       }
-      
+
       if (!isMultiPage) {
         setPageImages([]);
         const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
@@ -620,30 +620,30 @@ export default function SendocPage({ user }: SendocPageProps) {
   const handleSend = () => {
     if (!title.trim()) return toast.error('제목을 입력하세요.')
     if (selectedUsers.length === 0) return toast.error('수신자를 선택하세요.')
-    
+
     // 즉각적인 UI 전환 (백그라운드 비동기 처리)
     toast.info('문서를 서버로 전송하고 있습니다...')
     setViewMode('list')
     setShowRecipientModal(false)
     setIsSending(true)
-    
+
     const sendData = async () => {
       try {
         const res = await apiFetch('/api/plugins/sendoc', {
           method: 'POST',
           body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
         })
-        if (res.ok) { 
+        if (res.ok) {
           toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
           fetchDocs()
         } else {
           const errorData = await res.json().catch(() => ({}))
           toast.error(`'${title}' 발송 실패: ` + (errorData.error || res.statusText))
         }
-      } catch (e: any) { 
-          toast.error(`'${title}' 발송 오류: ` + (e.message || '알 수 없는 오류'))
+      } catch (e: any) {
+        toast.error(`'${title}' 발송 오류: ` + (e.message || '알 수 없는 오류'))
       } finally {
-          setIsSending(false)
+        setIsSending(false)
       }
     }
 
@@ -813,41 +813,41 @@ export default function SendocPage({ user }: SendocPageProps) {
           {!isViewer && (
             <div style={{ width: 240, background: 'white', borderRight: '1px solid #e2e8f0', padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>도구 상자</div>
-              
+
               {/* Hide Sidebar standard page navigation since we now scroll vertically */}
               <div style={{ display: 'none' }}>
-              {/* Page navigation when multi-page document */}
-              {pageImages.length > 1 && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>
-                    페이지 {currentPageIdx + 1} / {pageImages.length}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
-                    {pageImages.map((pg, idx) => {
-                      const isCurrent = idx === currentPageIdx
-                      return (
-                        <div key={idx}
-                          onClick={() => {
-                            setCurrentPageIdx(idx)
-                            const binaryStr = atob(pg)
-                            const bytes = new Uint8Array(binaryStr.length)
-                            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-                            const blob = new Blob([bytes], { type: 'image/png' })
-                            setBackgroundUrl(URL.createObjectURL(blob))
-                          }}
-                          style={{ cursor: 'pointer', border: isCurrent ? '2px solid #6366f1' : '2px solid #e2e8f0', borderRadius: 6, overflow: 'hidden', opacity: isCurrent ? 1 : 0.7 }}>
-                          <img src={`data:image/png;base64,${pg}`} alt={`${idx + 1}페이지`}
-                            style={{ width: '100%', display: 'block' }} />
-                          <div style={{ textAlign: 'center', fontSize: 10, padding: '2px 0', background: isCurrent ? '#e0e7ff' : '#f8fafc', color: isCurrent ? '#4f46e5' : '#94a3b8', fontWeight: 600 }}>
-                            {idx + 1}
+                {/* Page navigation when multi-page document */}
+                {pageImages.length > 1 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>
+                      페이지 {currentPageIdx + 1} / {pageImages.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                      {pageImages.map((pg, idx) => {
+                        const isCurrent = idx === currentPageIdx
+                        return (
+                          <div key={idx}
+                            onClick={() => {
+                              setCurrentPageIdx(idx)
+                              const binaryStr = atob(pg)
+                              const bytes = new Uint8Array(binaryStr.length)
+                              for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+                              const blob = new Blob([bytes], { type: 'image/png' })
+                              setBackgroundUrl(URL.createObjectURL(blob))
+                            }}
+                            style={{ cursor: 'pointer', border: isCurrent ? '2px solid #6366f1' : '2px solid #e2e8f0', borderRadius: 6, overflow: 'hidden', opacity: isCurrent ? 1 : 0.7 }}>
+                            <img src={`data:image/png;base64,${pg}`} alt={`${idx + 1}페이지`}
+                              style={{ width: '100%', display: 'block' }} />
+                            <div style={{ textAlign: 'center', fontSize: 10, padding: '2px 0', background: isCurrent ? '#e0e7ff' : '#f8fafc', color: isCurrent ? '#4f46e5' : '#94a3b8', fontWeight: 600 }}>
+                              {idx + 1}
+                            </div>
                           </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
+                    <div style={{ height: 1, background: '#f1f5f9', marginTop: 12 }} />
                   </div>
-                  <div style={{ height: 1, background: '#f1f5f9', marginTop: 12 }} />
-                </div>
-              )}
+                )}
               </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 <button onClick={() => { setIsDrawingMode(false); addField('text') }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #eee', background: 'white', cursor: 'pointer' }}>
@@ -904,6 +904,10 @@ export default function SendocPage({ user }: SendocPageProps) {
                   <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     {pageImages.map((pg, i) => (
                       <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                    ))}
+                    {/* Visual Page Dividers */}
+                    {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
+                      <div key={'div' + i} style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
                     ))}
                   </div>
                 ) : (
