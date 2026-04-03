@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import * as XLSX from 'xlsx'
-import { getToken } from '../api'
+import { apiFetch } from '../api'
 import { GetAIBenchmark } from '../../wailsjs/go/main/App'
 import type { UserInfo } from '../App'
 
@@ -99,10 +99,7 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
   const fetchRecords = async () => {
     try {
       setLoading(true)
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/pcinfo`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await apiFetch(`/api/plugins/pcinfo`)
       if (res.ok) {
         const data = await res.json()
         setRecords(data || [])
@@ -137,13 +134,8 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
 
   const handleUpdatePC = async () => {
     try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/pcinfo/${formData.id}/label`, {
+      const res = await apiFetch(`/api/plugins/pcinfo/${formData.id}/label`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify(formData)
       })
       if (res.ok) {
@@ -151,11 +143,13 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
         setShowEditModal(false)
         fetchRecords()
       } else {
-        const err = await res.json()
-        toast.error('수정 실패: ' + (err.error || '알 수 없는 오류'))
+        let errObj: any = { error: '알 수 없는 오류' }
+        try { errObj = await res.json() } catch { }
+        toast.error('수정 실패: ' + (errObj.error || '알 수 없는 오류'))
       }
     } catch (e) {
-      toast.error('서버에 연결할 수 없습니다.')
+      console.error(e);
+      toast.error(`서버 연결 오류 (${(e as Error).message})`)
     }
   }
 
@@ -169,13 +163,8 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
     if (!payload.id) delete (payload as any).id
 
     try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/pcinfo/report`, {
+      const res = await apiFetch(`/api/plugins/pcinfo/report`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify(payload)
       })
       if (res.ok) {
@@ -183,11 +172,13 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
         setShowAddModal(false)
         fetchRecords()
       } else {
-        const err = await res.json()
-        toast.error('등록 실패: ' + (err.error || '알 수 없는 오류'))
+        let errObj: any = { error: '알 수 없는 오류' }
+        try { errObj = await res.json() } catch { }
+        toast.error('등록 실패: ' + (errObj.error || '알 수 없는 오류'))
       }
     } catch (e) {
-      toast.error('서버에 연결할 수 없습니다.')
+      console.error(e);
+      toast.error(`서버 연결 오류 (${(e as Error).message})`)
     }
   }
 
@@ -195,19 +186,20 @@ export default function PcInfoPage({ user }: { user: UserInfo }) {
     if (!confirm('정말로 이 PC 자산을 삭제하시겠습니까?')) return
 
     try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/pcinfo/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await apiFetch(`/api/plugins/pcinfo/${id}`, {
+        method: 'DELETE'
       })
       if (res.ok) {
         toast.success('자산이 삭제되었습니다.')
         fetchRecords()
       } else {
-        toast.error('삭제에 실패했습니다.')
+        let errObj: any = {}
+        try { errObj = await res.json() } catch { }
+        toast.error('삭제에 실패했습니다: ' + (errObj.error || ''))
       }
     } catch (e) {
-      toast.error('서버에 연결할 수 없습니다.')
+      console.error(e);
+      toast.error(`서버 연결 오류 (${(e as Error).message})`)
     }
   }
 

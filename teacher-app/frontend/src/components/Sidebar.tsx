@@ -23,7 +23,6 @@ const coreItems: NavItem[] = [
 ]
 
 const pluginGroupA: NavItem[] = [
-  { id: 'messenger', label: '교사 메신저', icon: 'fi fi-rr-comment' },
   { id: 'announcement', label: '공문전달', icon: 'fi fi-rr-document' },
   { id: 'todo', label: '투두리스트', icon: 'fi fi-rr-checkbox' },
   { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
@@ -78,7 +77,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
     if (saved) {
       try { return JSON.parse(saved) } catch (e) { }
     }
-    return ['messenger', 'aianalysis', 'sendoc']
+    return ['aianalysis', 'sendoc']
   })
 
   // Load saved group states or default to all closed
@@ -219,7 +218,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
 
       {/* Search Box */}
       {!isCollapsed && (
-        <div style={{ padding: '0 16px 12px 16px' }}>
+        <div style={{ padding: '24px 16px 12px 16px' }}>
           <div style={{ position: 'relative' }}>
             <i className="fi fi-rr-search" style={{ position: 'absolute', left: 12, top: 10, color: 'var(--text-muted)' }} />
             <input
@@ -270,37 +269,32 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
               </>
             )}
 
-            {/* Group A */}
-            {renderGroupTitle('groupA', 'A · 핵심 소통')}
-            {renderItems(pluginGroupA, 'groupA')}
+            {/* Group Mapping Helper */}
+            {(() => {
+              const renderFilteredGroup = (groupId: string, title: string, items: NavItem[]) => {
+                const filteredItems = items.filter(i => !favorites.includes(i.id));
+                if (filteredItems.length === 0) return null;
+                return (
+                  <>
+                    {renderGroupTitle(groupId, title)}
+                    {renderItems(filteredItems, groupId)}
+                  </>
+                );
+              };
 
-            {/* Group B */}
-            {renderGroupTitle('groupB', 'B · 문서·결재')}
-            {renderItems(pluginGroupB, 'groupB')}
-
-            {/* Group D */}
-            {renderGroupTitle('groupD', 'C · 학생관리')}
-            {renderItems(pluginGroupD, 'groupD')}
-
-            {/* Group E */}
-            {renderGroupTitle('groupE', 'D · 수업·평가')}
-            {renderItems(pluginGroupE, 'groupE')}
-
-            {/* Group G */}
-            {renderGroupTitle('groupG', 'E · AI 문서 생성')}
-            {renderItems(pluginGroupG, 'groupG')}
-
-            {/* Group H */}
-            {renderGroupTitle('groupH', 'F · 학교행사·투표/설문')}
-            {renderItems(pluginGroupH, 'groupH')}
-
-            {/* Group I */}
-            {renderGroupTitle('groupI', 'G · 인프라·도구')}
-            {renderItems(pluginGroupI, 'groupI')}
-
-            {/* System */}
-            {renderGroupTitle('system', '시스템')}
-            {renderItems(systemItems, 'system')}
+              return (
+                <>
+                  {renderFilteredGroup('groupA', 'A · 핵심 소통', pluginGroupA)}
+                  {renderFilteredGroup('groupB', 'B · 문서·결재', pluginGroupB)}
+                  {renderFilteredGroup('groupD', 'C · 학생관리', pluginGroupD)}
+                  {renderFilteredGroup('groupE', 'D · 수업·평가', pluginGroupE)}
+                  {renderFilteredGroup('groupG', 'E · AI 문서 생성', pluginGroupG)}
+                  {renderFilteredGroup('groupH', 'F · 학교행사·투표/설문', pluginGroupH)}
+                  {renderFilteredGroup('groupI', 'G · 인프라·도구', pluginGroupI)}
+                  {renderFilteredGroup('system', '시스템', systemItems)}
+                </>
+              );
+            })()}
           </>
         )}
       </nav>

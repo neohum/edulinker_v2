@@ -73,8 +73,8 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const downloadTemplate = async () => {
     try {
-      const res = await fetch('/student_template.xlsx')
-      if (!res.ok) { toast.error('서버에서 양식 파일을 찾을 수 없습니다.'); return }
+      const res = await apiFetch('/api/core/users/student-template')
+      if (!res.ok) { toast.error('서버에서 양식을 생성할 수 없습니다.'); return }
       const blob = await res.blob()
 
       // Convert to base64 and save via Wails native dialog
@@ -82,11 +82,22 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
       reader.onloadend = async () => {
         const base64data = (reader.result as string).split(',')[1]
         try {
-          const downloadRes = await (window as any).go.main.App.SaveFileBytes('student_template.xlsx', base64data)
-          if (downloadRes.error) {
-            toast.error(downloadRes.error)
-          } else if (downloadRes.success) {
-            toast.success('다운로드 완료')
+          if ((window as any).go?.main?.App?.SaveFileBytes) {
+            const downloadRes = await (window as any).go.main.App.SaveFileBytes('student_template.xlsx', base64data)
+            if (downloadRes.error) {
+              toast.error(downloadRes.error)
+            } else if (downloadRes.success) {
+              toast.success('다운로드 완료')
+            }
+          } else {
+            // Browser fallback
+            const a = document.createElement('a')
+            a.href = reader.result as string
+            a.download = 'student_template.xlsx'
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            toast.success('다운로드 시작됨')
           }
         } catch (err) {
           console.error(err)
@@ -264,6 +275,28 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
     })
   }
 
+  const handleResetPIN = async (student: Student) => {
+    toast(`'${student.name}' 학생의 접속 비밀번호(PIN)를 1234로 초기화할까요?`, {
+      action: {
+        label: '초기화',
+        onClick: async () => {
+          try {
+            const res = await apiFetch(`/api/core/users/${student.id}/reset-pin`, { method: 'POST' })
+            if (res.ok) {
+              toast.success(`${student.name} 학생의 PIN이 1234로 초기화되었습니다.`)
+            } else {
+              const data = await res.json()
+              toast.error(data.error || '초기화 실패')
+            }
+          } catch (e) {
+            toast.error('서버 연락 실패')
+          }
+        }
+      },
+      duration: 8000,
+    })
+  }
+
   const openEditModal = (student: Student) => {
     setEditStudent(student)
     setEditForm({ number: String(student.number), name: student.name, gender: student.gender || '' })
@@ -419,6 +452,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                 {parentEnabled && (
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>학부모 연동</th>
                 )}
+                <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, ...{ color: 'var(--text-muted)' }, fontSize: 12, borderBottom: '1px solid var(--border)' }}>계정 관리</th>
               </tr>
             </thead>
             <tbody>
@@ -461,6 +495,15 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                       </td>
                     )
                   })()}
+                  <td style={{ padding: '10px 14px' }}>
+                    <button
+                      onClick={() => handleResetPIN(s)}
+                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      title="비밀번호를 1234로 초기화합니다"
+                    >
+                      <i className="fi fi-rr-key" style={{ fontSize: 10 }} /> PIN 초기화
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

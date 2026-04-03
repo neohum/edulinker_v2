@@ -9,7 +9,6 @@ import StudentMgmtPage from './StudentMgmtPage'
 import AIAnalysisPage from './AIAnalysisPage'
 import CurriculumPage from './CurriculumPage'
 import SchoolEventsPage from './SchoolEventsPage'
-import MessengerPage from './MessengerPage'
 import AnnouncementPage from './AnnouncementPage'
 import TodoPage from './TodoPage'
 import AttendancePage from './AttendancePage'
@@ -45,11 +44,10 @@ interface DashboardPageProps {
   onLogout: () => void
 }
 
-type PageView = 'dashboard' | 'messenger' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin' | 'knowledge' | 'behavior-opinion'
+type PageView = 'dashboard' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin' | 'knowledge' | 'behavior-opinion'
 
 function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
-  const [unreadMsgCount, setUnreadMsgCount] = useState(0)
   const [pendingDocCount, setPendingDocCount] = useState(0)
   const [activeVotingsCount, setActiveVotingsCount] = useState(0)
 
@@ -101,7 +99,6 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         user={user}
         currentPage={currentPage}
         badges={{
-          messenger: unreadMsgCount > 0 ? unreadMsgCount : undefined,
           sendoc: pendingDocCount > 0 ? pendingDocCount : undefined,
           schoolevents: activeVotingsCount > 0 ? activeVotingsCount : undefined
         }}
@@ -139,10 +136,6 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'resourcemgmt' && <ResourceMgmtPage />}
           {currentPage === 'schooladmin' && <SchoolAdminPage user={user} />}
 
-          <div style={{ display: currentPage === 'messenger' ? 'block' : 'none', height: '100%' }}>
-            <MessengerPage user={user} isActive={currentPage === 'messenger'} onUnreadChange={setUnreadMsgCount} />
-          </div>
-
           {currentPage === 'announcement' && <AnnouncementPage />}
           {currentPage === 'todo' && <TodoPage />}
           {currentPage === 'attendance' && <AttendancePage user={user} />}
@@ -157,7 +150,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
 
           {currentPage === 'knowledge' && <KnowledgePage />}
 
-          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'messenger' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && currentPage !== 'classmgmt' && currentPage !== 'resourcemgmt' && currentPage !== 'schooladmin' && currentPage !== 'knowledge' && currentPage !== 'behavior-opinion' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
+          {currentPage !== 'dashboard' && currentPage !== 'gatong' && currentPage !== 'sendoc' && currentPage !== 'studentmgmt' && currentPage !== 'curriculum' && currentPage !== 'aianalysis' && currentPage !== 'schoolevents' && currentPage !== 'announcement' && currentPage !== 'todo' && currentPage !== 'attendance' && currentPage !== 'student-alert' && currentPage !== 'linker' && currentPage !== 'pcinfo' && currentPage !== 'settings' && currentPage !== 'profile' && currentPage !== 'classmgmt' && currentPage !== 'resourcemgmt' && currentPage !== 'schooladmin' && currentPage !== 'knowledge' && currentPage !== 'behavior-opinion' && <PluginPlaceholder name={getPageTitle(currentPage)} />}
         </div>
       </div>
     </div>
@@ -434,7 +427,7 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     try {
       const wailsApp = (window as any).go?.main?.App;
-      
+
       // 문장형 질문(띄어쓰기 포함, 10자 이상)인 경우 핵심어 추출
       if (userQuery.includes(' ') && userQuery.length > 8) {
         setMessages(prev => [
@@ -838,7 +831,7 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                           {matchCount > 0 ? `${currentMatchIndex + 1} / ${matchCount}` : '0 / 0'}
                         </span>
                         <button type="button" onClick={() => { setDocSearchQuery(''); setCurrentMatchIndex(0); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-                         <i className="fi fi-rr-cross-circle" style={{ fontSize: 14 }} />
+                          <i className="fi fi-rr-cross-circle" style={{ fontSize: 14 }} />
                         </button>
                       </div>
                     )}
@@ -856,9 +849,9 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                     matchIdx++;
                     const isActive = matchIdx === currentMatchIndex;
                     return (
-                      <mark 
-                        id={isActive ? 'search-match-active' : undefined} 
-                        key={i} 
+                      <mark
+                        id={isActive ? 'search-match-active' : undefined}
+                        key={i}
                         style={{ backgroundColor: isActive ? '#f97316' : '#fef08a', color: isActive ? '#fff' : '#000', padding: '0 2px', borderRadius: 2 }}
                       >
                         {part}
@@ -894,7 +887,6 @@ function PluginPlaceholder({ name }: { name: string }) {
 function getPageTitle(page: string): string {
   const titles: Record<string, string> = {
     dashboard: '통합 검색',
-    messenger: '교사 메신저',
     announcement: '공문전달',
     todo: '투두리스트',
     'student-alert': '학생 알림',

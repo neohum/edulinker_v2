@@ -36,6 +36,7 @@ func (p *ParentSyncProvider) GetSyncData(schoolID string) interface{} {
 		Grade    int    `json:"grade"`
 		ClassNum int    `json:"class_num"`
 		Number   int    `json:"number"`
+		PINHash  string `json:"pin_hash"`
 	}
 
 	var students []models.User
@@ -49,6 +50,7 @@ func (p *ParentSyncProvider) GetSyncData(schoolID string) interface{} {
 			Grade:    s.Grade,
 			ClassNum: s.Class,
 			Number:   s.Number,
+			PINHash:  s.PIN,
 		}
 	}
 	return result

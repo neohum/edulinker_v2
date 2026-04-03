@@ -312,13 +312,11 @@ export default function SettingsPage() {
     const baseName = modelName.split(':')[0].toLowerCase()
     return models.some(m => {
       const installedName = m.name.toLowerCase()
-      return installedName === modelName.toLowerCase() ||
-        installedName === baseName ||
-        installedName.startsWith(baseName + ':')
+      return installedName.includes(baseName) || installedName.includes(modelName.toLowerCase())
     })
   }
 
-  const hasGemma = models.some(m => m.name.toLowerCase().includes('gemma'))
+  const hasModel = models.length > 0
 
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
@@ -497,18 +495,18 @@ export default function SettingsPage() {
                 </div>
                 <div style={{
                   flex: 1, padding: 16, borderRadius: 12,
-                  background: hasGemma ? 'rgba(34,197,94,0.06)' : 'rgba(251,191,36,0.06)',
-                  border: `1px solid ${hasGemma ? 'rgba(34,197,94,0.2)' : 'rgba(251,191,36,0.2)'}`
+                  background: hasModel ? 'rgba(34,197,94,0.06)' : 'rgba(251,191,36,0.06)',
+                  border: `1px solid ${hasModel ? 'rgba(34,197,94,0.2)' : 'rgba(251,191,36,0.2)'}`
                 }}>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>AI 모델</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: hasGemma ? '#22c55e' : '#f59e0b' }}>
-                    {hasGemma ? `${models.length}개 설치` : '미설치'}
+                  <div style={{ fontSize: 16, fontWeight: 700, color: hasModel ? '#22c55e' : '#f59e0b' }}>
+                    {hasModel ? `${models.length}개 설치됨` : '미설치'}
                   </div>
                 </div>
               </div>
 
               {/* Auto Setup Button */}
-              {(!ollamaStatus?.installed || !ollamaStatus?.running || !hasGemma) && (
+              {(!ollamaStatus?.installed || !ollamaStatus?.running || !hasModel) && (
                 <button
                   onClick={handleAutoSetup}
                   disabled={installing || starting || !!pulling}
@@ -645,7 +643,7 @@ export default function SettingsPage() {
               )}
 
               {/* All Ready Message */}
-              {ollamaStatus?.installed && ollamaStatus?.running && hasGemma && (
+              {ollamaStatus?.installed && ollamaStatus?.running && hasModel && (
                 <div style={{
                   marginTop: 16, padding: 16, borderRadius: 12,
                   background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)',

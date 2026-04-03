@@ -178,6 +178,10 @@ export function SaveAttendanceRemarks(arg1, arg2) {
   return window['go']['main']['App']['SaveAttendanceRemarks'](arg1, arg2);
 }
 
+export function SaveFileBytes(arg1, arg2) {
+  return window['go']['main']['App']['SaveFileBytes'](arg1, arg2);
+}
+
 export function SaveOpinionHistory(arg1, arg2) {
   return window['go']['main']['App']['SaveOpinionHistory'](arg1, arg2);
 }

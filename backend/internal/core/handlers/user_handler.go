@@ -398,13 +398,12 @@ func (h *UserHandler) AddStudent(c *fiber.Ctx) error {
 		ParentPhone: req.ParentPhone,
 		IsActive:    true,
 	}
-	if req.PIN != "" {
-		pinHash, err := bcrypt.GenerateFromPassword([]byte(req.PIN), bcrypt.DefaultCost)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
-		}
-		student.PIN = string(pinHash)
+
+	pinHash, err := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
+	student.PIN = string(pinHash)
 
 	if err := h.db.Create(&student).Error; err != nil {
 		applogger.Log.Error().Err(err).Msg("failed to create student")
@@ -454,7 +453,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 
 	// Detect column indices from header row
 	header := rows[0]
-	gradeCol, classCol, numCol, nameCol, genderCol, parentPhoneCol, pinCol := -1, -1, -1, -1, -1, -1, -1
+	gradeCol, classCol, numCol, nameCol, genderCol, parentPhoneCol := -1, -1, -1, -1, -1, -1
 	for i, cell := range header {
 		cell = strings.TrimSpace(cell)
 		switch {
@@ -468,8 +467,6 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			genderCol = i
 		case strings.Contains(cell, "학부모") || strings.Contains(cell, "전화") || strings.Contains(cell, "연락"):
 			parentPhoneCol = i
-		case strings.Contains(cell, "PIN") || strings.Contains(cell, "비밀"):
-			pinCol = i
 		case strings.Contains(cell, "번호") || strings.Contains(cell, "번"):
 			numCol = i
 		}
@@ -533,10 +530,8 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			parentPhone = strings.TrimSpace(row[parentPhoneCol])
 		}
 
-		pin := ""
-		if pinCol >= 0 && pinCol < len(row) {
-			pin = strings.TrimSpace(row[pinCol])
-		}
+		// Always default PIN to 1234 for new/imported students
+		pin := "1234"
 
 		// Check if student already exists (same school + grade + class + number)
 		var existing models.User
@@ -581,10 +576,8 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			ParentPhone: parentPhone,
 			IsActive:    true,
 		}
-		if pin != "" {
-			if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
-				student.PIN = string(pinHash)
-			}
+		if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
+			student.PIN = string(pinHash)
 		}
 
 		if err := h.db.Create(&student).Error; err != nil {
@@ -599,6 +592,103 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
+// ResetPIN resets a student's PIN to '1234' (Teacher/Admin only)
+func (h *UserHandler) ResetPIN(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
+	}
+
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+
+	// Fetch user to verify its school and role
+	var user models.User
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	if user.SchoolID != schoolID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "permission denied"})
+	}
+
+	if user.Role != models.RoleStudent {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "can only reset PIN for students"})
+	}
+
+	pinHash, err := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
+	user.PIN = string(pinHash)
+	h.db.Save(&user)
+
+	return c.JSON(fiber.Map{"message": "PIN reset to 1234 successfully"})
+}
+
+type ChangePINRequest struct {
+	OldPIN string `json:"old_pin"`
+	NewPIN string `json:"new_pin"`
+}
+
+// ChangePIN allows a student (or admin) to change a PIN
+func (h *UserHandler) ChangePIN(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
+	}
+
+	var req ChangePINRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if len(req.NewPIN) < 4 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "새 비밀번호는 4자리 이상이어야 합니다"})
+	}
+
+	currentUserID, _ := c.Locals("userID").(uuid.UUID)
+	currentRole, _ := c.Locals("role").(models.Role)
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+
+	var user models.User
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	if user.SchoolID != schoolID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "permission denied"})
+	}
+
+	// Students can only change their own PIN.
+	if currentRole == models.RoleStudent && currentUserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "permission denied"})
+	}
+
+	if currentRole == models.RoleStudent {
+		if req.OldPIN != "" {
+			if err := bcrypt.CompareHashAndPassword([]byte(user.PIN), []byte(req.OldPIN)); err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "기존 비밀번호가 틀렸습니다"})
+			}
+		} else {
+			// Allow bypassing OldPIN if the current PIN is exactly "1234"
+			if err := bcrypt.CompareHashAndPassword([]byte(user.PIN), []byte("1234")); err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "기존 비밀번호가 틀렸습니다"})
+			}
+		}
+	}
+
+	pinHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPIN), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
+	user.PIN = string(pinHash)
+	h.db.Save(&user)
+
+	return c.JSON(fiber.Map{"message": "PIN changed successfully"})
+}
+
 // DownloadStudentTemplate generates and returns a sample student import Excel template.
 func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	f := excelize.NewFile()
@@ -606,7 +696,7 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	f.SetSheetName("Sheet1", sheet)
 
 	// Header row with style
-	headers := []string{"학년", "반", "번호", "이름", "성별", "학부모 전화번호", "PIN"}
+	headers := []string{"학년", "반", "번호", "이름", "성별", "학부모 전화번호"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
@@ -614,8 +704,8 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 
 	// Sample rows
 	samples := [][]interface{}{
-		{3, 2, 1, "홍길동", "남", "010-1234-5678", "1234"},
-		{3, 2, 2, "김영희", "여", "010-9876-5432", "5678"},
+		{3, 2, 1, "홍길동", "남", "010-1234-5678"},
+		{3, 2, 2, "김영희", "여", "010-9876-5432"},
 	}
 	for r, row := range samples {
 		for col, val := range row {
@@ -628,11 +718,9 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	f.SetColWidth(sheet, "A", "C", 8)
 	f.SetColWidth(sheet, "D", "E", 10)
 	f.SetColWidth(sheet, "F", "F", 15)
-	f.SetColWidth(sheet, "G", "G", 10)
 
 	// Add note row
 	f.SetCellValue(sheet, "A5", "※ 성별 입력: 남 또는 여")
-	f.SetCellValue(sheet, "A6", "※ PIN: 학생이 지정된 기기에서 로그인할 때 사용하는 비밀번호입니다 (숫자 4~6자 권장)")
 
 	// Write to buffer
 	buf, err := f.WriteToBuffer()

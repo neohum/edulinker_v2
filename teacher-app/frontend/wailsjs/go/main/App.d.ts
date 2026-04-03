@@ -90,6 +90,8 @@ export function SaveAttendanceRecord(arg1:string,arg2:string,arg3:string):Promis
 
 export function SaveAttendanceRemarks(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function SaveFileBytes(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
+
 export function SaveOpinionHistory(arg1:string,arg2:string):Promise<void>;
 
 export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
