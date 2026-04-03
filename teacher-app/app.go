@@ -180,7 +180,7 @@ func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownRe
 		if resKordoc.Success {
 			return resKordoc
 		}
-		
+
 		if ext == ".pdf" {
 			res := a.ConvertPdfToText(base64data)
 			if !res.Success {
@@ -952,6 +952,37 @@ func (a *App) DownloadFile(fileID, fileName string) DownloadFileResult {
 	return DownloadFileResult{Success: true, FilePath: savePath}
 }
 
+// SaveFileBytes saves base64 encoded data to a file via a native save dialog.
+func (a *App) SaveFileBytes(fileName string, base64Data string) DownloadFileResult {
+	data, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return DownloadFileResult{Success: false, Error: "데이터 디코딩 실패"}
+	}
+
+	ext := filepath.Ext(fileName)
+	savePath, err := wailsRuntime.SaveFileDialog(a.ctx, wailsRuntime.SaveDialogOptions{
+		DefaultFilename: fileName,
+		Title:           "파일 저장",
+		Filters: []wailsRuntime.FileFilter{
+			{DisplayName: "파일 (*" + ext + ")", Pattern: "*" + ext},
+			{DisplayName: "모든 파일 (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return DownloadFileResult{Success: false, Error: "저장 다이얼로그 오류"}
+	}
+	if savePath == "" {
+		// User cancelled
+		return DownloadFileResult{Success: false, Error: ""}
+	}
+
+	if err := os.WriteFile(savePath, data, 0644); err != nil {
+		return DownloadFileResult{Success: false, Error: "파일 저장 실패: " + err.Error()}
+	}
+
+	return DownloadFileResult{Success: true, FilePath: savePath}
+}
+
 // UploadFileResult is the result of a file upload operation.
 type UploadFileResult struct {
 	ID          string `json:"id"`
@@ -1403,7 +1434,7 @@ func (a *App) ExtractKeywordsLocalAI(query string) string {
 	defer cancel()
 
 	systemPrompt := "다음 문장에서 검색에 사용될 핵심 명사 단어 2~3개만 추출해. 오직 띄어쓰기로 구분된 단어들만 출력해. 부가 설명 금지."
-	
+
 	reqBody := map[string]interface{}{
 		"model":  model,
 		"prompt": systemPrompt + "\n문장: " + query,
@@ -1416,7 +1447,7 @@ func (a *App) ExtractKeywordsLocalAI(query string) string {
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:11434/api/generate", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return query 
+		return query
 	}
 	req.Header.Set("Content-Type", "application/json")
 

@@ -76,14 +76,24 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
       const res = await apiFetch('/api/core/users/student-template')
       if (!res.ok) { toast.error('양식 다운로드에 실패했습니다.'); return }
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'student_template.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      // Convert to base64 and save via Wails native dialog
+      const reader = new FileReader()
+      reader.onloadend = async () => {
+        const base64data = (reader.result as string).split(',')[1]
+        try {
+          const downloadRes = await (window as any).go.main.App.SaveFileBytes('student_template.xlsx', base64data)
+          if (downloadRes.error) {
+            toast.error(downloadRes.error)
+          } else if (downloadRes.success) {
+            toast.success('다운로드 완료')
+          }
+        } catch (err) {
+          console.error(err)
+          toast.error('파일 저장 중 오류가 발생했습니다.')
+        }
+      }
+      reader.readAsDataURL(blob)
     } catch { toast.error('다운로드 오류가 발생했습니다.') }
   }
 
