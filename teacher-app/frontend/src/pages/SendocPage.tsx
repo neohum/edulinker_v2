@@ -46,6 +46,12 @@ interface RecipientStatus {
   form_data_json?: string
 }
 
+interface Stroke {
+  points: { x: number, y: number }[]
+  size: number
+  isEraser: boolean
+}
+
 interface SendocPageProps {
   user: UserInfo
 }
@@ -72,7 +78,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
   const [serverBgUrl, setServerBgUrl] = useState<string | null>(null)
   const [fields, setFields] = useState<DocField[]>([])
-  const [resultViewerData, setResultViewerData] = useState<{ doc: Sendoc, fields: DocField[], bgUrl: string } | null>(null)
+  const [resultViewerData, setResultViewerData] = useState<{ doc: Sendoc, fields: DocField[], bgUrl: string, bulkMode?: boolean, bulkRecipients?: { recipient: RecipientStatus, fields: DocField[] }[] } | null>(null)
 
   // File Selector States (from HwpConverterPage)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -110,6 +116,16 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [isFullDrawing, setIsFullDrawing] = useState(false)
   const [penSize, setPenSize] = useState(3)
   const [isEraser, setIsEraser] = useState(false)
+  const [strokes, setStrokes] = useState<Stroke[]>([])
+  const currentStrokeRef = useRef<Stroke | null>(null)
+  const totalDrawnRef = useRef(0)
+  const isAddingStrokeRef = useRef(false)
+  const [activeCharPicker, setActiveCharPicker] = useState<string | null>(null)
+  const specialChars = ['✓', 'O', 'X', '※', '★', '☆', '■', '□', '●']
+
+  // Draft Feedback State
+  const [isDraftSaved, setIsDraftSaved] = useState(false)
+  const [strokeRedrawTrigger, setStrokeRedrawTrigger] = useState(0)
 
   // Document Panning
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -143,45 +159,137 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   // Auto-Save / Draft Logic
-  const handleSaveDraft = (isAuto = false) => {
+  const handleSaveDraft = async (isAuto = false) => {
     if (!activeDoc || viewMode !== 'signer') return
-    const isCanvasBlank = (cvs: HTMLCanvasElement) => {
-      const blank = document.createElement('canvas'); blank.width = cvs.width; blank.height = cvs.height;
-      return cvs.toDataURL() === blank.toDataURL();
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (isTeacher && wailsApp?.SaveSendocDraft) {
+        await wailsApp.SaveSendocDraft(activeDoc.id, JSON.stringify(fields), JSON.stringify(strokes))
+      } else {
+        localStorage.setItem(`sendoc_draft_${activeDoc.id}`, JSON.stringify({ fields, strokes }))
+      }
+      setIsDraftSaved(true)
+      setTimeout(() => setIsDraftSaved(false), 2000)
+      // Update cache for list view badge
+      if (isTeacher) {
+        (window as any).__sendocDraftCache = { ...((window as any).__sendocDraftCache || {}), [activeDoc.id]: true }
+      }
+      if (!isAuto) toast.success(`임시 저장이 완료되었습니다. (선 ${strokes.length}개)`)
+    } catch {
+      toast.error('임시 저장에 실패했습니다.')
     }
-    let sigData = ''
-    if (fullCanvasRef.current && !isCanvasBlank(fullCanvasRef.current)) {
-      sigData = fullCanvasRef.current.toDataURL()
-    }
-    const draft = { fields, fullCanvas: sigData }
-    localStorage.setItem(`sendoc_draft_${activeDoc.id}`, JSON.stringify(draft))
-    if (!isAuto) toast.success('임시 저장이 완료되었습니다.')
   }
 
-  // Auto save effect
+  // Wails WebView2 Safe Print — opens external browser to completely avoid WebView2 Error 1412 crash
+  const handleSafePrint = async () => {
+    const printContent = document.getElementById('sendoc-viewer-container') || document.getElementById('sendoc-print-area')
+    if (!printContent) { toast.error('출력할 내용이 없습니다.'); return }
+
+    const clone = printContent.cloneNode(true) as HTMLElement
+    const originalCanvases = printContent.getElementsByTagName('canvas')
+    const clonedCanvases = clone.getElementsByTagName('canvas')
+    for (let i = originalCanvases.length - 1; i >= 0; i--) {
+      try {
+        const dataUrl = originalCanvases[i].toDataURL('image/png')
+        const img = document.createElement('img')
+        img.src = dataUrl
+        img.style.cssText = (clonedCanvases[i] as HTMLElement).style.cssText
+        clonedCanvases[i].parentNode?.replaceChild(img, clonedCanvases[i])
+      } catch (e) { console.warn('Canvas clone failed', e) }
+    }
+
+    const title = activeDoc?.title || resultViewerData?.doc?.title || '문서 출력'
+    const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+      '<style>' +
+      'body{margin:0;padding:0;background:white;display:flex;flex-direction:column;align-items:center}' +
+      'img{max-width:100%}' +
+      '.sendoc-print-page{position:relative!important;display:block!important;width:800px!important;box-shadow:none!important;page-break-after:always;break-after:page;margin:0 auto!important}' +
+      '.sendoc-print-page:last-child{page-break-after:auto;break-after:auto}' +
+      '.no-print{display:none!important}' +
+      '@page{margin:0}' +
+      '@media print{body{margin:0}.sendoc-print-page{width:100%!important}}' +
+      '</style></head><body>' + clone.outerHTML +
+      '<script>window.onload=function(){window.print()}</script>' +
+      '</body></html>'
+
+    try {
+      await (window as any).go.main.App.OpenPrintHTML(html)
+      toast.success('기본 브라우저에서 출력 화면이 열립니다.')
+    } catch (e: any) {
+      toast.error('출력 열기 실패: ' + (e?.message || e))
+    }
+  }
+
+
+  // Auto save whenever fields or strokes change
   useEffect(() => {
     if (viewMode !== 'signer' || !activeDoc) return
-    const interval = setInterval(() => {
-      if (document.visibilityState !== 'hidden') {
-        handleSaveDraft(true)
-      }
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [viewMode, activeDoc, fields])
+    const timeout = setTimeout(() => {
+      handleSaveDraft(true);
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [fields, strokes, activeDoc?.id, viewMode])
 
-  // Draw draft canvas when mounted
+  // Redraw strokes intelligently
   useEffect(() => {
-    if (viewMode === 'signer' && fullCanvasRef.current && draftCanvasData) {
-      const img = new Image()
-      img.onload = () => {
-        const ctx = fullCanvasRef.current?.getContext('2d')
-        ctx?.clearRect(0, 0, 1600, 2262)
-        ctx?.drawImage(img, 0, 0)
-        setDraftCanvasData(null)
-      }
-      img.src = draftCanvasData
+    const canvas = fullCanvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+
+    // Prevent clearing and redrawing if we are just finalizing a live stroke.
+    // The line is already drawn on the canvas by `drawFull`!
+    if (isAddingStrokeRef.current) {
+      isAddingStrokeRef.current = false
+      return
     }
-  }, [viewMode, draftCanvasData])
+
+    const handleRedraw = () => {
+      // Always completely clear and rebuild from scratch when switching docs, resetting, or loading drafts
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      strokes.forEach(stroke => {
+        if (!stroke || !stroke.points || stroke.points.length === 0) return
+
+        let effectivePen = stroke.size === 1 ? 1 : (stroke.size || 3) * 1.5
+        let lw = effectivePen * 2
+        if (lw < 2) lw = 2
+
+        ctx.lineWidth = lw
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+
+        if (stroke.isEraser) {
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.strokeStyle = 'rgba(0,0,0,1)'
+        } else {
+          ctx.globalCompositeOperation = 'source-over'
+          ctx.strokeStyle = '#000'
+        }
+
+        ctx.beginPath()
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+        }
+        ctx.stroke()
+      })
+
+      // Reset back to normal
+      ctx.globalCompositeOperation = 'source-over'
+    }
+
+    // Wrap in a tiny timeout + rAF sequence to prevent Windows WebView2 silent buffer wipe race condition
+    // This happens because canvas.height updates in the DOM but the GPU buffer isn't allocated fully yet
+    let rafId: number;
+    const timeoutId = setTimeout(() => {
+      rafId = requestAnimationFrame(handleRedraw)
+    }, 10)
+
+    return () => {
+      clearTimeout(timeoutId)
+      cancelAnimationFrame(rafId)
+    }
+  }, [strokes, viewMode, pageImages.length, strokeRedrawTrigger])
 
   useEffect(() => {
     if (isTeacher) fetchDocs()
@@ -225,6 +333,24 @@ export default function SendocPage({ user }: SendocPageProps) {
       }
     } catch (e) { console.error('[DEBUG] fetchPendingDocs error:', e) } finally { if (!isTeacher) setLoading(false) }
   }
+
+  // Hydrate draft cache for teacher list view (sync badge check)
+  useEffect(() => {
+    if (!isTeacher || pendingDocs.length === 0) return
+    const wailsApp = (window as any).go?.main?.App
+    if (!wailsApp?.HasSendocDraft) return
+    const cache: Record<string, boolean> = {};
+    (async () => {
+      for (const d of pendingDocs) {
+        if (!d.is_signed) {
+          try {
+            cache[d.id] = await wailsApp.HasSendocDraft(d.id)
+          } catch { cache[d.id] = false }
+        }
+      }
+      (window as any).__sendocDraftCache = cache
+    })()
+  }, [pendingDocs, isTeacher])
 
   const fetchUsers = async () => {
     try {
@@ -410,6 +536,8 @@ export default function SendocPage({ user }: SendocPageProps) {
       }
       setBackgroundUrl(bgBlobUrl)
       setServerBgUrl(serverBg)
+      setStrokes([])
+      fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10)
       setViewMode('designer')
       toast.success(`문서가 준비되었습니다.${pagesData.length > 1 ? ` (${pagesData.length}페이지)` : ''}`)
     } catch (err: any) {
@@ -422,9 +550,30 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   // --- Designer/Signer Tools ---
   const addField = (type: 'text' | 'signature') => {
+    let spawnX = 20;
+    let spawnY = 20;
+
+    if (scrollContainerRef.current && containerRef.current) {
+      const scrollRect = scrollContainerRef.current.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+
+      const viewportCenterX = scrollRect.left + scrollRect.width / 2;
+      const viewportCenterY = scrollRect.top + scrollRect.height / 2;
+
+      const unscaledPixelX = (viewportCenterX - containerRect.left) / zoom;
+      const unscaledPixelY = (viewportCenterY - containerRect.top) / zoom;
+
+      spawnX = (unscaledPixelX / containerRef.current.offsetWidth) * 100;
+      spawnY = (unscaledPixelY / containerRef.current.offsetHeight) * 100;
+
+      const offset = (fields.length % 5) * 2;
+      spawnX = Math.max(0, Math.min(90, spawnX - offset));
+      spawnY = Math.max(0, Math.min(95, spawnY - offset));
+    }
+
     const newField: DocField = {
       id: Math.random().toString(36).substr(2, 9),
-      type, x: 20, y: 20, width: type === 'signature' ? 120 : 150, height: type === 'signature' ? 60 : 32,
+      type, x: spawnX, y: spawnY, width: type === 'signature' ? 120 : 150, height: type === 'signature' ? 60 : 32,
       label: type === 'signature' ? '서명란' : '내용 입력'
     }
     setFields(prev => [...prev, newField])
@@ -432,7 +581,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   const handleFieldDrag = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (viewMode === 'viewer') return
+    if (viewMode === 'viewer' || id.includes('canvas_overlay')) return
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
     const startX = e.clientX; const startY = e.clientY
@@ -450,7 +599,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   const handleFieldResize = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (viewMode === 'viewer') return
+    if (viewMode === 'viewer' || id.includes('canvas_overlay')) return
     const startX = e.clientX; const startY = e.clientY
     const field = fields.find(f => f.id === id)
     if (!field) return
@@ -486,23 +635,27 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
   }
 
-  // --- Full Canvas Drawing ---
+  // --- Full Canvas Drawing (Vectorized) ---
   const startFullDrawing = (e: any) => {
     if (!isDrawingMode || !fullCanvasRef.current) return
-    const canvas = fullCanvasRef.current; const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const rect = canvas.getBoundingClientRect()
+    const rect = fullCanvasRef.current.getBoundingClientRect()
     const scaleFactor = 2
     const x = (((e.clientX || e.touches?.[0]?.clientX) - rect.left) / zoom) * scaleFactor
     const y = (((e.clientY || e.touches?.[0]?.clientY) - rect.top) / zoom) * scaleFactor
-    ctx.beginPath(); ctx.moveTo(x, y)
-    setIsFullDrawing(true); drawFull(e);
+
+    currentStrokeRef.current = { points: [{ x, y }], size: penSize, isEraser }
+    setIsFullDrawing(true)
   }
   const stopFullDrawing = () => {
-    setIsFullDrawing(false); fullCanvasRef.current?.getContext('2d')?.beginPath();
+    if (isFullDrawing && currentStrokeRef.current) {
+      isAddingStrokeRef.current = true
+      setStrokes(prev => [...prev, currentStrokeRef.current!])
+      currentStrokeRef.current = null
+    }
+    setIsFullDrawing(false)
   }
   const drawFull = (e: any) => {
-    if (!isDrawingMode || !isFullDrawing || !fullCanvasRef.current) return
+    if (!isDrawingMode || !isFullDrawing || !fullCanvasRef.current || !currentStrokeRef.current) return
     const canvas = fullCanvasRef.current; const ctx = canvas.getContext('2d')
     if (!ctx) return
     const rect = canvas.getBoundingClientRect()
@@ -510,19 +663,27 @@ export default function SendocPage({ user }: SendocPageProps) {
     const x = (((e.clientX || e.touches?.[0]?.clientX) - rect.left) / zoom) * scaleFactor
     const y = (((e.clientY || e.touches?.[0]?.clientY) - rect.top) / zoom) * scaleFactor
 
-    let effectivePen = penSize === 1 ? 1 : penSize * 1.5
-    let lw = (effectivePen * scaleFactor) / zoom
-    if (lw < 2) lw = 2 // Prevents sub-pixel anti-aliasing which looks like translucency
+    // Add to ongoing stroke
+    currentStrokeRef.current.points.push({ x, y })
 
-    ctx.lineWidth = lw; ctx.lineCap = 'round'
-    if (isEraser) {
+    // Draw incrementally
+    let effectivePen = currentStrokeRef.current.size === 1 ? 1 : currentStrokeRef.current.size * 1.5
+    let lw = effectivePen * scaleFactor
+    if (lw < 2) lw = 2
+
+    ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    if (currentStrokeRef.current.isEraser) {
       ctx.globalCompositeOperation = 'destination-out'
       ctx.strokeStyle = 'rgba(0,0,0,1)'
     } else {
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = '#000'
     }
-    ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, y)
+    const pts = currentStrokeRef.current.points
+    ctx.beginPath()
+    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y)
+    ctx.lineTo(x, y)
+    ctx.stroke()
   }
 
   const fetchImageAsBlob = async (url: string): Promise<string> => {
@@ -534,7 +695,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   const openSignView = async (baseDoc: PendingDoc) => {
-    setActiveDoc(baseDoc); setTitle(baseDoc.title); setBackgroundUrl(null); setDraftCanvasData(null)
+    setActiveDoc(baseDoc); setTitle(baseDoc.title); setBackgroundUrl(null); setStrokes([])
     try {
       const res = await apiFetch(`/api/plugins/sendoc/sign/${baseDoc.id}`)
       if (!res.ok) throw new Error('문서를 불러오지 못했습니다.')
@@ -550,24 +711,45 @@ export default function SendocPage({ user }: SendocPageProps) {
             if (Array.isArray(recFields) && recFields.length > 0) f = recFields
           } catch { }
         } else if (!doc.is_signed) {
-          const draftStr = localStorage.getItem(`sendoc_draft_${doc.id}`)
-          if (draftStr) {
-            if (window.confirm('이전에 작성 중이던 임시 저장본이 있습니다. 이어서 작성하시겠습니까?')) {
+          // Load draft from SQLite (teacher) or localStorage (student/parent)
+          const wailsApp = (window as any).go?.main?.App
+          if (isTeacher && wailsApp?.LoadSendocDraft) {
+            try {
+              const draft = await wailsApp.LoadSendocDraft(doc.id)
+              if (draft?.found) {
+                const draftFields = JSON.parse(draft.fields_json || '[]')
+                const draftStrokes = JSON.parse(draft.strokes_json || '[]')
+                if (draftFields.length > 0) f = draftFields
+                if (Array.isArray(draftStrokes) && draftStrokes.length > 0) {
+                  setStrokes(draftStrokes)
+                  hasDraft = true
+                }
+              }
+            } catch { }
+          } else {
+            const draftStr = localStorage.getItem(`sendoc_draft_${doc.id}`)
+            if (draftStr) {
               try {
                 const draft = JSON.parse(draftStr)
                 if (draft.fields) f = draft.fields
-                if (draft.fullCanvas) setDraftCanvasData(draft.fullCanvas)
-                hasDraft = true
+                if (draft.strokes && Array.isArray(draft.strokes)) {
+                  setStrokes(draft.strokes)
+                  hasDraft = true
+                }
               } catch (e) { }
             }
           }
         }
         setFields(f)
+        // Only clear the canvas if we did NOT just load draft strokes
+        // (the useEffect redraw hook will handle clearing + redrawing strokes)
         if (!hasDraft) {
           fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262)
         }
       } catch { setFields([]) }
       setViewMode('signer')
+      // Force a delayed redraw trigger to ensure the canvas has mounted
+      setTimeout(() => setStrokeRedrawTrigger(n => n + 1), 100)
       try {
         let isMultiPage = false;
         if (doc.background_url && doc.background_url.startsWith('[')) {
@@ -641,6 +823,58 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
   }
 
+  const openBulkPrintViewer = async (baseDoc: Sendoc, allRecipients: RecipientStatus[]) => {
+    try {
+      const res = await apiFetch(`/api/plugins/sendoc/${baseDoc.id}`)
+      if (!res.ok) throw new Error('문서를 불러오지 못했습니다.')
+      const doc = await res.json()
+
+      const baseFields: DocField[] = JSON.parse(doc.fields_json || '[]')
+
+      const bulkRecipients = allRecipients.map(recipient => {
+        let finalFields = [...baseFields]
+        if (recipient.form_data_json && recipient.form_data_json !== '{}' && recipient.form_data_json !== '[]') {
+          try {
+            const recFields = JSON.parse(recipient.form_data_json)
+            if (Array.isArray(recFields) && recFields.length > 0) finalFields = recFields
+          } catch { }
+        }
+        const hasOverlay = finalFields.some(f => f.id === 'full_canvas_overlay')
+
+        finalFields = finalFields.map(f => {
+          if (hasOverlay && f.id === 'full_canvas_overlay') {
+            return { ...f, signatureData: recipient.signature_image_url }
+          } else if (!hasOverlay && f.type === 'signature' && recipient.signature_image_url) {
+            return { ...f, signatureData: recipient.signature_image_url }
+          }
+          return f
+        })
+        return { recipient, fields: finalFields }
+      })
+
+      let isMultiPage = false;
+      if (doc.background_url && doc.background_url.startsWith('[')) {
+        try {
+          const arr = JSON.parse(doc.background_url);
+          if (Array.isArray(arr) && arr.length > 0) {
+            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
+            isMultiPage = true;
+          }
+        } catch { }
+      }
+
+      if (!isMultiPage) {
+        setPageImages([]);
+        const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
+        setResultViewerData({ doc, fields: [], bgUrl: blobUrl, bulkMode: true, bulkRecipients })
+      } else {
+        setResultViewerData({ doc, fields: [], bgUrl: '', bulkMode: true, bulkRecipients })
+      }
+    } catch {
+      toast.error('전체 출력 문서를 불러오지 못했습니다.')
+    }
+  }
+
   const handleSend = () => {
     if (!title.trim()) return toast.error('제목을 입력하세요.')
     if (selectedUsers.length === 0) return toast.error('수신자를 선택하세요.')
@@ -653,9 +887,25 @@ export default function SendocPage({ user }: SendocPageProps) {
 
     const sendData = async () => {
       try {
+        let finalFields = [...fields];
+        if (fullCanvasRef.current && strokes.length > 0) {
+          const sigData = fullCanvasRef.current.toDataURL('image/webp', 0.8);
+          finalFields.push({
+            id: 'teacher_canvas_overlay',
+            type: 'signature',
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 1131 * Math.max(1, pageImages.length),
+            label: '선생님 펜선'
+          } as any);
+          // Attach signatureData locally so payload gets it
+          finalFields[finalFields.length - 1].signatureData = sigData;
+        }
+
         const res = await apiFetch('/api/plugins/sendoc', {
           method: 'POST',
-          body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(fields), requires_signature: fields.some(f => f.type === 'signature'), target_user_ids: selectedUsers })
+          body: JSON.stringify({ title, content: 'Doc', background_url: serverBgUrl || backgroundUrl || '', fields_json: JSON.stringify(finalFields), requires_signature: finalFields.some(f => f.type === 'signature' && !f.id.includes('canvas_overlay')), target_user_ids: selectedUsers })
         })
         if (res.ok) {
           toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
@@ -679,13 +929,9 @@ export default function SendocPage({ user }: SendocPageProps) {
   const handleSubmitSignature = async () => {
     if (!activeDoc) return
     try {
-      const isCanvasBlank = (cvs: HTMLCanvasElement) => {
-        const blank = document.createElement('canvas'); blank.width = cvs.width; blank.height = cvs.height;
-        return cvs.toDataURL() === blank.toDataURL();
-      }
       let sigData = ''
       let finalFields = [...fields];
-      if (fullCanvasRef.current && !isCanvasBlank(fullCanvasRef.current)) {
+      if (fullCanvasRef.current && strokes.length > 0) {
         sigData = fullCanvasRef.current.toDataURL('image/webp', 0.6)
         finalFields.push({
           id: 'full_canvas_overlay',
@@ -705,7 +951,14 @@ export default function SendocPage({ user }: SendocPageProps) {
         body: JSON.stringify({ signature_image_url: sigData, form_data_json: JSON.stringify(finalFields) })
       })
       if (res.ok) {
-        localStorage.removeItem(`sendoc_draft_${activeDoc.id}`)
+        // Delete draft from SQLite (teacher) or localStorage (student/parent)
+        const wailsApp = (window as any).go?.main?.App
+        if (isTeacher && wailsApp?.DeleteSendocDraft) {
+          wailsApp.DeleteSendocDraft(activeDoc.id).catch(() => { })
+          if ((window as any).__sendocDraftCache) delete (window as any).__sendocDraftCache[activeDoc.id]
+        } else {
+          localStorage.removeItem(`sendoc_draft_${activeDoc.id}`)
+        }
         toast.success('제출 완료!'); setViewMode('list'); fetchPendingDocs()
       } else {
         const errorData = await res.json().catch(() => ({}));
@@ -798,6 +1051,8 @@ export default function SendocPage({ user }: SendocPageProps) {
       }
 
       setSelectedUsers([])
+      setStrokes([])
+      fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10)
       setViewMode('designer')
       setShowRecipientModal(true)
     } catch {
@@ -864,7 +1119,7 @@ export default function SendocPage({ user }: SendocPageProps) {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
         <div style={{ padding: '12px 24px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <button onClick={() => setViewMode('list')} className="btn-secondary" style={{ padding: '8px 12px' }}><i className="fi fi-rr-arrow-left" /></button>
+            <button onClick={() => { setStrokes([]); fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10); setViewMode('list'); }} className="btn-secondary" style={{ padding: '8px 12px' }}><i className="fi fi-rr-arrow-left" /></button>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="문서 제목을 입력하세요" style={{ fontSize: 16, fontWeight: 700, border: 'none', outline: 'none', background: 'transparent', width: 300 }} disabled={isSigner || isViewer} />
               {(isSigner || isViewer) && activeDoc && <div style={{ fontSize: 11, color: '#64748b' }}>발신: {activeDoc.author?.name || '교사'} · {new Date(activeDoc.created_at).toLocaleString()}</div>}
@@ -877,8 +1132,8 @@ export default function SendocPage({ user }: SendocPageProps) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {!isSigner && !isViewer && <button onClick={() => setShowRecipientModal(true)} className="btn-primary" style={{ padding: '8px 24px' }}>발송하기</button>}
-            {isSigner && !activeDoc?.is_signed && <button onClick={() => handleSaveDraft(false)} className="btn-secondary" style={{ padding: '8px 16px' }}>임시 저장</button>}
-            {isSigner && activeDoc?.is_signed && <button onClick={() => window.print()} className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}><i className="fi fi-rr-print" /> 출력하기</button>}
+            {isSigner && !activeDoc?.is_signed && <button onClick={() => handleSaveDraft(false)} className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, background: isDraftSaved ? '#f0fdf4' : undefined, color: isDraftSaved ? '#16a34a' : undefined, borderColor: isDraftSaved ? '#86efac' : undefined }}>{isDraftSaved ? <><i className="fi fi-rr-check-circle" /> 임시 저장됨</> : '임시 저장'}</button>}
+            {isSigner && activeDoc?.is_signed && <button onClick={handleSafePrint} className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}><i className="fi fi-rr-print" /> 출력하기</button>}
             {isSigner && <button onClick={handleSubmitSignature} className="btn-primary" style={{ padding: '8px 24px' }} disabled={activeDoc?.is_signed}>{activeDoc?.is_signed ? '제출 완료됨' : '작성 완료 및 제출'}</button>}
           </div>
         </div>
@@ -950,7 +1205,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                           <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}><span>펜/지우개 굵기</span> <strong>{penSize}px</strong></div>
                           <input type="range" min="1" max="30" value={penSize} onChange={(e) => setPenSize(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer', accentColor: '#4f46e5' }} />
                         </div>
-                        <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262); } }} style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-trash" /> 캔버스 초기화</button>
+                        <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { setStrokes([]); } }} style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-trash" /> 캔버스 초기화</button>
                       </div>
                     )}
                   </>
@@ -1009,28 +1264,38 @@ export default function SendocPage({ user }: SendocPageProps) {
                       position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: f.width, height: f.height,
                       background: f.signatureData ? 'transparent' : (f.type === 'signature' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)'),
                       border: f.signatureData ? 'none' : `2px dashed ${f.type === 'signature' ? '#ef4444' : '#3b82f6'}`,
-                      borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isViewer ? 'default' : 'move'
+                      borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isViewer || f.id.includes('canvas_overlay') ? 'default' : 'move', pointerEvents: f.id.includes('canvas_overlay') ? 'none' : 'auto'
                     }}>
                       {f.type === 'text' ? (
-                        <>
-                          <input placeholder="내용 입력..." value={f.value || ''} disabled={isViewer} onChange={(e) => setFields(prev => prev.map(field => field.id === f.id ? { ...field, value: e.target.value } : field))} style={{ width: '100%', height: '100%', border: 'none', background: 'transparent', padding: '0 8px', fontSize: f.fontSize || 13, pointerEvents: isViewer ? 'none' : 'auto' }} />
-                          {!isViewer && (
-                            <div style={{ position: 'absolute', top: -32, right: 16, display: 'flex', gap: 4, background: '#1e293b', padding: '4px 6px', borderRadius: 6, zIndex: 100, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} onMouseDown={(e) => e.stopPropagation()}>
+                        <div style={{ position: 'relative', width: '100%', height: '100%', pointerEvents: f.id.includes('canvas_overlay') ? 'none' : 'auto' }}>
+                          <input placeholder="내용 입력..." value={f.value || ''} disabled={isViewer || f.id.includes('canvas_overlay')} onChange={(e) => setFields(prev => prev.map(field => field.id === f.id ? { ...field, value: e.target.value } : field))} style={{ width: '100%', height: '100%', border: 'none', background: 'transparent', padding: '0 8px', fontSize: f.fontSize || 13, pointerEvents: isViewer || f.id.includes('canvas_overlay') ? 'none' : 'auto' }} />
+                          {!isViewer && !f.id.includes('canvas_overlay') && (
+                            <div style={{ position: 'absolute', top: -32, right: 0, display: 'flex', gap: 4, background: '#1e293b', padding: '4px 6px', borderRadius: 6, zIndex: 100, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }} onMouseDown={(e) => e.stopPropagation()}>
+                              <button onClick={() => setActiveCharPicker(activeCharPicker === f.id ? null : f.id)} style={{ background: activeCharPicker === f.id ? '#475569' : 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 13, padding: '4px 6px', borderRadius: 4, display: 'flex', alignItems: 'center' }} title="특수문자 입력"><i className="fi fi-rr-apps" /></button>
+                              <div style={{ width: 1, background: '#475569', margin: '2px 4px' }} />
                               <button onClick={() => setFields(prev => prev.map(field => field.id === f.id ? { ...field, fontSize: Math.max(8, (field.fontSize || 13) - 1) } : field))} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 13, padding: '0 4px', display: 'flex', alignItems: 'center' }}>-</button>
                               <span style={{ color: 'white', fontSize: 11, alignSelf: 'center', minWidth: 20, textAlign: 'center', fontWeight: 600 }}>{f.fontSize || 13}</span>
                               <button onClick={() => setFields(prev => prev.map(field => field.id === f.id ? { ...field, fontSize: Math.min(72, (field.fontSize || 13) + 1) } : field))} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 13, padding: '0 4px', display: 'flex', alignItems: 'center' }}>+</button>
+
+                              {activeCharPicker === f.id && (
+                                <div style={{ position: 'absolute', top: -46, right: 0, background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px', display: 'flex', gap: 4, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 110, whiteSpace: 'nowrap' }}>
+                                  {specialChars.map(char => (
+                                    <button key={char} onClick={() => setFields(prev => prev.map(field => field.id === f.id ? { ...field, value: `${field.value || ''}${char}` } : field))} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', fontSize: 14 }}>{char}</button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
-                        </>
+                        </div>
                       ) : (
-                        <div onClick={() => { if (isDraggingField.current) return; if (!isViewer && !activeDoc?.is_signed) setActiveSignField(f.id); }} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer ? 'pointer' : 'default' }}>
+                        <div onClick={() => { if (isDraggingField.current) return; if (!isViewer && !activeDoc?.is_signed && !f.id.includes('canvas_overlay')) setActiveSignField(f.id); }} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer && !f.id.includes('canvas_overlay') ? 'pointer' : 'default' }}>
                           {f.signatureData ? <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <><i className="fi fi-rr-edit" style={{ marginRight: 6 }} /> {!isViewer ? '서명하기' : '서명란'}</>}
                         </div>
                       )}
-                      {!isViewer && (
+                      {!isViewer && !f.id.includes('canvas_overlay') && (
                         <div onMouseDown={(e) => handleFieldResize(f.id, e)} style={{ position: 'absolute', bottom: -6, right: -6, width: 14, height: 14, background: f.type === 'signature' ? '#ef4444' : '#3b82f6', borderRadius: '50%', cursor: 'nwse-resize', border: '2px solid white', zIndex: 50, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }} />
                       )}
-                      {!isViewer && <button onClick={(e) => { e.stopPropagation(); setFields(prev => prev.filter(field => field.id !== f.id)); }} style={{ position: 'absolute', top: -10, right: -10, background: '#475569', color: 'white', border: 'none', borderRadius: '50%', width: 20, height: 20, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>✕</button>}
+                      {!isViewer && !f.id.includes('canvas_overlay') && <button onClick={(e) => { e.stopPropagation(); setFields(prev => prev.filter(field => field.id !== f.id)); }} style={{ position: 'absolute', top: -10, right: -10, background: '#475569', color: 'white', border: 'none', borderRadius: '50%', width: 20, height: 20, fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>✕</button>}
                     </div>
                   ))}
                 </div>
@@ -1271,22 +1536,30 @@ export default function SendocPage({ user }: SendocPageProps) {
               </h4>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-              {pendingDocs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((receivedPage - 1) * ITEMS_PER_PAGE, receivedPage * ITEMS_PER_PAGE).map(d => (
-                <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', opacity: d.status === 'recalled' ? 0.7 : 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, padding: '3px 10px', background: d.status === 'recalled' ? '#e5e7eb' : (d.is_signed ? '#f1f5f9' : '#fee2e2'), color: d.status === 'recalled' ? '#6b7280' : (d.is_signed ? '#475569' : '#ef4444'), borderRadius: 20 }}>{d.status === 'recalled' ? '발신자 회수' : (d.is_signed ? '서명완료' : '서명필요')}</span>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
+              {pendingDocs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((receivedPage - 1) * ITEMS_PER_PAGE, receivedPage * ITEMS_PER_PAGE).map(d => {
+                const hasDraft = !d.is_signed && (isTeacher
+                  ? !!((window as any).go?.main?.App?.HasSendocDraft && (window as any).__sendocDraftCache?.[d.id])
+                  : !!localStorage.getItem(`sendoc_draft_${d.id}`));
+                return (
+                  <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', opacity: d.status === 'recalled' ? 0.7 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <span style={{ fontSize: 11, padding: '3px 10px', background: d.status === 'recalled' ? '#e5e7eb' : (d.is_signed ? '#f1f5f9' : '#fee2e2'), color: d.status === 'recalled' ? '#6b7280' : (d.is_signed ? '#475569' : '#ef4444'), borderRadius: 20 }}>{d.status === 'recalled' ? '발신자 회수' : (d.is_signed ? '서명완료' : '서명필요')}</span>
+                        {hasDraft && <span style={{ fontSize: 11, padding: '3px 10px', background: '#fef3c7', color: '#d97706', borderRadius: 20 }}>임시 저장됨</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => {
+                        if (d.status === 'recalled') return toast.error('발신자가 회수한 문서입니다.');
+                        openSignView(d);
+                      }} className={d.status === 'recalled' ? "btn-secondary" : (hasDraft ? "btn-secondary" : "btn-primary")} style={{ flex: 1, fontSize: 12, padding: '8px 0', borderColor: hasDraft ? '#fbbf24' : undefined, color: hasDraft ? '#d97706' : undefined, background: hasDraft ? '#fef3c7' : undefined }}>{d.status === 'recalled' ? '회수됨' : (d.is_signed ? '작성 내용 확인' : (hasDraft ? '이어서 작성하기' : '문서 확인 및 서명'))}</button>
+                      <button onClick={() => handleDeleteDoc(d.id, false)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
+                    </div>
                   </div>
-                  <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => {
-                      if (d.status === 'recalled') return toast.error('발신자가 회수한 문서입니다.');
-                      openSignView(d);
-                    }} className={d.status === 'recalled' ? "btn-secondary" : "btn-primary"} style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>{d.status === 'recalled' ? '회수됨' : (d.is_signed ? '작성 내용 확인' : '문서 확인 및 서명')}</button>
-                    <button onClick={() => handleDeleteDoc(d.id, false)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             {/* Received Pagination */}
             {pendingDocs.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length > ITEMS_PER_PAGE && (
@@ -1303,9 +1576,16 @@ export default function SendocPage({ user }: SendocPageProps) {
       {showStatusModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-              <h4 style={{ fontSize: 20, fontWeight: 700 }}>전송 및 서명 현황</h4>
-              <button onClick={() => setShowStatusModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center' }}>
+              <h4 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>전송 및 서명 현황</h4>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                {recipients.length > 0 && recipients.every(r => r.is_signed) && (
+                  <button onClick={() => openBulkPrintViewer(activeDoc, recipients)} className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                    <i className="fi fi-rr-print" /> 전체 출력하기
+                  </button>
+                )}
+                <button onClick={() => setShowStatusModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: 0 }}>✕</button>
+              </div>
             </div>
             {loadingStatus ? <div className="spinner" style={{ margin: '20px auto' }} /> : (
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1326,37 +1606,92 @@ export default function SendocPage({ user }: SendocPageProps) {
       )}
 
       {resultViewerData && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-          <div style={{ background: '#f1f5f9', borderRadius: 16, width: '90%', maxWidth: 1000, height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
+        <div className="print-modal-root" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div className="print-modal-content" style={{ background: '#f1f5f9', borderRadius: 16, width: '90%', maxWidth: 1000, height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="no-print" style={{ padding: '16px 24px', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: 18, fontWeight: 700 }}>{resultViewerData.doc.title} - 결과 확인</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button onClick={() => window.print()} className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}><i className="fi fi-rr-print" /> 출력하기</button>
+                <button onClick={handleSafePrint} className="btn-primary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}><i className="fi fi-rr-print" /> 출력하기</button>
                 <button onClick={() => setResultViewerData(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>✕</button>
               </div>
             </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: 24, display: 'flex', justifyContent: 'center' }}>
+            <div className="print-modal-body" style={{ flex: 1, overflow: 'auto', padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 40 }}>
               <style>{`
                 @media print {
                   body * { visibility: hidden; }
-                  #sendoc-print-area, #sendoc-print-area * { visibility: visible; }
-                  #sendoc-print-area { position: absolute; left: 0; top: 0; margin: 0; padding: 0; width: 100% !important; box-shadow: none !important; }
-                  @page { size: auto; margin: 0mm; }
+                  .print-modal-root { position: absolute !important; background: none !important; align-items: flex-start !important; justify-content: stretch !important; top: 0 !important; left: 0 !important; z-index: 99999 !important; }
+                  .print-modal-content { height: auto !important; max-height: none !important; width: 100% !important; max-width: none !important; overflow: visible !important; border-radius: 0 !important; background: none !important; }
+                  .print-modal-body { overflow: visible !important; padding: 0 !important; gap: 0 !important; }
+                  
+                  #sendoc-viewer-container, #sendoc-viewer-container * { visibility: visible; }
+                  #sendoc-viewer-container { display: block !important; width: 100% !important; }
+                  .sendoc-print-page { position: relative !important; display: block !important; width: 100% !important; box-shadow: none !important; page-break-after: always; break-after: page; margin: 0 !important; }
+                  .sendoc-print-page:last-child { page-break-after: auto; break-after: auto; }
+                  .no-print { display: none !important; }
+                  @page { margin: 0; }
                 }
               `}</style>
-              <div id="sendoc-print-area" style={{ position: 'relative', width: 800, minHeight: 1131, background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
-                {resultViewerData.fields.map(f => (
-                  <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
-                    {f.type === 'text' ? (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+              <div id="sendoc-viewer-container" style={{ display: 'flex', flexDirection: 'column', gap: 40, width: '100%', alignItems: 'center' }}>
+                {resultViewerData.bulkMode && resultViewerData.bulkRecipients ? (
+                  resultViewerData.bulkRecipients.map((br, idx) => (
+                    <div key={idx} className="sendoc-print-page" style={{ position: 'relative', width: 800, height: 1131 * Math.max(1, pageImages.length), background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                      {pageImages.length > 0 ? (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                          {pageImages.map((pg, i) => (
+                            <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                          ))}
+                          {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
+                            <div key={'div' + i} className="no-print" style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
+                          ))}
+                        </div>
+                      ) : (
+                        <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
+                      )}
+                      {br.fields.map(f => (
+                        <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
+                          {f.type === 'text' ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {/* Name Badge for tracking */}
+                      <div className="no-print" style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', color: 'white', padding: '4px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, zIndex: 20 }}>
+                        작성자: {br.recipient.user.name} ({br.recipient.user.role})
+                        <style>{`@media print { .no-print { display: none !important; } }`}</style>
                       </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="sendoc-print-page" style={{ position: 'relative', width: 800, height: 1131 * Math.max(1, pageImages.length), background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                    {pageImages.length > 0 ? (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        {pageImages.map((pg, i) => (
+                          <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                        ))}
+                        {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
+                          <div key={'div' + i} className="no-print" style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
+                        ))}
+                      </div>
+                    ) : (
+                      <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
                     )}
+                    {resultViewerData.fields.map(f => (
+                      <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
+                        {f.type === 'text' ? (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

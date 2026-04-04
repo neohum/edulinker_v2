@@ -548,6 +548,22 @@ export namespace main {
 	        this.region = source["region"];
 	    }
 	}
+	export class SendocDraftResult {
+	    found: boolean;
+	    fields_json: string;
+	    strokes_json: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SendocDraftResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.found = source["found"];
+	        this.fields_json = source["fields_json"];
+	        this.strokes_json = source["strokes_json"];
+	    }
+	}
 	export class SystemInfo {
 	    os: string;
 	    arch: string;

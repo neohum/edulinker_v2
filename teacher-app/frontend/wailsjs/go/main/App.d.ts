@@ -42,6 +42,8 @@ export function DeleteDocumentIndex(arg1:string):Promise<void>;
 
 export function DeleteOpinionHistory(arg1:string):Promise<void>;
 
+export function DeleteSendocDraft(arg1:string):Promise<void>;
+
 export function DeleteTodoItem(arg1:string):Promise<void>;
 
 export function DownloadFile(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
@@ -88,11 +90,15 @@ export function GetTodos(arg1:string,arg2:string):Promise<Array<main.TodoItem>>;
 
 export function GetToken():Promise<string>;
 
+export function HasSendocDraft(arg1:string):Promise<boolean>;
+
 export function IndexDocument(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function InstallOllama():Promise<main.OllamaStatus>;
 
 export function IsLoggedIn():Promise<boolean>;
+
+export function LoadSendocDraft(arg1:string):Promise<main.SendocDraftResult>;
 
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
@@ -101,6 +107,8 @@ export function Logout():Promise<void>;
 export function OpenLocalAnnouncementFile(arg1:string,arg2:string):Promise<void>;
 
 export function OpenLocalKnowledgeFile(arg1:string,arg2:string):Promise<void>;
+
+export function OpenPrintHTML(arg1:string):Promise<void>;
 
 export function PullModel(arg1:string):Promise<main.PullModelResult>;
 
@@ -123,6 +131,8 @@ export function SaveFileBytes(arg1:string,arg2:string):Promise<main.DownloadFile
 export function SaveOpinionHistory(arg1:string,arg2:string):Promise<void>;
 
 export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
+
+export function SaveSendocDraft(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SaveTodoItem(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 

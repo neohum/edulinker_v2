@@ -82,6 +82,10 @@ export function DeleteOpinionHistory(arg1) {
   return window['go']['main']['App']['DeleteOpinionHistory'](arg1);
 }
 
+export function DeleteSendocDraft(arg1) {
+  return window['go']['main']['App']['DeleteSendocDraft'](arg1);
+}
+
 export function DeleteTodoItem(arg1) {
   return window['go']['main']['App']['DeleteTodoItem'](arg1);
 }
@@ -174,6 +178,10 @@ export function GetToken() {
   return window['go']['main']['App']['GetToken']();
 }
 
+export function HasSendocDraft(arg1) {
+  return window['go']['main']['App']['HasSendocDraft'](arg1);
+}
+
 export function IndexDocument(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['IndexDocument'](arg1, arg2, arg3, arg4);
 }
@@ -184,6 +192,10 @@ export function InstallOllama() {
 
 export function IsLoggedIn() {
   return window['go']['main']['App']['IsLoggedIn']();
+}
+
+export function LoadSendocDraft(arg1) {
+  return window['go']['main']['App']['LoadSendocDraft'](arg1);
 }
 
 export function Login(arg1, arg2) {
@@ -200,6 +212,10 @@ export function OpenLocalAnnouncementFile(arg1, arg2) {
 
 export function OpenLocalKnowledgeFile(arg1, arg2) {
   return window['go']['main']['App']['OpenLocalKnowledgeFile'](arg1, arg2);
+}
+
+export function OpenPrintHTML(arg1) {
+  return window['go']['main']['App']['OpenPrintHTML'](arg1);
 }
 
 export function PullModel(arg1) {
@@ -244,6 +260,10 @@ export function SaveOpinionHistory(arg1, arg2) {
 
 export function SaveOpinionRecord(arg1, arg2) {
   return window['go']['main']['App']['SaveOpinionRecord'](arg1, arg2);
+}
+
+export function SaveSendocDraft(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveSendocDraft'](arg1, arg2, arg3);
 }
 
 export function SaveTodoItem(arg1, arg2, arg3, arg4) {

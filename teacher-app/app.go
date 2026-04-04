@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -91,6 +92,28 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	go systray.Run(a.onTrayReady, a.onTrayExit)
+}
+
+// OpenPrintHTML writes the given HTML string to a temp file and opens it in the system default browser for printing.
+// This avoids WebView2 Error 1412 crashes that occur when calling window.print() inside Wails.
+func (a *App) OpenPrintHTML(html string) error {
+	tmpDir := os.TempDir()
+	tmpFile := filepath.Join(tmpDir, fmt.Sprintf("edulinker_print_%d.html", time.Now().UnixMilli()))
+	if err := os.WriteFile(tmpFile, []byte(html), 0644); err != nil {
+		return fmt.Errorf("임시 파일 생성 실패: %w", err)
+	}
+	// Open in default browser
+	cmd := exec.Command("cmd", "/c", "start", "", tmpFile)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("브라우저 열기 실패: %w", err)
+	}
+	// Clean up temp file after 60 seconds
+	go func() {
+		time.Sleep(60 * time.Second)
+		os.Remove(tmpFile)
+	}()
+	return nil
 }
 
 func (a *App) onTrayReady() {

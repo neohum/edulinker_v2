@@ -160,7 +160,7 @@ func (a *App) extractHwpPages(inputPath, outDir, ext string) []string {
 // Loads PDF from a memory stream (avoids WinRT file-path access restrictions on Temp folders).
 func renderPdfToPages(pdfPath, outDir string) []string {
 	psScript := `
-param([string]$PdfPath, [string]$OutDir)
+param($PdfPath = "%s", $OutDir = "%s")
 
 try {
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -225,17 +225,11 @@ try {
     }
 }
 `
-	scriptPath := filepath.Join(outDir, "_render.ps1")
-	if err := os.WriteFile(scriptPath, []byte(psScript), 0644); err != nil {
-		log.Printf("[PdfConv] Failed to write PS script: %v", err)
-		return nil
-	}
+	// Use fmt.Sprintf to format the variables directly inside the script
+	psResolved := fmt.Sprintf(psScript, pdfPath, outDir)
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive",
-		"-ExecutionPolicy", "Bypass",
-		"-File", scriptPath,
-		"-PdfPath", pdfPath,
-		"-OutDir", outDir)
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
+	cmd.Stdin = strings.NewReader(psResolved)
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	log.Printf("[PdfConv] PDF→PNG render output:\n%s", output)
@@ -320,28 +314,29 @@ func (a *App) extractHwpPagesDirect(inputPath, outDir string) []string {
 
 // convertExcelToPdfDirect uses ExportAsFixedFormat via PowerShell Excel COM.
 func convertExcelToPdfDirect(inputPath, outputPath string) error {
-	psCmd := `
-param([string]$InputPath, [string]$OutputPath)
-$excel = New-Object -ComObject Excel.Application
-$excel.Visible = $false
-$excel.DisplayAlerts = $false
+	psCmd := fmt.Sprintf(`
 try {
-    $wb = $excel.Workbooks.Open($InputPath, 0, $true)
+    $excel = New-Object -ComObject Excel.Application
+    $excel.Visible = $false
+    $excel.DisplayAlerts = $false
+    $wb = $excel.Workbooks.Open('%s', 0, $true)
     
-    # Select all sheets so they are all exported into the paginated PDF
-    if ($wb.Sheets.Count -gt 0) {
-        $wb.Sheets.Select()
-    }
-    
-    $wb.ExportAsFixedFormat(0, $OutputPath)
+    # Write-Host "Exporting workbook directly..."
+    $wb.ExportAsFixedFormat(0, '%s')
     $wb.Close($false)
+} catch {
+    Write-Host "Excel COM Error: $($_.Exception.Message)"
+    exit 1
 } finally {
-    $excel.Quit()
-    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+    if ($excel) {
+        $excel.Quit()
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+    }
 }
-`
+`, inputPath, outputPath)
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd, "-InputPath", inputPath, "-OutputPath", outputPath)
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
+	cmd.Stdin = strings.NewReader(psCmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Excel PDF 변환 실패: %v\n%s", err, string(out))

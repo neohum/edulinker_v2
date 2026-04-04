@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -159,6 +160,14 @@ func (a *App) initSecureDB() error {
 			user_grade INTEGER NOT NULL DEFAULT 0,
 			user_class_num INTEGER NOT NULL DEFAULT 0
 		);
+
+		-- Sendoc Drafts (임시 저장)
+		CREATE TABLE IF NOT EXISTS sendoc_drafts (
+			doc_id TEXT PRIMARY KEY,
+			fields_json TEXT NOT NULL DEFAULT '[]',
+			strokes_json TEXT NOT NULL DEFAULT '[]',
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	if err != nil {
 		return err
@@ -215,4 +224,64 @@ func (a *App) verifyOfflineLogin(phone, password string) LoginResult {
 	}
 
 	return importJson()
+}
+
+// --- Sendoc Draft Storage (SQLite) ---
+
+// SaveSendocDraft saves or updates a document draft in SQLite.
+func (a *App) SaveSendocDraft(docId, fieldsJSON, strokesJSON string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("로컬 DB가 초기화되지 않았습니다")
+	}
+	_, err := a.secureDB.Exec(`
+		INSERT INTO sendoc_drafts (doc_id, fields_json, strokes_json, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(doc_id) DO UPDATE SET
+			fields_json = excluded.fields_json,
+			strokes_json = excluded.strokes_json,
+			updated_at = CURRENT_TIMESTAMP
+	`, docId, fieldsJSON, strokesJSON)
+	return err
+}
+
+// SendocDraftResult is returned from LoadSendocDraft.
+type SendocDraftResult struct {
+	Found       bool   `json:"found"`
+	FieldsJSON  string `json:"fields_json"`
+	StrokesJSON string `json:"strokes_json"`
+}
+
+// LoadSendocDraft loads a draft from SQLite.
+func (a *App) LoadSendocDraft(docId string) SendocDraftResult {
+	if a.secureDB == nil {
+		return SendocDraftResult{Found: false}
+	}
+	var fields, strokes string
+	err := a.secureDB.QueryRow("SELECT fields_json, strokes_json FROM sendoc_drafts WHERE doc_id = ?", docId).Scan(&fields, &strokes)
+	if err != nil {
+		return SendocDraftResult{Found: false}
+	}
+	return SendocDraftResult{Found: true, FieldsJSON: fields, StrokesJSON: strokes}
+}
+
+// DeleteSendocDraft removes a draft from SQLite.
+func (a *App) DeleteSendocDraft(docId string) error {
+	if a.secureDB == nil {
+		return nil
+	}
+	_, err := a.secureDB.Exec("DELETE FROM sendoc_drafts WHERE doc_id = ?", docId)
+	return err
+}
+
+// HasSendocDraft checks if a draft exists in SQLite.
+func (a *App) HasSendocDraft(docId string) bool {
+	if a.secureDB == nil {
+		return false
+	}
+	var count int
+	err := a.secureDB.QueryRow("SELECT COUNT(*) FROM sendoc_drafts WHERE doc_id = ?", docId).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count > 0
 }
