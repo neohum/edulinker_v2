@@ -303,6 +303,57 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class LocalAnnouncement {
+	    id: string;
+	    type: string;
+	    title: string;
+	    content: string;
+	    is_urgent: boolean;
+	    target_roles: string;
+	    created_at: string;
+	    author_id: string;
+	    is_confirmed: boolean;
+	    attachments_json: string;
+	    // Go type: struct { Name string "json:\"name\""; ID string "json:\"id\"" }
+	    author?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new LocalAnnouncement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.title = source["title"];
+	        this.content = source["content"];
+	        this.is_urgent = source["is_urgent"];
+	        this.target_roles = source["target_roles"];
+	        this.created_at = source["created_at"];
+	        this.author_id = source["author_id"];
+	        this.is_confirmed = source["is_confirmed"];
+	        this.attachments_json = source["attachments_json"];
+	        this.author = this.convertValues(source["author"], Object);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class LoginResult {
 	    success: boolean;
 	    token: string;

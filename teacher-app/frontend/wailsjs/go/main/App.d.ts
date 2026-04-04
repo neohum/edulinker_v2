@@ -64,6 +64,8 @@ export function GetFileDataURL(arg1:string):Promise<string>;
 
 export function GetIndexedDocIDs():Promise<Array<string>>;
 
+export function GetLocalAnnouncements():Promise<Array<main.LocalAnnouncement>>;
+
 export function GetLocalKnowledge():Promise<Array<main.KnowledgeDoc>>;
 
 export function GetLocalLinkers():Promise<Array<main.Bookmark>>;
@@ -95,6 +97,8 @@ export function IsLoggedIn():Promise<boolean>;
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
 export function Logout():Promise<void>;
+
+export function OpenLocalAnnouncementFile(arg1:string,arg2:string):Promise<void>;
 
 export function OpenLocalKnowledgeFile(arg1:string,arg2:string):Promise<void>;
 
@@ -135,6 +139,8 @@ export function SetAPIBase(arg1:string):Promise<void>;
 export function StartOllama():Promise<main.OllamaStatus>;
 
 export function StopOllama():Promise<main.OllamaStatus>;
+
+export function SyncAnnouncements(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SyncKnowledge(arg1:string,arg2:string,arg3:string):Promise<void>;
 

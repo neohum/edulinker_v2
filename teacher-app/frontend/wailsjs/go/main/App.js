@@ -126,6 +126,10 @@ export function GetIndexedDocIDs() {
   return window['go']['main']['App']['GetIndexedDocIDs']();
 }
 
+export function GetLocalAnnouncements() {
+  return window['go']['main']['App']['GetLocalAnnouncements']();
+}
+
 export function GetLocalKnowledge() {
   return window['go']['main']['App']['GetLocalKnowledge']();
 }
@@ -188,6 +192,10 @@ export function Login(arg1, arg2) {
 
 export function Logout() {
   return window['go']['main']['App']['Logout']();
+}
+
+export function OpenLocalAnnouncementFile(arg1, arg2) {
+  return window['go']['main']['App']['OpenLocalAnnouncementFile'](arg1, arg2);
 }
 
 export function OpenLocalKnowledgeFile(arg1, arg2) {
@@ -268,6 +276,10 @@ export function StartOllama() {
 
 export function StopOllama() {
   return window['go']['main']['App']['StopOllama']();
+}
+
+export function SyncAnnouncements(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SyncAnnouncements'](arg1, arg2, arg3);
 }
 
 export function SyncKnowledge(arg1, arg2, arg3) {

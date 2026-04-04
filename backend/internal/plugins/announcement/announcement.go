@@ -98,12 +98,14 @@ func (p *Plugin) RegisterRoutes(r fiber.Router) {
 	r.Get("/:id", p.getOne)
 	r.Put("/:id/confirm", p.confirm)
 	r.Get("/:id/status", p.readStatus)
+	r.Delete("/:id", p.delete)
 }
 
 // ── Handlers ──
 
 func (p *Plugin) list(c *fiber.Ctx) error {
 	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+	userID, _ := c.Locals("userID").(uuid.UUID)
 	typeFilter := c.Query("type", "")
 	page := c.QueryInt("page", 1)
 	pageSize := c.QueryInt("page_size", 20)
@@ -120,8 +122,35 @@ func (p *Plugin) list(c *fiber.Ctx) error {
 	offset := (page - 1) * pageSize
 	query.Preload("Author").Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&announcements)
 
+	var readStatuses []AnnouncementRead
+	var announcementIDs []uuid.UUID
+	for _, a := range announcements {
+		announcementIDs = append(announcementIDs, a.ID)
+	}
+	if len(announcementIDs) > 0 {
+		p.db.Where("user_id = ? AND announcement_id IN ?", userID, announcementIDs).Find(&readStatuses)
+	}
+
+	confirmMap := make(map[uuid.UUID]bool)
+	for _, rs := range readStatuses {
+		confirmMap[rs.AnnouncementID] = rs.IsConfirmed
+	}
+
+	type AnnouncementDTO struct {
+		Announcement
+		IsConfirmed bool `json:"is_confirmed"`
+	}
+
+	var results []AnnouncementDTO
+	for _, a := range announcements {
+		results = append(results, AnnouncementDTO{
+			Announcement: a,
+			IsConfirmed:  confirmMap[a.ID],
+		})
+	}
+
 	return c.JSON(fiber.Map{
-		"announcements": announcements,
+		"announcements": results,
 		"total":         total,
 		"page":          page,
 		"page_size":     pageSize,
@@ -294,4 +323,30 @@ func (p *Plugin) readStatus(c *fiber.Ctx) error {
 		"confirmed":  confirmed,
 		"readers":    reads,
 	})
+}
+
+func (p *Plugin) delete(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ID"})
+	}
+	userID, _ := c.Locals("userID").(uuid.UUID)
+
+	var ann Announcement
+	if p.db.First(&ann, "id = ?", id).Error != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+
+	if ann.AuthorID != userID {
+		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+	}
+
+	if p.ragSvc != nil {
+		go p.ragSvc.DeleteDocument(ann.SchoolID, "announcement", ann.ID)
+	}
+
+	p.db.Where("announcement_id = ?", id).Delete(&AnnouncementRead{})
+	p.db.Delete(&ann)
+
+	return c.JSON(fiber.Map{"message": "deleted"})
 }

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { getToken, apiFetch } from '../api'
+import { getToken, apiFetch, API_BASE } from '../api'
+import * as XLSX from 'xlsx'
 
 import type { UserInfo } from '../App'
 import TargetTreeModal from '../components/TargetTreeModal'
@@ -16,6 +17,7 @@ interface Announcement {
   author_id: string
   created_at: string
   due_date?: string
+  is_confirmed?: boolean
 }
 
 interface AnnouncementPageProps {
@@ -27,6 +29,13 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
   const [filterType, setFilterType] = useState<string>('')
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const [isOfflineMode, setIsOfflineMode] = useState(false)
+  const isOfflineModeRef = useRef(false)
+  useEffect(() => {
+    isOfflineModeRef.current = isOfflineMode
+  }, [isOfflineMode])
 
   // Create modal
   const [showModal, setShowModal] = useState(false)
@@ -52,7 +61,23 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
   useEffect(() => {
     fetchAnnouncements()
     fetchUsers()
-  }, [filterType])
+
+    const handleOnline = () => {
+      if (isOfflineModeRef.current) {
+        setIsOfflineMode(false)
+        setTimeout(() => {
+          fetchAnnouncements()
+        }, 0)
+      }
+    }
+    window.addEventListener('server-online', handleOnline)
+
+    return () => {
+      localStorage.setItem(`announcement_last_viewed_${user?.id || 'unknown'}`, new Date().toISOString())
+      window.dispatchEvent(new Event('announcements_updated'))
+      window.removeEventListener('server-online', handleOnline)
+    }
+  }, [filterType, user])
 
   const fetchUsers = async () => {
     try {
@@ -64,25 +89,48 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
     } catch { }
   }
 
-  useEffect(() => {
-    return () => {
-      localStorage.setItem(`announcement_last_viewed_${user.id}`, new Date().toISOString())
-      window.dispatchEvent(new Event('announcements_updated'))
-    }
-  }, [])
-
   const fetchAnnouncements = async () => {
     try {
       setLoading(true)
+
+      if (user?.isOffline || !navigator.onLine) {
+        throw new Error('already offline')
+      }
+
       const token = await getToken()
-      const url = filterType ? `http://localhost:5200/api/plugins/announcement?type=${filterType}` : `http://localhost:5200/api/plugins/announcement`
-      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+      const timestamp = new Date().getTime()
+      const url = filterType ? `/api/plugins/announcement?type=${filterType}&_t=${timestamp}` : `/api/plugins/announcement?_t=${timestamp}`
+      const res = await apiFetch(url, { cache: 'no-store' })
+
       if (res.ok) {
         const data = await res.json()
         setAnnouncements(data.announcements || [])
+        setIsOfflineMode(false)
+
+        if ((window as any).go?.main?.App?.SyncAnnouncements) {
+          try {
+            (window as any).go.main.App.SyncAnnouncements(JSON.stringify(data.announcements || []), API_BASE, token).catch((e: any) => console.error(e));
+          } catch (err) { }
+        }
+      } else {
+        throw new Error('Server !ok')
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
+      setIsOfflineMode(true)
+      if ((window as any).go?.main?.App?.GetLocalAnnouncements) {
+        try {
+          const localData = await (window as any).go.main.App.GetLocalAnnouncements()
+          if (filterType) {
+            setAnnouncements(localData.filter((a: any) => a.type === filterType) || [])
+          } else {
+            setAnnouncements(localData || [])
+          }
+          if (e.message !== 'already offline') {
+            toast.info("오프라인 모드로 로컬에 동기화된 공문 목록을 불러왔습니다.", { duration: 3000 })
+          }
+        } catch (err) { }
+      }
     } finally {
       setLoading(false)
     }
@@ -97,14 +145,25 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
   const handleConfirm = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+
+    // Optimistically update UI so checkbox ticks instantly
+    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_confirmed: true } : a))
+
     try {
       const token = await getToken()
       const res = await fetch(`http://localhost:5200/api/plugins/announcement/${id}/confirm`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } })
       if (res.ok) {
         toast.success('확인 처리되었습니다.')
-        fetchAnnouncements()
+        // fetchAnnouncements() 지연된 서버 리프레시로 인한 체크 박스 풀림 방지
+      } else {
+        // Revert on failure
+        setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_confirmed: false } : a))
+        toast.error('확인 처리 실패')
       }
-    } catch (e) { }
+    } catch (e) {
+      setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_confirmed: false } : a))
+      toast.error('네트워크 오류')
+    }
   }
 
   const handleViewStatus = async (a: Announcement, e: React.MouseEvent) => {
@@ -117,6 +176,24 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
       const res = await fetch(`http://localhost:5200/api/plugins/announcement/${a.id}/status`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (res.ok) setStatusData(await res.json())
     } catch (e) { }
+  }
+
+  const handleDeleteAnnouncement = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!window.confirm('해당 공문을 정말 삭제하시겠습니까?\n(삭제 시 모든 수신자의 목록에서도 함께 삭제됩니다)')) return;
+
+    try {
+      const token = await getToken()
+      const res = await fetch(`http://localhost:5200/api/plugins/announcement/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } })
+      if (res.ok) {
+        toast.success('공문이 삭제되었습니다.')
+        fetchAnnouncements()
+      } else {
+        toast.error('삭제 처리에 실패했습니다.')
+      }
+    } catch (e) {
+      toast.error('네트워크 오류')
+    }
   }
 
   const handleCreate = async () => {
@@ -135,15 +212,46 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         let markdownContent = ''
         for (const file of formFiles) {
           try {
-            const base64 = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
-              reader.onerror = () => reject(new Error('파일 읽기 실패'))
-              reader.readAsDataURL(file)
-            })
-            const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
-            if (res.success) markdownContent += `\n\n### ${file.name}\n${res.text}`
-          } catch (e) { }
+            if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+              const arrayBuffer = await file.arrayBuffer();
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              let mdText = '';
+              workbook.SheetNames.forEach(sheetName => {
+                const worksheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+                if (rows.length > 0) {
+                  mdText += `### ${sheetName}\n\n`;
+                  const maxCols = Math.max(...rows.map(r => r.length));
+                  if (maxCols > 0) {
+                    const paddedRows = rows.map(r => {
+                      const newRow = [...r];
+                      while (newRow.length < maxCols) newRow.push("");
+                      return newRow.map(c => String(c).replace(/\|/g, '\\|').replace(/\n/g, '<br>'));
+                    });
+                    mdText += '| ' + paddedRows[0].join(' | ') + ' |\n';
+                    mdText += '| ' + paddedRows[0].map(() => '---').join(' | ') + ' |\n';
+                    for (let i = 1; i < paddedRows.length; i++) {
+                      mdText += '| ' + paddedRows[i].join(' | ') + ' |\n';
+                    }
+                    mdText += '\n\n';
+                  }
+                }
+              });
+              if (!mdText.trim()) mdText = '엑셀 내용을 추출할 수 없거나 빈 시트입니다.';
+              markdownContent += `\n\n### ${file.name}\n${mdText}`
+            } else {
+              const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
+                reader.onerror = () => reject(new Error('파일 읽기 실패'))
+                reader.readAsDataURL(file)
+              })
+              const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
+              if (res.success) markdownContent += `\n\n### ${file.name}\n${res.text}`
+            }
+          } catch (e) {
+            console.error(e)
+          }
         }
 
         const formData = new FormData()
@@ -262,7 +370,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
           return (
             <button
               key={t}
-              onClick={() => setFilterType(t)}
+              onClick={() => { setFilterType(t); setCurrentPage(1); }}
               style={{
                 padding: '6px 12px', borderRadius: 20, border: filterType === t ? '1px solid var(--primary)' : '1px solid var(--border)', cursor: 'pointer', fontWeight: 600, fontSize: 13,
                 background: filterType === t ? '#eef2ff' : 'white',
@@ -285,7 +393,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         <div style={{ padding: 40, textAlign: 'center', background: 'white', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)' }}>수신된 공문이 없습니다.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {announcements.map(a => {
+          {announcements.slice((currentPage - 1) * 10, currentPage * 10).map(a => {
             const styleInfo = getTypeStyle(a.type)
             return (
               <div key={a.id} style={{ padding: '20px', background: 'white', borderRadius: 12, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -293,6 +401,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                   {a.is_urgent && <span style={{ background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 'bold' }}>긴급</span>}
                   <span style={{ background: styleInfo.bg, color: styleInfo.color, padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 'bold' }}>{styleInfo.label}</span>
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{new Date(a.created_at).toLocaleDateString()}</span>
+                  <span style={{ fontSize: 10, color: 'red' }}>DEBUG: is_confirmed={a.is_confirmed ? 'TRUE' : 'FALSE'}</span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{a.title}</div>
                 <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, maxHeight: 150, overflowY: 'auto', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #f1f5f9' }}>
@@ -306,7 +415,18 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                           {attachments.map((f: any, i: number) => (
-                            <a key={i} href={`http://localhost:5200${f.url}`} download={f.name} target="_blank" rel="noreferrer" onClick={() => markAsRead(a.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, textDecoration: 'none', color: '#334155', fontSize: 13, fontWeight: 500, width: 'fit-content', transition: 'background 0.2s', cursor: 'pointer' }}>
+                            <a key={i} href={isOfflineMode ? '#' : `${API_BASE}${f.url}`} download={!isOfflineMode ? f.name : undefined} target={!isOfflineMode ? "_blank" : undefined} rel="noreferrer" onClick={(e) => {
+                              if (isOfflineMode) {
+                                e.preventDefault()
+                                if ((window as any).go?.main?.App?.OpenLocalAnnouncementFile) {
+                                  (window as any).go.main.App.OpenLocalAnnouncementFile(a.id, f.name).catch((err: any) => toast.error(err))
+                                } else {
+                                  toast.error('오프라인 환경에서는 첨부파일을 열 수 없거나 동기화 대기 중입니다.')
+                                }
+                              } else {
+                                // Normally markAsRead if you want
+                              }
+                            }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, textDecoration: 'none', color: '#334155', fontSize: 13, fontWeight: 500, width: 'fit-content', transition: 'background 0.2s', cursor: 'pointer' }}>
                               <i className="fi fi-rr-clip" style={{ color: '#64748b' }} />
                               {f.name}
                               <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>({Math.round(f.size / 1024)}KB)</span>
@@ -321,19 +441,58 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   {a.type === 'confirm' && a.author_id !== user?.id && (
-                    <button onClick={(e) => handleConfirm(a.id, e)} style={{ alignSelf: 'flex-start', background: '#f8fafc', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569', transition: 'background 0.2s' }}>
-                      ✅ 확인했습니다
-                    </button>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start', padding: '6px 12px', background: a.is_confirmed ? '#f0fdf4' : '#f8fafc', border: `1px solid ${a.is_confirmed ? '#bbf7d0' : 'var(--border)'}`, borderRadius: 6, cursor: a.is_confirmed ? 'default' : 'pointer', fontWeight: 600, color: a.is_confirmed ? '#166534' : '#475569', transition: 'all 0.2s', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={a.is_confirmed || false}
+                        disabled={a.is_confirmed}
+                        onChange={(e) => {
+                          if (!a.is_confirmed) {
+                            handleConfirm(a.id, e as unknown as React.MouseEvent)
+                          }
+                        }}
+                        style={{ width: 16, height: 16, cursor: a.is_confirmed ? 'default' : 'pointer', accentColor: '#16a34a' }}
+                      />
+                      {a.is_confirmed ? '확인 완료' : '확인하기'}
+                    </label>
                   )}
                   {a.author_id === user?.id && (
-                    <button onClick={(e) => handleViewStatus(a, e)} className="btn-secondary" style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 6, fontSize: 13, margin: 0 }}>
-                      <i className="fi fi-rr-eye" style={{ marginRight: 6 }} />열람 현황 보기
-                    </button>
+                    <>
+                      <button onClick={(e) => handleViewStatus(a, e)} className="btn-secondary" style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 6, fontSize: 13, margin: 0 }}>
+                        <i className="fi fi-rr-eye" style={{ marginRight: 6 }} />열람 현황 보기
+                      </button>
+                      <button onClick={(e) => handleDeleteAnnouncement(a.id, e)} className="btn-secondary" style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 6, fontSize: 13, margin: 0, color: '#ef4444', borderColor: '#fca5a5', background: '#fef2f2' }}>
+                        <i className="fi fi-rr-trash" style={{ marginRight: 6 }} />삭제
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
             )
           })}
+
+          {Math.ceil(announcements.length / 10) > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 24, marginBottom: 24 }}>
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}>이전</button>
+              {Array.from({ length: Math.ceil(announcements.length / 10) }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setCurrentPage(i + 1)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    border: currentPage === i + 1 ? '1px solid var(--accent-blue, #3b82f6)' : '1px solid var(--border)',
+                    background: currentPage === i + 1 ? 'var(--accent-blue, #3b82f6)' : 'white',
+                    color: currentPage === i + 1 ? 'white' : 'var(--text-primary)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button disabled={currentPage === Math.ceil(announcements.length / 10)} onClick={() => setCurrentPage(p => Math.min(Math.ceil(announcements.length / 10), p + 1))} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: currentPage === Math.ceil(announcements.length / 10) ? 'not-allowed' : 'pointer', opacity: currentPage === Math.ceil(announcements.length / 10) ? 0.5 : 1 }}>다음</button>
+            </div>
+          )}
         </div>
       )}
 

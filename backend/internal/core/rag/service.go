@@ -55,6 +55,10 @@ func (s *Service) IndexDocument(schoolID uuid.UUID, sourceType string, sourceID 
 	return s.db.Create(&chunk).Error
 }
 
+func (s *Service) DeleteDocument(schoolID uuid.UUID, sourceType string, sourceID uuid.UUID) error {
+	return s.db.Where("school_id = ? AND source_type = ? AND source_id = ?", schoolID, sourceType, sourceID).Delete(&models.SchoolDocumentChunk{}).Error
+}
+
 func (s *Service) Query(schoolID uuid.UUID, question string) (string, []models.SchoolDocumentChunk, error) {
 	// 1. Embed question
 	emb, err := s.aiSvc.Embed(s.model, question)
@@ -72,9 +76,9 @@ func (s *Service) Query(schoolID uuid.UUID, question string) (string, []models.S
 	// For efficiency without pgvector, we use a simple cosine similarity simulation in SQL:
 	// similarity = (A . B) / (|A| * |B|)
 	// Since embeddings are often normalized, dot product (A . B) is sufficient.
-	
+
 	var chunks []models.SchoolDocumentChunk
-	
+
 	// Convert Go slice to Postgres array string format: '{0.1, 0.2, ...}'
 	pgArray := "ARRAY["
 	for i, v := range emb64 {

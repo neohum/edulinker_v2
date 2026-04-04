@@ -42,6 +42,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isOfflineMode, setIsOfflineMode] = useState(false)
 
   // Add student modal state
   const [showAddModal, setShowAddModal] = useState(false)
@@ -65,6 +66,13 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   useEffect(() => {
     fetchStudents()
+
+    const handleOnline = () => {
+      setIsOfflineMode(false)
+      setTimeout(() => fetchStudents(), 0)
+    }
+    window.addEventListener('server-online', handleOnline)
+    return () => window.removeEventListener('server-online', handleOnline)
   }, [filterGrade, filterClass])
 
   useEffect(() => {
@@ -149,8 +157,14 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const fetchStudents = async () => {
     try {
+      setLoading(true)
       const effectiveGrade = isAdmin ? filterGrade : (user.grade || 0)
       const effectiveClass = isAdmin ? filterClass : (user.classNum || 0)
+
+      if (user?.isOffline || !navigator.onLine) {
+        throw new Error('already offline')
+      }
+
       let url = '/api/core/users?role=student&page_size=100'
       if (effectiveGrade > 0) url += `&grade=${effectiveGrade}`
       if (effectiveClass > 0) url += `&class_num=${effectiveClass}`
@@ -162,9 +176,25 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
         if (effectiveClass > 0) list = list.filter(s => s.class_num === effectiveClass)
         list.sort((a, b) => a.number - b.number)
         setStudents(list)
+        setIsOfflineMode(false)
+        try { localStorage.setItem(`students_cache_${effectiveGrade}_${effectiveClass}`, JSON.stringify(list)) } catch (e) { }
+      } else {
+        throw new Error('Server non-ok response')
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
+      setIsOfflineMode(true)
+      const effectiveGrade = isAdmin ? filterGrade : (user.grade || 0)
+      const effectiveClass = isAdmin ? filterClass : (user.classNum || 0)
+      try {
+        const cached = localStorage.getItem(`students_cache_${effectiveGrade}_${effectiveClass}`)
+        if (cached) {
+          setStudents(JSON.parse(cached))
+          if (e.message !== 'already offline') {
+            toast.info("오프라인 환경이라 로컬 캐시 명단을 표시합니다.", { duration: 3000 })
+          }
+        }
+      } catch (err) { }
     } finally {
       setLoading(false)
     }
@@ -343,39 +373,43 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
         </h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
+            disabled={isOfflineMode || !isProfileSet}
             onClick={() => {
+              if (isOfflineMode) return
               if (!isProfileSet) { toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.'); return }
               setShowAddModal(true)
               setAddError('')
               setAddForm({ grade: String(user.grade), classNum: String(user.classNum), number: '', name: '', gender: '' })
             }}
             style={{
-              background: isProfileSet ? 'var(--accent-green)' : '#9ca3af', color: 'white',
-              padding: '8px 16px', borderRadius: 8, border: 'none', cursor: isProfileSet ? 'pointer' : 'not-allowed',
-              fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6
+              background: (isOfflineMode || !isProfileSet) ? '#9ca3af' : 'var(--accent-green)', color: 'white',
+              padding: '8px 16px', borderRadius: 8, border: 'none', cursor: (isOfflineMode || !isProfileSet) ? 'not-allowed' : 'pointer',
+              fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: (isOfflineMode || !isProfileSet) ? 0.7 : 1
             }}>
             <i className="fi fi-rr-user-add" /> 학생 1명 추가
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileUpload} style={{ display: 'none' }} />
           <button
             onClick={() => {
+              if (isOfflineMode) return
               if (!isProfileSet) { toast.error('프로필에서 학년과 반 설정을 먼저 해주세요.'); return }
               fileInputRef.current?.click()
             }}
-            disabled={importing || !isProfileSet}
+            disabled={isOfflineMode || importing || !isProfileSet}
             style={{
-              background: isProfileSet ? 'var(--accent-blue)' : '#9ca3af', color: 'white',
+              background: (isOfflineMode || !isProfileSet) ? '#9ca3af' : 'var(--accent-blue)', color: 'white',
               padding: '8px 16px', borderRadius: 8, border: 'none',
-              cursor: (importing || !isProfileSet) ? 'not-allowed' : 'pointer',
-              fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: importing ? 0.7 : 1
+              cursor: (isOfflineMode || importing || !isProfileSet) ? 'not-allowed' : 'pointer',
+              fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: (isOfflineMode || importing || !isProfileSet) ? 0.7 : 1
             }}>
             <i className="fi fi-rr-file-upload" /> {importing ? '업로드 중...' : '엑셀로 학생 등록'}
           </button>
           <button
             onClick={downloadTemplate}
+            disabled={isOfflineMode}
             style={{
-              background: 'white', color: '#6366f1', padding: '8px 14px', borderRadius: 8,
-              border: '1px solid #c7d2fe', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13
+              background: isOfflineMode ? '#f1f5f9' : 'white', color: isOfflineMode ? '#94a3b8' : '#6366f1', padding: '8px 14px', borderRadius: 8,
+              border: isOfflineMode ? '1px solid #e2e8f0' : '1px solid #c7d2fe', cursor: isOfflineMode ? 'not-allowed' : 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13
             }}>
             <i className="fi fi-rr-download" /> 등록 양식
           </button>
@@ -383,242 +417,255 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
       </div>
 
       {/* Import Result */}
-      {importResult && (
-        <div style={{ padding: 12, borderRadius: 8, marginBottom: 16, background: importResult.errors?.length ? '#fef2f2' : '#f0fdf4', border: `1px solid ${importResult.errors?.length ? '#fecaca' : '#bbf7d0'}` }}>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>
-            총 {importResult.total}명 중 {importResult.created}명 등록 완료 / {importResult.skipped}명 건너뜀
+      {
+        importResult && (
+          <div style={{ padding: 12, borderRadius: 8, marginBottom: 16, background: importResult.errors?.length ? '#fef2f2' : '#f0fdf4', border: `1px solid ${importResult.errors?.length ? '#fecaca' : '#bbf7d0'}` }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>
+              총 {importResult.total}명 중 {importResult.created}명 등록 완료 / {importResult.skipped}명 건너뜀
+            </div>
+            {importResult.errors?.map((e, i) => (
+              <div key={i} style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>{e}</div>
+            ))}
           </div>
-          {importResult.errors?.map((e, i) => (
-            <div key={i} style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>{e}</div>
-          ))}
-        </div>
-      )}
+        )
+      }
 
       {/* Admin grade/class filter */}
-      {isAdmin && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-          <select value={filterGrade} onChange={e => setFilterGrade(Number(e.target.value))}
-            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
-            <option value={0}>전체 학년</option>
-            {[1, 2, 3, 4, 5, 6].map(g => <option key={g} value={g}>{g}학년</option>)}
-          </select>
-          <select value={filterClass} onChange={e => setFilterClass(Number(e.target.value))}
-            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
-            <option value={0}>전체 반</option>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => <option key={c} value={c}>{c}반</option>)}
-          </select>
-          <button onClick={handleDeleteClass}
-            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
-            이 반 학생 전체 삭제
-          </button>
-        </div>
-      )}
+      {
+        isAdmin && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <select value={filterGrade} onChange={e => setFilterGrade(Number(e.target.value))}
+              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
+              <option value={0}>전체 학년</option>
+              {[1, 2, 3, 4, 5, 6].map(g => <option key={g} value={g}>{g}학년</option>)}
+            </select>
+            <select value={filterClass} onChange={e => setFilterClass(Number(e.target.value))}
+              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
+              <option value={0}>전체 반</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => <option key={c} value={c}>{c}반</option>)}
+            </select>
+            <button onClick={handleDeleteClass}
+              style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+              이 반 학생 전체 삭제
+            </button>
+          </div>
+        )
+      }
 
       {/* Bulk action bar */}
-      {selectedIds.size > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', padding: '8px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>{selectedIds.size}명 선택됨</span>
-          <button onClick={handleEditSelectedSingle}
-            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #bfdbfe', background: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#1d4ed8' }}>
-            수정
-          </button>
-          <button onClick={handleDeleteSelected}
-            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>
-            삭제
-          </button>
-        </div>
-      )}
+      {
+        selectedIds.size > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', padding: '8px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1d4ed8' }}>{selectedIds.size}명 선택됨</span>
+            <button onClick={handleEditSelectedSingle} disabled={isOfflineMode}
+              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #bfdbfe', background: isOfflineMode ? '#e2e8f0' : 'white', cursor: isOfflineMode ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: isOfflineMode ? '#94a3b8' : '#1d4ed8' }}>
+              수정
+            </button>
+            <button onClick={handleDeleteSelected} disabled={isOfflineMode}
+              style={{ padding: '4px 12px', borderRadius: 6, border: isOfflineMode ? '1px solid #e2e8f0' : '1px solid #fecaca', background: isOfflineMode ? '#e2e8f0' : '#fef2f2', cursor: isOfflineMode ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, color: isOfflineMode ? '#94a3b8' : '#dc2626' }}>
+              삭제
+            </button>
+          </div>
+        )
+      }
 
       {/* Student Table */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>불러오는 중...</div>
-      ) : students.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', background: 'var(--surface)', borderRadius: 12 }}>
-          <i className="fi fi-rr-users" style={{ fontSize: 36, display: 'block', marginBottom: 12 }} />
-          {isProfileSet ? '등록된 학생이 없습니다.' : '프로필에서 학년과 반을 설정해주세요.'}
-        </div>
-      ) : (
-        <div style={{ background: 'white', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-primary)' }}>
-                <th style={{ padding: '12px 14px', width: 40, borderBottom: '1px solid var(--border)' }}>
-                  <input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected }}
-                    onChange={toggleSelectAll} style={{ cursor: 'pointer' }} />
-                </th>
-                {(['번호', '이름', '학년', '반', '성별'] as const).map(h => (
-                  <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>
-                ))}
-                {parentEnabled && (
-                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>학부모 연동</th>
-                )}
-                <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, ...{ color: 'var(--text-muted)' }, fontSize: 12, borderBottom: '1px solid var(--border)' }}>계정 관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.map(s => (
-                <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
-                  onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-primary)')}
-                  onMouseOut={e => (e.currentTarget.style.background = 'white')}>
-                  <td style={{ padding: '10px 14px' }}>
-                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} style={{ cursor: 'pointer' }} />
-                  </td>
-                  <td style={{ padding: '10px 14px', fontWeight: 600 }}>{s.number}</td>
-                  <td style={{ padding: '10px 14px', fontWeight: 600 }}>{s.name}</td>
-                  <td style={{ padding: '10px 14px' }}>{s.grade}학년</td>
-                  <td style={{ padding: '10px 14px' }}>{s.class_num}반</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    {s.gender === '남' ? (
-                      <span style={{ padding: '2px 10px', borderRadius: 20, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, fontSize: 12 }}>남</span>
-                    ) : s.gender === '여' ? (
-                      <span style={{ padding: '2px 10px', borderRadius: 20, background: '#fce7f3', color: '#be185d', fontWeight: 700, fontSize: 12 }}>여</span>
-                    ) : (
-                      <span style={{ padding: '2px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontSize: 12 }}>—</span>
-                    )}
-                  </td>
-                  {parentEnabled && (() => {
-                    const ps = parentStatusMap[s.id]
-                    return ps?.has_parent ? (
-                      <td style={{ padding: '10px 14px' }}>
-                        <div title={ps.parent ? `${ps.parent.name} (${ps.parent.phone})` : ''}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#dcfce7', color: '#16a34a', fontWeight: 700, fontSize: 12 }}>
-                            <i className="fi fi-rr-check" style={{ fontSize: 10 }} /> 연동완료
-                          </span>
-                          {ps.parent && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{ps.parent.name}</div>}
-                        </div>
-                      </td>
-                    ) : (
-                      <td style={{ padding: '10px 14px' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 600, fontSize: 12 }}>
-                          미연동
-                        </span>
-                      </td>
-                    )
-                  })()}
-                  <td style={{ padding: '10px 14px' }}>
-                    <button
-                      onClick={() => handleResetPIN(s)}
-                      style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                      title="비밀번호를 1234로 초기화합니다"
-                    >
-                      <i className="fi fi-rr-key" style={{ fontSize: 10 }} /> PIN 초기화
-                    </button>
-                  </td>
+      {
+        loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>불러오는 중...</div>
+        ) : students.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', background: 'var(--surface)', borderRadius: 12 }}>
+            <i className="fi fi-rr-users" style={{ fontSize: 36, display: 'block', marginBottom: 12 }} />
+            {isProfileSet ? '등록된 학생이 없습니다.' : '프로필에서 학년과 반을 설정해주세요.'}
+          </div>
+        ) : (
+          <div style={{ background: 'white', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-primary)' }}>
+                  <th style={{ padding: '12px 14px', width: 40, borderBottom: '1px solid var(--border)' }}>
+                    <input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected }}
+                      onChange={toggleSelectAll} style={{ cursor: 'pointer' }} />
+                  </th>
+                  {(['번호', '이름', '학년', '반', '성별'] as const).map(h => (
+                    <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                  {parentEnabled && (
+                    <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>학부모 연동</th>
+                  )}
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, ...{ color: 'var(--text-muted)' }, fontSize: 12, borderBottom: '1px solid var(--border)' }}>계정 관리</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {students.map(s => (
+                  <tr key={s.id} style={{ borderBottom: '1px solid var(--border)' }}
+                    onMouseOver={e => (e.currentTarget.style.background = 'var(--bg-primary)')}
+                    onMouseOut={e => (e.currentTarget.style.background = 'white')}>
+                    <td style={{ padding: '10px 14px' }}>
+                      <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} style={{ cursor: 'pointer' }} />
+                    </td>
+                    <td style={{ padding: '10px 14px', fontWeight: 600 }}>{s.number}</td>
+                    <td style={{ padding: '10px 14px', fontWeight: 600 }}>{s.name}</td>
+                    <td style={{ padding: '10px 14px' }}>{s.grade}학년</td>
+                    <td style={{ padding: '10px 14px' }}>{s.class_num}반</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      {s.gender === '남' ? (
+                        <span style={{ padding: '2px 10px', borderRadius: 20, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, fontSize: 12 }}>남</span>
+                      ) : s.gender === '여' ? (
+                        <span style={{ padding: '2px 10px', borderRadius: 20, background: '#fce7f3', color: '#be185d', fontWeight: 700, fontSize: 12 }}>여</span>
+                      ) : (
+                        <span style={{ padding: '2px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    {parentEnabled && (() => {
+                      const ps = parentStatusMap[s.id]
+                      return ps?.has_parent ? (
+                        <td style={{ padding: '10px 14px' }}>
+                          <div title={ps.parent ? `${ps.parent.name} (${ps.parent.phone})` : ''}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#dcfce7', color: '#16a34a', fontWeight: 700, fontSize: 12 }}>
+                              <i className="fi fi-rr-check" style={{ fontSize: 10 }} /> 연동완료
+                            </span>
+                            {ps.parent && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{ps.parent.name}</div>}
+                          </div>
+                        </td>
+                      ) : (
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 600, fontSize: 12 }}>
+                            미연동
+                          </span>
+                        </td>
+                      )
+                    })()}
+                    <td style={{ padding: '10px 14px' }}>
+                      <button
+                        onClick={() => handleResetPIN(s)}
+                        disabled={isOfflineMode}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: isOfflineMode ? '#e2e8f0' : 'white', color: isOfflineMode ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 600, cursor: isOfflineMode ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                        title="비밀번호를 1234로 초기화합니다"
+                      >
+                        <i className="fi fi-rr-key" style={{ fontSize: 10 }} /> PIN 초기화
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
 
       {/* Add Modal */}
-      {showAddModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>학생 추가</h3>
-            {addError && (
-              <div style={{ padding: 10, borderRadius: 8, marginBottom: 16, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{addError}</div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>학년</label>
-                <input type="number" value={addForm.grade} onChange={e => setAddForm(f => ({ ...f, grade: e.target.value }))} disabled={!isAdmin}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+      {
+        showAddModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>학생 추가</h3>
+              {addError && (
+                <div style={{ padding: 10, borderRadius: 8, marginBottom: 16, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{addError}</div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>학년</label>
+                  <input type="number" value={addForm.grade} onChange={e => setAddForm(f => ({ ...f, grade: e.target.value }))} disabled={!isAdmin}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>반</label>
+                  <input type="number" value={addForm.classNum} onChange={e => setAddForm(f => ({ ...f, classNum: e.target.value }))} disabled={!isAdmin}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>번호</label>
+                  <input type="number" value={addForm.number} onChange={e => setAddForm(f => ({ ...f, number: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>반</label>
-                <input type="number" value={addForm.classNum} onChange={e => setAddForm(f => ({ ...f, classNum: e.target.value }))} disabled={!isAdmin}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>이름</label>
+                  <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddStudent() }}
+                    placeholder="학생 이름"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>성별</label>
+                  <select value={addForm.gender} onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
+                    <option value="">알 수 없음/미지정</option>
+                    <option value="남">남</option>
+                    <option value="여">여</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>번호</label>
-                <input type="number" value={addForm.number} onChange={e => setAddForm(f => ({ ...f, number: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowAddModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: 600 }}>취소</button>
+                <button onClick={handleAddStudent} disabled={adding}
+                  style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent-green)', color: 'white', cursor: adding ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: adding ? 0.7 : 1 }}>
+                  <i className="fi fi-rr-check" /> {adding ? '등록 중...' : '등록'}
+                </button>
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>이름</label>
-                <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAddStudent() }}
-                  placeholder="학생 이름"
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>성별</label>
-                <select value={addForm.gender} onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
-                  <option value="">알 수 없음/미지정</option>
-                  <option value="남">남</option>
-                  <option value="여">여</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowAddModal(false)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: 600 }}>취소</button>
-              <button onClick={handleAddStudent} disabled={adding}
-                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent-green)', color: 'white', cursor: adding ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: adding ? 0.7 : 1 }}>
-                <i className="fi fi-rr-check" /> {adding ? '등록 중...' : '등록'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Edit Modal */}
-      {editStudent && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>학생 정보 수정</h3>
-            {editError && (
-              <div style={{ padding: 10, borderRadius: 8, marginBottom: 16, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{editError}</div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
-                <input type="number" value={editStudent.grade} disabled
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: '#e2e8f0', color: '#64748b', fontSize: 14, boxSizing: 'border-box' }} />
+      {
+        editStudent && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 28, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>학생 정보 수정</h3>
+              {editError && (
+                <div style={{ padding: 10, borderRadius: 8, marginBottom: 16, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 13 }}>{editError}</div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학년</label>
+                  <input type="number" value={editStudent.grade} disabled
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: '#e2e8f0', color: '#64748b', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
+                  <input type="number" value={editStudent.class_num} disabled
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: '#e2e8f0', color: '#64748b', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
+                  <input type="number" value={editForm.number} onChange={e => setEditForm(f => ({ ...f, number: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>반</label>
-                <input type="number" value={editStudent.class_num} disabled
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: '#e2e8f0', color: '#64748b', fontSize: 14, boxSizing: 'border-box' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
+                  <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>성별</label>
+                  <select value={editForm.gender} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
+                    <option value="">알 수 없음/미지정</option>
+                    <option value="남">남</option>
+                    <option value="여">여</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>번호</label>
-                <input type="number" value={editForm.number} onChange={e => setEditForm(f => ({ ...f, number: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setEditStudent(null)}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600 }}>취소</button>
+                <button onClick={handleEditStudent} disabled={editing}
+                  style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent-blue)', color: 'white', cursor: editing ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: editing ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <i className="fi fi-rr-check" /> {editing ? '저장 중...' : '저장'}
+                </button>
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
-                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>성별</label>
-                <select value={editForm.gender} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
-                  <option value="">알 수 없음/미지정</option>
-                  <option value="남">남</option>
-                  <option value="여">여</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditStudent(null)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600 }}>취소</button>
-              <button onClick={handleEditStudent} disabled={editing}
-                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent-blue)', color: 'white', cursor: editing ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: editing ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <i className="fi fi-rr-check" /> {editing ? '저장 중...' : '저장'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   )
 }

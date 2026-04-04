@@ -77,18 +77,22 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
   }, [])
 
   const fetchAnnouncementCounts = async () => {
+    let anns: any[] = []
     try {
       const res = await apiFetch('/api/plugins/announcement?page_size=1000')
-      let anns = []
       if (res.ok) {
         const data = await res.json()
         anns = data.announcements || []
         localStorage.setItem('announcement_cache', JSON.stringify(anns))
       } else {
-        const storedAnn = localStorage.getItem('announcement_cache')
-        if (storedAnn) anns = JSON.parse(storedAnn)
+        throw new Error('Server !ok')
       }
+    } catch (e) {
+      const storedAnn = localStorage.getItem('announcement_cache')
+      if (storedAnn) anns = JSON.parse(storedAnn)
+    }
 
+    try {
       // Exclude my own announcements
       anns = anns.filter((a: any) => a.author_id !== user?.id)
 
@@ -109,7 +113,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         todo: newAnns.filter((a: any) => a.type === 'todo').length
       })
     } catch (e) {
-      console.error('Failed to fetch announcement counts:', e)
+      console.error('Failed to parse announcement counts:', e)
     }
   }
 

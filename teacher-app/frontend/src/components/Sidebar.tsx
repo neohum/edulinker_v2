@@ -18,7 +18,7 @@ interface NavItem {
   priceType?: 'free' | 'paid' | 'partial'
 }
 
-const OFFLINE_ENABLED_IDS = ['dashboard', 'knowledge', 'aianalysis', 'pcinfo', 'settings', 'profile', 'todo', 'attendance', 'counseling', 'behavior-opinion', 'curriculum', 'linker']
+const OFFLINE_ENABLED_IDS = ['dashboard', 'knowledge', 'aianalysis', 'pcinfo', 'settings', 'profile', 'todo', 'attendance', 'counseling', 'behavior-opinion', 'curriculum', 'linker', 'studentmgmt', 'announcement']
 
 const coreItems: NavItem[] = [
   { id: 'dashboard', label: '통합 검색', icon: 'fi fi-rr-search' },

@@ -39,6 +39,21 @@ func (a *App) initSecureDB() error {
 
 	// CREATE TABLES
 	_, err = db.Exec(`
+		-- Announcements
+		CREATE TABLE IF NOT EXISTS local_announcements (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			is_urgent BOOLEAN NOT NULL DEFAULT 0,
+			target_roles TEXT DEFAULT 'ALL',
+			created_at TEXT NOT NULL,
+			author_id TEXT NOT NULL,
+			author_name TEXT,
+			is_confirmed BOOLEAN NOT NULL DEFAULT 0,
+			attachments_json TEXT DEFAULT '[]'
+		);
+
 		-- Attendance
 		CREATE TABLE IF NOT EXISTS local_attendance (
 			id TEXT PRIMARY KEY,
