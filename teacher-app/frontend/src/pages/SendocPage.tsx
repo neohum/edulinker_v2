@@ -209,18 +209,21 @@ export default function SendocPage({ user }: SendocPageProps) {
       const res = await apiFetch('/api/plugins/sendoc/sign')
       if (res.ok) {
         const data = await res.json()
+        console.log('[DEBUG] fetchPendingDocs raw data:', data) // <-- DEBUG LOG
         const mapped = (data || []).map((d: any) => ({
-          ...d.sendoc,
           ...d,
-          id: d.sendoc?.id || d.id, // Keep sendoc.id for fetching actual document
-          recipient_id: d.id,       // Store recipient_id just in case
-          title: d.sendoc?.title || '(제목 없음)',
-          status: d.sendoc?.status || 'draft',
-          created_at: d.sendoc?.created_at || d.created_at || new Date().toISOString()
+          id: d.id,
+          recipient_id: d.id, // Recipient/PendingDoc ID in backend is the Sendoc.ID
+          title: d.title || '(제목 없음)',
+          status: d.status || 'draft',
+          created_at: d.created_at || new Date().toISOString()
         }))
+        console.log('[DEBUG] fetchPendingDocs mapped:', mapped) // <-- DEBUG LOG
         setPendingDocs(mapped)
+      } else {
+        console.error('[DEBUG] fetchPendingDocs failed with status:', res.status)
       }
-    } catch (e) { console.error(e) } finally { if (!isTeacher) setLoading(false) }
+    } catch (e) { console.error('[DEBUG] fetchPendingDocs error:', e) } finally { if (!isTeacher) setLoading(false) }
   }
 
   const fetchUsers = async () => {

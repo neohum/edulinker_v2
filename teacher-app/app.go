@@ -1380,7 +1380,8 @@ func (a *App) GenerateAIStream(model, systemPrompt, userMsg string) {
 				{"role": "system", "content": systemPrompt},
 				{"role": "user", "content": userMsg},
 			},
-			"stream": true,
+			"stream":     true,
+			"keep_alive": "60m",
 			"options": map[string]interface{}{
 				"num_ctx":     4096,
 				"num_predict": 2048,

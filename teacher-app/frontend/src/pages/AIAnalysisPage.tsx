@@ -60,6 +60,10 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
     }
   }, [])
 
+  useEffect(() => {
+    (window as any).isAIGenerating = generating;
+  }, [generating])
+
   const startTimer = () => {
     setElapsedSecs(0)
     if (timerRef.current) clearInterval(timerRef.current)
@@ -231,10 +235,6 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
       try {
         toast.info('지식 베이스에서 관련 규정을 검색하고 있습니다...');
         let keywords = inputData;
-        if (wailsApp?.ExtractKeywordsLocalAI && inputData.includes(' ') && inputData.length > 8) {
-          const extracted = await wailsApp.ExtractKeywordsLocalAI(inputData);
-          if (extracted && extracted !== inputData) keywords = extracted;
-        }
         if (wailsApp?.SearchKnowledge) {
           const raw = await wailsApp.SearchKnowledge(keywords, 3);
           if (raw && raw.length > 0) {
@@ -292,6 +292,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
               { role: 'system', content: finalSystemPrompt },
               { role: 'user', content: inputData }
             ],
+            keep_alive: "60m",
             stream: true,
             options: { num_ctx: 4096, num_predict: 2048, temperature: 0.6, top_k: 20, top_p: 0.5 }
           })
@@ -398,14 +399,14 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>AI 모델 선택</label>
-                <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} disabled={generating} style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} disabled={generating} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)', outline: 'none', cursor: 'pointer' }}>
                   <option value="auto">자동 선택 (최적 속도 및 품질)</option>
                   {aiStatus.installedModels.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>작성 모드</label>
-                <select value={promptType} onChange={e => setPromptType(e.target.value)} disabled={generating} style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <select value={promptType} onChange={e => setPromptType(e.target.value)} disabled={generating} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)', outline: 'none', cursor: 'pointer' }}>
                   <option value="general">일반 자유 작성</option>
                   <option value="knowledge_based">통합 검색 기반 작성</option>
                 </select>
@@ -415,7 +416,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>프롬프트 입력 (요청 사항)</label>
               </div>
-              <textarea rows={6} value={inputData} onChange={e => setInputData(e.target.value)} disabled={generating} placeholder="원하시는 문서 내용, 목적이나 학생 관찰 기록을 자유롭게 입력해주세요..." style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
+              <textarea rows={6} value={inputData} onChange={e => setInputData(e.target.value)} disabled={generating} placeholder="원하시는 문서 내용, 목적이나 학생 관찰 기록을 자유롭게 입력해주세요..." style={{ width: '100%', padding: '16px 18px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 15, lineHeight: 1.6, backgroundColor: '#f8fafc', resize: 'vertical', outline: 'none', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)' }} />
             </div>
             {!generating ? (
               <div style={{ display: 'flex', gap: 12 }}>
@@ -461,11 +462,23 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                   </div>
                 </div>
                 {viewMode === 'markdown' ? (
-                  <div className="markdown-content" style={{ width: '100%', padding: '16px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', minHeight: '200px', maxHeight: '500px', overflowY: 'auto', fontSize: 14, lineHeight: 1.6 }}>
-                    <ReactMarkdown>{generatedDraft || (generating ? '생성 중...' : '')}</ReactMarkdown>
+                  <div className="markdown-content" style={{ width: '100%', padding: '24px 28px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#f8fafc', minHeight: '200px', maxHeight: '500px', overflowY: 'auto', fontSize: 15, color: '#334155', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)' }}>
+                    <ReactMarkdown
+                      components={{
+                        p: ({ node, ...props }) => <p style={{ marginBottom: '1.2em', lineHeight: 1.8, letterSpacing: '-0.01em' }} {...props} />,
+                        h1: ({ node, ...props }) => <h1 style={{ fontSize: '1.5em', fontWeight: 700, marginTop: '1.5em', marginBottom: '0.8em', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.4em', color: '#0f172a' }} {...props} />,
+                        h2: ({ node, ...props }) => <h2 style={{ fontSize: '1.3em', fontWeight: 600, marginTop: '1.4em', marginBottom: '0.6em', color: '#1e293b' }} {...props} />,
+                        h3: ({ node, ...props }) => <h3 style={{ fontSize: '1.15em', fontWeight: 600, marginTop: '1.2em', marginBottom: '0.5em', color: '#334155' }} {...props} />,
+                        ul: ({ node, ...props }) => <ul style={{ paddingLeft: '1.8em', marginBottom: '1.2em', listStyleType: 'disc', lineHeight: 1.8 }} {...props} />,
+                        ol: ({ node, ...props }) => <ol style={{ paddingLeft: '1.8em', marginBottom: '1.2em', listStyleType: 'decimal', lineHeight: 1.8 }} {...props} />,
+                        li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
+                        strong: ({ node, ...props }) => <strong style={{ fontWeight: 700, color: '#0f172a' }} {...props} />,
+                        blockquote: ({ node, ...props }) => <blockquote style={{ borderLeft: '4px solid #cbd5e1', color: '#475569', background: '#f8fafc', padding: '0.8em 1.2em', borderRadius: '0 8px 8px 0', margin: '1em 0' }} {...props} />
+                      }}
+                    >{generatedDraft || (generating ? '생성 중...' : '')}</ReactMarkdown>
                   </div>
                 ) : (
-                  <textarea rows={10} value={generatedDraft} onChange={e => setGeneratedDraft(e.target.value)} placeholder="생성 중..." style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)', lineHeight: 1.6, background: generating ? '#fff' : 'transparent' }} />
+                  <textarea rows={12} value={generatedDraft} onChange={e => setGeneratedDraft(e.target.value)} placeholder="생성 중..." style={{ width: '100%', padding: '20px', borderRadius: 10, border: '1px solid #cbd5e1', lineHeight: 1.8, fontSize: 15, color: '#334155', background: generating ? '#f1f5f9' : '#f8fafc', outline: 'none', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)', resize: 'vertical' }} />
                 )}
               </div>
               <div style={{ fontSize: 12, color: '#10b981', fontWeight: 600, textAlign: 'center' }}><i className="fi fi-rr-check-circle" style={{ marginRight: 4 }} /> 생성 완료 시 자동으로 저장됩니다.</div>

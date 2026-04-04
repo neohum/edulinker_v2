@@ -127,22 +127,23 @@ func (p *Plugin) HandleEvent(payload string) error {
 }
 
 func (p *Plugin) RegisterRoutes(router fiber.Router) {
+	// Signer endpoints (Read/Write access for Parents/Students) - view docs and submit signatures
+	// MUST be registered before /:id dynamic routes to avoid path conflicts
+	signerAPI := router.Group("/sign", middleware.RoleMiddleware(models.RoleParent, models.RoleStudent, models.RoleTeacher))
+	signerAPI.Get("", p.listPendingDocuments)
+	signerAPI.Get("/:id", p.getPendingDocument)
+	signerAPI.Post("/:id/submit", p.submitSignature)
+	signerAPI.Delete("/:id", p.deletePendingDocument)
+
 	// Teacher endpoints (Write access) - create documents and monitor signatures
 	teacherAPI := router.Group("/", middleware.RoleMiddleware(models.RoleTeacher))
-	teacherAPI.Post("/", p.createDocument)
-	teacherAPI.Get("/", p.listDocuments)
+	teacherAPI.Post("", p.createDocument)
+	teacherAPI.Get("", p.listDocuments)
 	teacherAPI.Get("/:id", p.getDocument)
 	teacherAPI.Get("/:id/signatures", p.getSignatures)
 	teacherAPI.Get("/:id/pdf", p.downloadPDF)
 	teacherAPI.Delete("/:id", p.deleteDocument)
 	teacherAPI.Put("/:id/recall", p.recallDocument)
-
-	// Signer endpoints (Read/Write access for Parents/Students) - view docs and submit signatures
-	signerAPI := router.Group("/sign", middleware.RoleMiddleware(models.RoleParent, models.RoleStudent, models.RoleTeacher))
-	signerAPI.Get("/", p.listPendingDocuments)
-	signerAPI.Get("/:id", p.getPendingDocument)
-	signerAPI.Post("/:id/submit", p.submitSignature)
-	signerAPI.Delete("/:id", p.deletePendingDocument)
 }
 
 func (p *Plugin) RegisterPublicRoutes(router fiber.Router) {

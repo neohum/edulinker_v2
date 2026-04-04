@@ -149,6 +149,19 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
     }
   }
 
+  const handleNavigate = (page: string) => {
+    if ((window as any).isAIGenerating) {
+      if (!window.confirm('AI 답변 생성이 진행 중입니다. 다른 메뉴로 이동하면 생성이 즉시 중단됩니다. 그래도 이동하시겠습니까?')) {
+        return;
+      }
+      if ((window as any).go?.main?.App?.CancelAIGenerate) {
+        (window as any).go.main.App.CancelAIGenerate();
+      }
+      (window as any).isAIGenerating = false;
+    }
+    setCurrentPage(page as PageView);
+  }
+
   return (
     <div className="app-container">
       <Sidebar
@@ -159,7 +172,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           schoolevents: activeVotingsCount > 0 ? activeVotingsCount : undefined,
           announcement: announcementCounts.total > 0 ? announcementCounts.total : undefined
         }}
-        onNavigate={(page) => setCurrentPage(page as PageView)}
+        onNavigate={handleNavigate}
         onLogout={onLogout}
       />
 
@@ -180,13 +193,13 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         </header>
 
         <div className="main-body" style={currentPage === 'dashboard' ? { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}}>
-          {currentPage === 'dashboard' && <DashboardView user={user} onNavigate={(p) => setCurrentPage(p as PageView)} />}
+          {currentPage === 'dashboard' && <DashboardView user={user} onNavigate={handleNavigate} />}
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
           {currentPage === 'counseling' && <CounselingPage user={user} />}
           {currentPage === 'curriculum' && <CurriculumPage user={user} />}
-          {currentPage === 'aianalysis' && <AIAnalysisPage user={user} onNavigate={(p) => setCurrentPage(p as PageView)} />}
+          {currentPage === 'aianalysis' && <AIAnalysisPage user={user} onNavigate={handleNavigate} />}
           {currentPage === 'schoolevents' && <SchoolEventsPage onVoteChange={fetchVotingsCount} />}
           {currentPage === 'classmgmt' && <ClassMgmtPage />}
           {currentPage === 'behavior-opinion' && <BehaviorOpinionPage user={user} />}
@@ -274,6 +287,10 @@ function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?
     }
   }, [currentMatchIndex, docSearchQuery]);
 
+  useEffect(() => {
+    (window as any).isAIGenerating = isSearching;
+  }, [isSearching]);
+
   const startNewSession = () => {
     setActiveSessionId(null);
     setMessages([{
@@ -326,10 +343,15 @@ function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?
       try {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          setSessions(parsed);
-          if (parsed.length > 0) {
-            setActiveSessionId(parsed[0].id);
-            setMessages(parsed[0].messages);
+          // 중단된 채 저장된 생성 중 상태를 일괄 false로 초기화
+          const fixedParsed = parsed.map((s: any) => ({
+            ...s,
+            messages: (s.messages || []).map((m: any) => ({ ...m, isGenerating: false }))
+          }));
+          setSessions(fixedParsed);
+          if (fixedParsed.length > 0) {
+            setActiveSessionId(fixedParsed[0].id);
+            setMessages(fixedParsed[0].messages);
           } else {
             startNewSession();
           }
@@ -533,21 +555,6 @@ function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?
 
     try {
       const wailsApp = (window as any).go?.main?.App;
-
-      // 문장형 질문(띄어쓰기 포함, 10자 이상)인 경우 핵심어 추출
-      if (userQuery.includes(' ') && userQuery.length > 8) {
-        setMessages(prev => [
-          ...prev,
-          { id: 'extracting', role: 'assistant', content: '💡 자연어 질의를 분석하여 핵심 검색어를 추출하고 있습니다...', isGenerating: true }
-        ]);
-        if (wailsApp?.ExtractKeywordsLocalAI) {
-          const extracted = await wailsApp.ExtractKeywordsLocalAI(userQuery);
-          if (extracted && extracted !== userQuery) {
-            finalQuery = extracted;
-          }
-        }
-        setMessages(prev => prev.filter(m => m.id !== 'extracting'));
-      }
 
       if (wailsApp?.SearchKnowledge) {
         const raw = await wailsApp.SearchKnowledge(finalQuery, 10);

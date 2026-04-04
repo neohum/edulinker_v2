@@ -25,6 +25,8 @@ type LocalRAG struct {
 	db  *sql.DB
 	mu  sync.RWMutex
 	app *App
+
+	cachedChunks []cachedChunk
 }
 
 type RAGSearchResult struct {
@@ -57,8 +59,55 @@ func (a *App) initLocalRAG() error {
 		return fmt.Errorf("failed to migrate RAG db: %w", err)
 	}
 
-	a.rag = &LocalRAG{db: db, app: a}
+	a.rag = &LocalRAG{
+		db:  db,
+		app: a,
+	}
+	a.warmUpRAGCache()
 	return nil
+}
+
+type cachedChunk struct {
+	id, docID, docTitle, sourceType        string
+	chunkIndex                             int
+	chunkText, displayText, headingContext string
+	embedding                              []float64
+}
+
+func (a *App) warmUpRAGCache() {
+	if a.rag == nil || a.rag.db == nil {
+		return
+	}
+	a.rag.mu.Lock()
+	defer a.rag.mu.Unlock()
+
+	rows, err := a.rag.db.Query(`
+		SELECT c.id, c.doc_id, c.doc_title, c.source_type,
+		       c.chunk_index, c.chunk_text, c.display_text, c.heading_context,
+		       e.embedding
+		FROM rag_chunks c
+		LEFT JOIN rag_embeddings e ON e.chunk_id = c.id
+	`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	var chunks []cachedChunk
+	for rows.Next() {
+		var c cachedChunk
+		var embBlob []byte
+		if err := rows.Scan(&c.id, &c.docID, &c.docTitle, &c.sourceType,
+			&c.chunkIndex, &c.chunkText, &c.displayText, &c.headingContext,
+			&embBlob); err != nil {
+			continue
+		}
+		if len(embBlob) > 0 {
+			c.embedding, _ = blobToEmbedding(embBlob)
+		}
+		chunks = append(chunks, c)
+	}
+	a.rag.cachedChunks = chunks
 }
 
 func localRAGDBPath() (string, error) {
@@ -75,7 +124,7 @@ func localRAGDBPath() (string, error) {
 
 // rag_schema_version: 텍스트 인코딩 버그 수정 후 강제 재인덱싱용
 // 버전이 다르면 모든 청크/임베딩 삭제 후 재인덱싱
-const ragSchemaVersion = "v3"
+const ragSchemaVersion = "v4"
 
 func migrateLocalRAG(db *sql.DB) error {
 	// 메타 테이블 (스키마 버전 관리)
@@ -89,6 +138,7 @@ func migrateLocalRAG(db *sql.DB) error {
 	row := db.QueryRow("SELECT value FROM rag_meta WHERE key = 'schema_version'")
 	_ = row.Scan(&savedVersion)
 	if savedVersion != ragSchemaVersion {
+		db.Exec("DROP TABLE IF EXISTS rag_fts")
 		db.Exec("DROP TABLE IF EXISTS rag_embeddings")
 		db.Exec("DROP TABLE IF EXISTS rag_chunks")
 		db.Exec("INSERT OR REPLACE INTO rag_meta(key, value) VALUES ('schema_version', ?)", ragSchemaVersion)
@@ -120,6 +170,10 @@ func migrateLocalRAG(db *sql.DB) error {
 			chunk_id  TEXT PRIMARY KEY,
 			embedding BLOB NOT NULL
 		);
+	`)
+
+	_, err = db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(chunk_id UNINDEXED, chunk_text, display_text, doc_title);
 	`)
 	return err
 }
@@ -280,8 +334,9 @@ func simpleHash(s string) string {
 
 func getLocalEmbedding(ctx context.Context, text string) ([]float64, error) {
 	body, _ := json.Marshal(map[string]string{
-		"model":  "nomic-embed-text",
-		"prompt": text,
+		"model":      "nomic-embed-text",
+		"prompt":     text,
+		"keep_alive": "60m",
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:11434/api/embeddings", bytes.NewBuffer(body))
 	if err != nil {
@@ -331,41 +386,6 @@ func cosineSim(a, b []float64) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
-// ── BM25 ──
-
-func bm25Score(query, text string, avgLen float64) float64 {
-	const k1, b = 1.5, 0.75
-	terms := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return r == ' ' || r == ',' || r == '.' || r == '?' || r == ':'
-	})
-	words := strings.Fields(strings.ToLower(text))
-	docLen := float64(len(words))
-	freq := make(map[string]int)
-	for _, w := range words {
-		freq[w]++
-	}
-
-	var score float64
-	for _, term := range terms {
-		if len(term) < 2 {
-			continue
-		}
-		tf := 0
-		for w, cnt := range freq {
-			if strings.Contains(w, term) {
-				tf += cnt
-			}
-		}
-		if tf == 0 {
-			continue
-		}
-		idf := math.Log(1 + 1.0/(0.5+0.5))
-		tfNorm := float64(tf) * (k1 + 1) / (float64(tf) + k1*(1-b+b*(docLen/math.Max(avgLen, 1))))
-		score += idf * tfNorm
-	}
-	return score
-}
-
 // ── Wails 바인딩 함수들 ──
 
 // IndexDocument: 문서를 청킹/임베딩해서 로컬 SQLite에 저장
@@ -386,6 +406,7 @@ func (a *App) IndexDocument(docID, docTitle, sourceType, markdownContent string)
 	}
 
 	// 기존 청크 삭제
+	a.rag.db.Exec("DELETE FROM rag_fts WHERE chunk_id IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", docID)
 	a.rag.db.Exec("DELETE FROM rag_embeddings WHERE chunk_id IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", docID)
 	a.rag.db.Exec("DELETE FROM rag_chunks WHERE doc_id = ?", docID)
 
@@ -405,6 +426,8 @@ func (a *App) IndexDocument(docID, docTitle, sourceType, markdownContent string)
 			continue
 		}
 
+		a.rag.db.Exec(`INSERT INTO rag_fts(chunk_id, chunk_text, display_text, doc_title) VALUES (?, ?, ?, ?)`, chunkID, ch.text, ch.displayText, docTitle)
+
 		// Ollama 임베딩
 		vec, err := getLocalEmbedding(context.Background(), ch.text)
 		if err != nil || len(vec) == 0 {
@@ -422,6 +445,9 @@ func (a *App) IndexDocument(docID, docTitle, sourceType, markdownContent string)
 		)
 	}
 
+	// Hot reload in-memory cache
+	go a.warmUpRAGCache()
+
 	return nil
 }
 
@@ -430,12 +456,16 @@ func (a *App) DeleteDocumentIndex(docID string) error {
 	if a.rag == nil {
 		return nil
 	}
+	a.rag.db.Exec("DELETE FROM rag_fts WHERE chunk_id IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", docID)
 	a.rag.db.Exec("DELETE FROM rag_embeddings WHERE chunk_id IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", docID)
 	a.rag.db.Exec("DELETE FROM rag_chunks WHERE doc_id = ?", docID)
+
+	// Hot reload cache
+	go a.warmUpRAGCache()
 	return nil
 }
 
-// SearchKnowledge: BM25 + 시맨틱 RRF 검색
+// SearchKnowledge: FTS5 BM25 + In-Memory 시맨틱 RRF 검색
 func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error) {
 	if a.rag == nil {
 		return nil, fmt.Errorf("RAG engine not initialized")
@@ -444,80 +474,76 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 		topK = 5
 	}
 
-	// 모든 청크 로드
-	rows, err := a.rag.db.Query(`
-		SELECT c.id, c.doc_id, c.doc_title, c.source_type,
-		       c.chunk_index, c.chunk_text, c.display_text, c.heading_context,
-		       e.embedding
-		FROM rag_chunks c
-		LEFT JOIN rag_embeddings e ON e.chunk_id = c.id
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	a.rag.mu.RLock()
+	allChunks := a.rag.cachedChunks
+	a.rag.mu.RUnlock()
 
-	type chunk struct {
-		id, docID, docTitle, sourceType        string
-		chunkIndex                             int
-		chunkText, displayText, headingContext string
-		embedding                              []float64
-	}
-
-	var chunks []chunk
-	for rows.Next() {
-		var c chunk
-		var embBlob []byte
-		if err := rows.Scan(&c.id, &c.docID, &c.docTitle, &c.sourceType,
-			&c.chunkIndex, &c.chunkText, &c.displayText, &c.headingContext,
-			&embBlob); err != nil {
-			continue
-		}
-		if embBlob != nil {
-			c.embedding, _ = blobToEmbedding(embBlob)
-		}
-		chunks = append(chunks, c)
-	}
-
-	if len(chunks) == 0 {
+	if len(allChunks) == 0 {
 		return []RAGSearchResult{}, nil
 	}
 
-	// BM25 계산
-	totalWords := 0
-	for _, c := range chunks {
-		totalWords += len(strings.Fields(c.displayText))
-	}
-	avgLen := float64(totalWords) / float64(len(chunks))
-
+	// 1. FTS5 검색
 	type scored struct {
-		c           chunk
+		c           cachedChunk
 		bm25        float64
 		sem         float64
 		fusionScore float64
 	}
 
+	chunkMap := make(map[string]cachedChunk, len(allChunks))
+	for _, c := range allChunks {
+		chunkMap[c.id] = c
+	}
+
 	var bm25List []scored
-	for _, c := range chunks {
-		searchText := c.docTitle + " " + c.headingContext + " " + c.displayText
-		score := bm25Score(query, searchText, avgLen)
-		if score > 0.1 {
-			bm25List = append(bm25List, scored{c: c, bm25: score})
+	ftsQuery := strings.ReplaceAll(query, "\"", "")
+	ftsQuery = strings.ReplaceAll(ftsQuery, "'", "")
+	terms := strings.Fields(ftsQuery)
+	var matchExpr string
+	for i, t := range terms {
+		if len(t) < 2 {
+			continue
+		}
+		if i > 0 {
+			matchExpr += " OR "
+		}
+		matchExpr += "\"" + t + "\"*"
+	}
+
+	if matchExpr != "" {
+		rows, err := a.rag.db.Query(`
+			SELECT chunk_id, rank
+			FROM rag_fts
+			WHERE rag_fts MATCH ?
+			ORDER BY rank LIMIT 100
+		`, matchExpr)
+		if err == nil {
+			for rows.Next() {
+				var id string
+				var rank float64 // FTS5 rank is negative.
+				if err := rows.Scan(&id, &rank); err == nil {
+					if c, ok := chunkMap[id]; ok {
+						score := math.Abs(rank)
+						bm25List = append(bm25List, scored{c: c, bm25: score})
+					}
+				}
+			}
+			rows.Close()
 		}
 	}
 	sort.Slice(bm25List, func(i, j int) bool { return bm25List[i].bm25 > bm25List[j].bm25 })
 
-	// 시맨틱 검색
+	// 2. 인메모리 시맨틱 검색 (초고속 벡터 연산)
 	var semList []scored
 	hasVec := false
 
 	queryVec, embErr := getLocalEmbedding(context.Background(), query)
 	if embErr == nil && len(queryVec) > 0 {
 		hasVec = true
-		for _, c := range chunks {
+		for _, c := range allChunks {
 			if len(c.embedding) > 0 {
 				sim := cosineSim(queryVec, c.embedding)
-				if sim >= 0.45 { // 임계값 (원하는 경우 조절)
+				if sim >= 0.45 {
 					semList = append(semList, scored{c: c, sem: sim})
 				}
 			}
@@ -525,7 +551,7 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 		sort.Slice(semList, func(i, j int) bool { return semList[i].sem > semList[j].sem })
 	}
 
-	// RRF 융합
+	// 3. RRF 융합
 	const rrfK = 60
 	fusionMap := make(map[string]*scored)
 
@@ -546,9 +572,9 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 		}
 	}
 
-	addRRF(bm25List, 1.0, 20)
+	addRRF(bm25List, 1.0, 50)
 	if hasVec {
-		addRRF(semList, 1.2, 20)
+		addRRF(semList, 1.2, 50)
 	}
 
 	fusionList := make([]*scored, 0, len(fusionMap))
@@ -559,7 +585,7 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 		return fusionList[i].fusionScore > fusionList[j].fusionScore
 	})
 
-	// 문서별 중복 제거
+	// 문서별 중복 제거 및 반환
 	results := make([]RAGSearchResult, 0, topK)
 	seenDocs := make(map[string]int)
 
