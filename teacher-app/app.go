@@ -47,7 +47,7 @@ type App struct {
 	hancomStatus  map[string]interface{} // cached on startup
 	aiCancel      context.CancelFunc     // cancel func for ongoing AI generation
 	rag           *LocalRAG              // 로컬 RAG 엔진 (SQLite + Ollama)
-	attendanceDB  *sql.DB                // 로컬 출결 기록 DB
+	secureDB      *sql.DB                // 로컬 보안 DB (출결, 상담, 투두, 등)
 }
 
 type hwpTask struct {
@@ -80,9 +80,14 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Println("[RAG] Failed to initialize local RAG engine:", err)
 	}
 
-	// 로컬 출결 DB 초기화 (SQLite)
-	if err := a.initLocalAttendance(); err != nil {
-		fmt.Println("[Attendance] Failed to initialize local attendance db:", err)
+	// 암호화 키 초기화
+	if err := InitCryptoKey(); err != nil {
+		fmt.Println("[Security] Failed to init local crypto key:", err)
+	}
+
+	// 로컬 보안 DB 초기화 (SQLite)
+	if err := a.initSecureDB(); err != nil {
+		fmt.Println("[DB] Failed to initialize secure db:", err)
 	}
 
 	go systray.Run(a.onTrayReady, a.onTrayExit)
@@ -294,6 +299,7 @@ type LoginResult struct {
 	Grade        int    `json:"grade"`
 	ClassNum     int    `json:"class_num"`
 	Error        string `json:"error,omitempty"`
+	IsOffline    bool   `json:"is_offline,omitempty"`
 }
 
 // Register registers a new user with the API server and signs them in.
@@ -368,9 +374,15 @@ func (a *App) Register(schoolCode, schoolName, name, phone, password, role, clas
 // Login authenticates and stores the JWT token.
 func (a *App) Login(phone, password string) LoginResult {
 	body := fmt.Sprintf(`{"phone":"%s","password":"%s"}`, phone, password)
-	resp, err := http.Post(a.apiBase+"/api/auth/login", "application/json", strings.NewReader(body))
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, _ := http.NewRequest("POST", a.apiBase+"/api/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
-		return LoginResult{Success: false, Error: "서버에 연결할 수 없습니다"}
+		// Server unreachable or timeout -> Fallback to SQLite offline login
+		return a.verifyOfflineLogin(phone, password)
 	}
 	defer resp.Body.Close()
 
@@ -379,6 +391,7 @@ func (a *App) Login(phone, password string) LoginResult {
 	if resp.StatusCode != 200 {
 		var errResp map[string]string
 		json.Unmarshal(data, &errResp)
+		// Request actually reached the server but was rejected (e.g., bad password)
 		return LoginResult{Success: false, Error: errResp["error"]}
 	}
 
@@ -402,7 +415,7 @@ func (a *App) Login(phone, password string) LoginResult {
 		c = int(cVal)
 	}
 
-	return LoginResult{
+	lr := LoginResult{
 		Success:      true,
 		Token:        a.authToken,
 		RefreshToken: result["refresh_token"].(string),
@@ -416,6 +429,12 @@ func (a *App) Login(phone, password string) LoginResult {
 		Grade:        g,
 		ClassNum:     c,
 	}
+
+	// Cache successful login for future offline use
+	profileBytes, _ := json.Marshal(lr)
+	a.saveOfflineLogin(phone, password, string(profileBytes))
+
+	return lr
 }
 
 // GetToken returns the current JWT token for frontend API calls.
@@ -431,6 +450,23 @@ func (a *App) IsLoggedIn() bool {
 // Logout clears the current session.
 func (a *App) Logout() {
 	a.authToken = ""
+}
+
+// SetAPIBase updates the base API URL used by the Go backend proxy.
+func (a *App) SetAPIBase(url string) {
+	// Strip trailing slashes to avoid double-slash issues in endpoints
+	a.apiBase = strings.TrimRight(url, "/")
+}
+
+// CheckConnection pings the backend server directly to verify connectivity, avoiding WebView CORS/PNA issues.
+func (a *App) CheckConnection() bool {
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(a.apiBase + "/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
 }
 
 // --- NEIS API ---
@@ -858,11 +894,6 @@ func getIPAddress() string {
 		}
 	}
 	return "알 수 없음"
-}
-
-// SetAPIBase allows changing the API server URL.
-func (a *App) SetAPIBase(url string) {
-	a.apiBase = url
 }
 
 // GetFileDataURL fetches a file from the server and returns it as a data URL for rendering in the UI.

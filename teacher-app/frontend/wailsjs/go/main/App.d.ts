@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function CancelAIGenerate():Promise<void>;
 
+export function CheckConnection():Promise<boolean>;
+
 export function CheckHancom():Promise<Record<string, any>>;
 
 export function CheckOfficeStatus():Promise<Record<string, boolean>>;
@@ -32,9 +34,15 @@ export function DeleteAILog(arg1:string):Promise<void>;
 
 export function DeleteAttendanceRecord(arg1:string):Promise<void>;
 
+export function DeleteCounselingRecord(arg1:string):Promise<void>;
+
+export function DeleteCurriculumEvaluation(arg1:string):Promise<void>;
+
 export function DeleteDocumentIndex(arg1:string):Promise<void>;
 
 export function DeleteOpinionHistory(arg1:string):Promise<void>;
+
+export function DeleteTodoItem(arg1:string):Promise<void>;
 
 export function DownloadFile(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 
@@ -48,9 +56,17 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetAILogs():Promise<Array<main.AILog>>;
 
+export function GetCounselingRecords(arg1:string):Promise<Array<main.CounselingRecord>>;
+
+export function GetCurriculumEvaluations():Promise<Array<main.EvalRecord>>;
+
 export function GetFileDataURL(arg1:string):Promise<string>;
 
 export function GetIndexedDocIDs():Promise<Array<string>>;
+
+export function GetLocalKnowledge():Promise<Array<main.KnowledgeDoc>>;
+
+export function GetLocalLinkers():Promise<Array<main.Bookmark>>;
 
 export function GetLocalModels():Promise<Array<string>>;
 
@@ -66,6 +82,8 @@ export function GetSchoolYearRecords(arg1:number):Promise<Array<main.AttendanceR
 
 export function GetSystemInfo():Promise<main.SystemInfo>;
 
+export function GetTodos(arg1:string,arg2:string):Promise<Array<main.TodoItem>>;
+
 export function GetToken():Promise<string>;
 
 export function IndexDocument(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
@@ -77,6 +95,8 @@ export function IsLoggedIn():Promise<boolean>;
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
 export function Logout():Promise<void>;
+
+export function OpenLocalKnowledgeFile(arg1:string,arg2:string):Promise<void>;
 
 export function PullModel(arg1:string):Promise<main.PullModelResult>;
 
@@ -90,11 +110,17 @@ export function SaveAttendanceRecord(arg1:string,arg2:string,arg3:string):Promis
 
 export function SaveAttendanceRemarks(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function SaveCounselingRecord(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function SaveCurriculumEvaluation(arg1:string,arg2:string,arg3:string,arg4:number,arg5:string):Promise<void>;
+
 export function SaveFileBytes(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 
 export function SaveOpinionHistory(arg1:string,arg2:string):Promise<void>;
 
 export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
+
+export function SaveTodoItem(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 
 export function SearchKnowledge(arg1:string,arg2:number):Promise<Array<main.RAGSearchResult>>;
 
@@ -109,5 +135,11 @@ export function SetAPIBase(arg1:string):Promise<void>;
 export function StartOllama():Promise<main.OllamaStatus>;
 
 export function StopOllama():Promise<main.OllamaStatus>;
+
+export function SyncKnowledge(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SyncLinkers(arg1:string):Promise<void>;
+
+export function ToggleTodoItem(arg1:string):Promise<void>;
 
 export function UploadFileFromBytes(arg1:string,arg2:string):Promise<main.UploadFileResult>;

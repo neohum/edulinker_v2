@@ -94,6 +94,38 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	    }
 	}
+	export class Bookmark {
+	    id: string;
+	    title: string;
+	    url: string;
+	    student_url: string;
+	    category: string;
+	    is_shared: boolean;
+	    share_teachers: boolean;
+	    share_class: boolean;
+	    target_ids: string;
+	    is_own: boolean;
+	    sort_order: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Bookmark(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.url = source["url"];
+	        this.student_url = source["student_url"];
+	        this.category = source["category"];
+	        this.is_shared = source["is_shared"];
+	        this.share_teachers = source["share_teachers"];
+	        this.share_class = source["share_class"];
+	        this.target_ids = source["target_ids"];
+	        this.is_own = source["is_own"];
+	        this.sort_order = source["sort_order"];
+	    }
+	}
 	export class ConvertToMarkdownResult {
 	    success: boolean;
 	    text: string;
@@ -110,6 +142,28 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class CounselingRecord {
+	    id: string;
+	    student_id: string;
+	    date: string;
+	    type: string;
+	    content: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CounselingRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.student_id = source["student_id"];
+	        this.date = source["date"];
+	        this.type = source["type"];
+	        this.content = source["content"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 	export class DownloadFileResult {
 	    success: boolean;
 	    file_path?: string;
@@ -124,6 +178,30 @@ export namespace main {
 	        this.success = source["success"];
 	        this.file_path = source["file_path"];
 	        this.error = source["error"];
+	    }
+	}
+	export class EvalRecord {
+	    id: string;
+	    student_id: string;
+	    subject: string;
+	    evaluation_type: string;
+	    score: number;
+	    feedback: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EvalRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.student_id = source["student_id"];
+	        this.subject = source["subject"];
+	        this.evaluation_type = source["evaluation_type"];
+	        this.score = source["score"];
+	        this.feedback = source["feedback"];
+	        this.created_at = source["created_at"];
 	    }
 	}
 	export class HwpConvertResult {
@@ -180,6 +258,51 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class KnowledgeDoc {
+	    id: string;
+	    title: string;
+	    source_type: string;
+	    original_filename: string;
+	    file_url: string;
+	    markdown_content: string;
+	    created_at: string;
+	    // Go type: struct { Name string "json:\"name\""; Grade int "json:\"grade\""; ClassNum int "json:\"class_num\"" }
+	    user?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new KnowledgeDoc(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.source_type = source["source_type"];
+	        this.original_filename = source["original_filename"];
+	        this.file_url = source["file_url"];
+	        this.markdown_content = source["markdown_content"];
+	        this.created_at = source["created_at"];
+	        this.user = this.convertValues(source["user"], Object);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class LoginResult {
 	    success: boolean;
 	    token: string;
@@ -194,6 +317,7 @@ export namespace main {
 	    grade: number;
 	    class_num: number;
 	    error?: string;
+	    is_offline?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new LoginResult(source);
@@ -214,6 +338,7 @@ export namespace main {
 	        this.grade = source["grade"];
 	        this.class_num = source["class_num"];
 	        this.error = source["error"];
+	        this.is_offline = source["is_offline"];
 	    }
 	}
 	export class OfficeConvertResult {
@@ -388,6 +513,32 @@ export namespace main {
 	        this.arch = source["arch"];
 	        this.go_version = source["go_version"];
 	        this.num_cpu = source["num_cpu"];
+	    }
+	}
+	export class TodoItem {
+	    id: string;
+	    title: string;
+	    description: string;
+	    scope: string;
+	    priority: number;
+	    is_completed: boolean;
+	    due_date?: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TodoItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.scope = source["scope"];
+	        this.priority = source["priority"];
+	        this.is_completed = source["is_completed"];
+	        this.due_date = source["due_date"];
+	        this.created_at = source["created_at"];
 	    }
 	}
 	export class UploadFileResult {

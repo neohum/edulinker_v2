@@ -177,19 +177,40 @@ func (a *App) GetStatus() ServerStatus {
 	return status
 }
 
-// GetLocalIP returns the non-loopback local IP of the host
+// GetLocalIP returns the non-loopback local IP of the host, prioritizing standard private subnets
 func (a *App) GetLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return "알 수 없음"
 	}
+
+	var fallbackIP string
 	for _, address := range addrs {
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+				ipStr := ipnet.IP.String()
+
+				// 169.254 (APIPA/가상어댑터)는 가급적 제외
+				if strings.HasPrefix(ipStr, "169.254.") {
+					continue
+				}
+
+				// 공유기가 할당한 사설 IP 대역 우선순위 부여
+				if strings.HasPrefix(ipStr, "192.168.") || strings.HasPrefix(ipStr, "10.") || strings.HasPrefix(ipStr, "172.") {
+					return ipStr
+				}
+
+				if fallbackIP == "" {
+					fallbackIP = ipStr
+				}
 			}
 		}
 	}
+
+	if fallbackIP != "" {
+		return fallbackIP
+	}
+
 	return "알 수 없음"
 }
 
@@ -303,19 +324,37 @@ func (a *App) buildAndStart() {
 
 	a.emitLog("🚀 [DASHBOARD] 서버 프로세스가 시작되었습니다 (PID: " + fmt.Sprintf("%d", cmd.Process.Pid) + ")")
 
-	// Stream stdout
+	// Stream stdout safely without line length limits
 	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			a.emitLog(scanner.Text())
+		reader := bufio.NewReader(stdout)
+		var lineBuf bytes.Buffer
+		for {
+			chunk, isPrefix, err := reader.ReadLine()
+			if err != nil {
+				break
+			}
+			lineBuf.Write(chunk)
+			if !isPrefix {
+				a.emitLog(lineBuf.String())
+				lineBuf.Reset()
+			}
 		}
 	}()
 
-	// Stream stderr
+	// Stream stderr safely
 	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			a.emitLog("[STDERR] " + scanner.Text())
+		reader := bufio.NewReader(stderr)
+		var lineBuf bytes.Buffer
+		for {
+			chunk, isPrefix, err := reader.ReadLine()
+			if err != nil {
+				break
+			}
+			lineBuf.Write(chunk)
+			if !isPrefix {
+				a.emitLog("[STDERR] " + lineBuf.String())
+				lineBuf.Reset()
+			}
 		}
 	}()
 
@@ -847,5 +886,78 @@ func (a *App) DeleteDBKnowledgeDoc(docID string) error {
 	defer db.Close()
 
 	_, err = db.Exec("DELETE FROM knowledge_docs WHERE id = $1", docID)
+	return err
+}
+
+// ── 공문 관리 ──
+
+type DBAnnouncement struct {
+	ID              string `json:"id"`
+	SchoolID        string `json:"school_id"`
+	Title           string `json:"title"`
+	Content         string `json:"content"`
+	Type            string `json:"type"`
+	IsUrgent        bool   `json:"is_urgent"`
+	MarkdownContent string `json:"markdown_content"`
+	AttachmentsJSON string `json:"attachments_json"`
+	CreatedBy       string `json:"created_by"`
+	CreatedByName   string `json:"created_by_name"`
+	CreatedAt       string `json:"created_at"`
+}
+
+func (a *App) GetDBAnnouncements() ([]DBAnnouncement, error) {
+	db, err := getDBConn()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT a.id, a.school_id, COALESCE(a.title, ''),
+		       COALESCE(a.content, ''),
+		       COALESCE(a.type, 'simple'),
+		       a.is_urgent,
+		       COALESCE(a.markdown_content, ''),
+		       COALESCE(a.attachments_json, '[]'),
+		       a.author_id::text,
+		       COALESCE(u.name, '') as created_by_name,
+		       a.created_at
+		FROM announcements a
+		LEFT JOIN users u ON a.author_id = u.id
+		ORDER BY a.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var anns []DBAnnouncement
+	for rows.Next() {
+		var d DBAnnouncement
+		var createdAt time.Time
+		var schoolID sql.NullString
+		if err := rows.Scan(&d.ID, &schoolID, &d.Title,
+			&d.Content, &d.Type, &d.IsUrgent,
+			&d.MarkdownContent, &d.AttachmentsJSON,
+			&d.CreatedBy, &d.CreatedByName, &createdAt); err != nil {
+			continue
+		}
+		if schoolID.Valid {
+			d.SchoolID = schoolID.String
+		}
+		d.CreatedAt = createdAt.Format("2006-01-02T15:04:05Z")
+		anns = append(anns, d)
+	}
+	return anns, nil
+}
+
+func (a *App) DeleteDBAnnouncement(id string) error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec("DELETE FROM announcements WHERE id = $1", id)
 	return err
 }

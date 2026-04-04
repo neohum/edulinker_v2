@@ -62,13 +62,9 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const fetchEvalRecords = async (studentId: string) => {
     setEvalLoading(true)
     try {
-      const res = await apiFetch(`/api/plugins/curriculum/evaluations`)
-      if (res.ok) {
-        const d = await res.json();
-        setEvalRecords((d || []).filter((r: any) => r.student_id === studentId))
-      } else {
-        setEvalRecords([])
-      }
+      const data = await (window as any).go.main.App.GetCurriculumEvaluations();
+      // data already matches EvalRecord structure, just filter it
+      setEvalRecords((data || []).filter((r: any) => r.student_id === studentId))
     } catch { setEvalRecords([]) } finally { setEvalLoading(false) }
   }
 
@@ -77,29 +73,21 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
     if (!form.title.trim() || !form.score) { toast.error('평가명과 점수를 입력해주세요.'); return }
     setSubmitting(true)
     try {
-      const res = await apiFetch('/api/plugins/curriculum/evaluations', {
-        method: 'POST',
-        body: JSON.stringify({
-          student_id: selectedStudent.id, subject: form.subject, evaluation_type: form.title.trim(),
-          score: Number(form.score), feedback: form.memo
-        })
-      })
-      if (res.ok) {
-        toast.success('수행평가 기록이 저장되었습니다.')
-        setShowForm(false)
-        setForm({ subject: '국어', title: '', score: '', memo: '' })
-        fetchEvalRecords(selectedStudent.id)
-      } else { const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.') }
-    } catch { toast.error('서버에 연결할 수 없습니다.') } finally { setSubmitting(false) }
+      await (window as any).go.main.App.SaveCurriculumEvaluation(selectedStudent.id, form.subject, form.title.trim(), Number(form.score), form.memo);
+      toast.success('수행평가 기록이 저장되었습니다.')
+      setShowForm(false)
+      setForm({ subject: '국어', title: '', score: '', memo: '' })
+      fetchEvalRecords(selectedStudent.id)
+    } catch { toast.error('저장에 실패했습니다.') } finally { setSubmitting(false) }
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('이 수행평가 기록을 삭제하시겠습니까?')) return
     try {
-      const res = await apiFetch(`/api/plugins/curriculum/evaluations/${id}`, { method: 'DELETE' })
-      if (res.ok) { toast.success('삭제되었습니다.'); if (selectedStudent) fetchEvalRecords(selectedStudent.id) }
-      else toast.error('삭제에 실패했습니다.')
-    } catch { toast.error('서버에 연결할 수 없습니다.') }
+      await (window as any).go.main.App.DeleteCurriculumEvaluation(id);
+      toast.success('삭제되었습니다.');
+      if (selectedStudent) fetchEvalRecords(selectedStudent.id);
+    } catch { toast.error('삭제에 실패했습니다.') }
   }
 
   return (

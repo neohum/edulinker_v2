@@ -3,6 +3,7 @@ package sendoc
 import (
 	"encoding/json"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/edulinker/backend/internal/core/middleware"
@@ -130,6 +131,7 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	teacherAPI := router.Group("/", middleware.RoleMiddleware(models.RoleTeacher))
 	teacherAPI.Post("/", p.createDocument)
 	teacherAPI.Get("/", p.listDocuments)
+	teacherAPI.Get("/:id", p.getDocument)
 	teacherAPI.Get("/:id/signatures", p.getSignatures)
 	teacherAPI.Get("/:id/pdf", p.downloadPDF)
 	teacherAPI.Delete("/:id", p.deleteDocument)
@@ -138,6 +140,7 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	// Signer endpoints (Read/Write access for Parents/Students) - view docs and submit signatures
 	signerAPI := router.Group("/sign", middleware.RoleMiddleware(models.RoleParent, models.RoleStudent, models.RoleTeacher))
 	signerAPI.Get("/", p.listPendingDocuments)
+	signerAPI.Get("/:id", p.getPendingDocument)
 	signerAPI.Post("/:id/submit", p.submitSignature)
 	signerAPI.Delete("/:id", p.deletePendingDocument)
 }
@@ -186,6 +189,19 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create document"})
 	}
 
+	// Always include the author themselves if they are not in the list,
+	// so the sender also gets a copy in their "Received Documents" to sign.
+	hasAuthor := false
+	for _, targetID := range req.TargetUserIDs {
+		if targetID == userID {
+			hasAuthor = true
+			break
+		}
+	}
+	if !hasAuthor {
+		req.TargetUserIDs = append(req.TargetUserIDs, userID)
+	}
+
 	// Create recipients using Bulk Insert for maximum performance
 	var recipients []models.SendocRecipient
 	for _, targetID := range req.TargetUserIDs {
@@ -215,11 +231,26 @@ func (p *Plugin) listDocuments(c *fiber.Ctx) error {
 	}
 
 	var docs []models.Sendoc
-	if err := p.db.Preload("Author").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
+	if err := p.db.Omit("BackgroundURL", "FieldsJSON", "Content").Preload("Author").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch documents"})
 	}
 
 	return c.JSON(docs)
+}
+
+func (p *Plugin) getDocument(c *fiber.Ctx) error {
+	docID := c.Params("id")
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var doc models.Sendoc
+	if err := p.db.Preload("Author").Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found"})
+	}
+
+	return c.JSON(doc)
 }
 
 func (p *Plugin) getSignatures(c *fiber.Ctx) error {
@@ -239,13 +270,33 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	var recipients []models.SendocRecipient
-	if err := p.db.Preload("User").Preload("Sendoc").Preload("Sendoc.Author").
-		Joins("JOIN sendocs ON sendocs.id = sendoc_recipients.sendoc_id").
-		Where("sendoc_recipients.user_id = ?", userID).
-		Where("sendocs.deleted_at IS NULL AND sendocs.status != ?", "recalled").
-		Order("sendocs.created_at desc").Find(&recipients).Error; err != nil {
+	var allRecipients []models.SendocRecipient
+	if err := p.db.Preload("User").
+		Preload("Sendoc").
+		Preload("Sendoc.Author").
+		Where("user_id = ?", userID).
+		Find(&allRecipients).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch your documents"})
+	}
+
+	var recipients []models.SendocRecipient
+	for _, r := range allRecipients {
+		// If Sendoc is not loaded (deleted manually or soft deleted) or recalled, skip it
+		if r.Sendoc.ID == uuid.Nil || r.Sendoc.Status == "recalled" {
+			continue
+		}
+		recipients = append(recipients, r)
+	}
+
+	// Sort the valid recipients by Sendoc.CreatedAt descending
+	sort.Slice(recipients, func(i, j int) bool {
+		return recipients[i].Sendoc.CreatedAt.After(recipients[j].Sendoc.CreatedAt)
+	})
+
+	for _, r := range recipients {
+		if r.Sendoc.ID == uuid.Nil {
+			log.Printf("[Sendoc] WARNING: Sendoc preload returned nil/empty for recipient ID: %s", r.ID.String())
+		}
 	}
 
 	// Map to flat structure for frontend compatibility
@@ -286,6 +337,56 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(result)
+}
+
+func (p *Plugin) getPendingDocument(c *fiber.Ctx) error {
+	docID := c.Params("id")
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var recipient models.SendocRecipient
+	if err := p.db.Preload("User").Preload("Sendoc").Preload("Sendoc.Author").
+		Joins("JOIN sendocs ON sendocs.id = sendoc_recipients.sendoc_id").
+		Where("sendoc_recipients.user_id = ? AND sendoc_recipients.sendoc_id = ?", userID, docID).
+		First(&recipient).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found"})
+	}
+
+	type PendingDoc struct {
+		ID            uuid.UUID  `json:"id"`
+		Title         string     `json:"title"`
+		Status        string     `json:"status"`
+		BackgroundURL string     `json:"background_url"`
+		FieldsJSON    string     `json:"fields_json"`
+		FormDataJSON  string     `json:"form_data_json,omitempty"`
+		CreatedAt     time.Time  `json:"created_at"`
+		IsSigned      bool       `json:"is_signed"`
+		SignedAt      *time.Time `json:"signed_at,omitempty"`
+		Author        *struct {
+			Name string `json:"name"`
+		} `json:"author,omitempty"`
+	}
+
+	doc := PendingDoc{
+		ID:            recipient.Sendoc.ID,
+		Title:         recipient.Sendoc.Title,
+		Status:        recipient.Sendoc.Status,
+		BackgroundURL: recipient.Sendoc.BackgroundURL,
+		FieldsJSON:    recipient.Sendoc.FieldsJSON,
+		FormDataJSON:  recipient.FormDataJSON,
+		CreatedAt:     recipient.Sendoc.CreatedAt,
+		IsSigned:      recipient.IsSigned,
+		SignedAt:      recipient.SignedAt,
+	}
+	if recipient.Sendoc.Author.Name != "" {
+		doc.Author = &struct {
+			Name string `json:"name"`
+		}{Name: recipient.Sendoc.Author.Name}
+	}
+
+	return c.JSON(doc)
 }
 
 func (p *Plugin) submitSignature(c *fiber.Ctx) error {

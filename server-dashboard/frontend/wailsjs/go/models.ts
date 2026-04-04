@@ -1,5 +1,37 @@
 export namespace main {
 	
+	export class DBAnnouncement {
+	    id: string;
+	    school_id: string;
+	    title: string;
+	    content: string;
+	    type: string;
+	    is_urgent: boolean;
+	    markdown_content: string;
+	    attachments_json: string;
+	    created_by: string;
+	    created_by_name: string;
+	    created_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DBAnnouncement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.school_id = source["school_id"];
+	        this.title = source["title"];
+	        this.content = source["content"];
+	        this.type = source["type"];
+	        this.is_urgent = source["is_urgent"];
+	        this.markdown_content = source["markdown_content"];
+	        this.attachments_json = source["attachments_json"];
+	        this.created_by = source["created_by"];
+	        this.created_by_name = source["created_by_name"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 	export class DBKnowledgeDoc {
 	    id: string;
 	    school_id: string;

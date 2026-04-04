@@ -18,6 +18,13 @@ export function useNetwork() {
     window.addEventListener('server-offline', handleServerOffline);
     window.addEventListener('server-online', handleServerOnline);
 
+    // Initial check on mount
+    fetch(`${API_BASE}/health`)
+      .then(res => {
+        if (!res.ok) window.dispatchEvent(new Event('server-offline'));
+      })
+      .catch(() => window.dispatchEvent(new Event('server-offline')));
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);

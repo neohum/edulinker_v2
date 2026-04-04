@@ -30,14 +30,8 @@ export default function TodoPage() {
   const fetchTodos = async () => {
     try {
       setLoading(true)
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/todo?scope=${filterScope}&status=${filterStatus}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setTodos(data || [])
-      }
+      const data = await (window as any).go.main.App.GetTodos(filterScope, filterStatus)
+      setTodos(data || [])
     } catch (e) {
       console.error(e)
     } finally {
@@ -49,43 +43,22 @@ export default function TodoPage() {
     if (!todoTitle.trim()) { toast.warning('제목을 입력하세요'); return }
 
     try {
-      const token = await getToken()
-      const res = await fetch('http://localhost:5200/api/plugins/todo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title: todoTitle,
-          description: '',
-          scope: todoScope,
-          priority: 0
-        })
-      })
-      if (res.ok) {
-        toast.success('할 일이 추가되었습니다.')
-        setShowAddModal(false)
-        setTodoTitle('')
-        setTodoScope('personal')
-        fetchTodos()
-      } else {
-        toast.error('추가에 실패했습니다.')
-      }
+      await (window as any).go.main.App.SaveTodoItem(todoTitle, '', todoScope, 0)
+      toast.success('할 일이 추가되었습니다.')
+      setShowAddModal(false)
+      setTodoTitle('')
+      setTodoScope('personal')
+      fetchTodos()
     } catch (e) {
       console.error(e)
-      toast.error('서버에 연결할 수 없습니다.')
+      toast.error('추가에 실패했습니다.')
     }
   }
 
   const handleToggle = async (id: string) => {
     try {
-      const token = await getToken()
-      const res = await fetch(`http://localhost:5200/api/plugins/todo/${id}/toggle`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) fetchTodos()
+      await (window as any).go.main.App.ToggleTodoItem(id)
+      fetchTodos()
     } catch (e) {
       console.error(e)
     }

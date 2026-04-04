@@ -68,14 +68,16 @@ func (a *App) ConvertToPdfAndImages(inputName string, inputBase64 string) PdfCon
 		pages = a.extractHwpPages(inputPath, imgDir, ext)
 
 	case ".xlsx", ".xls":
-		// Export PDF via Excel COM
+		// Export PDF via Excel COM (Paginated format, contains all printable sheets by default)
 		if errPdf := convertExcelToPdfDirect(inputPath, pdfPath); errPdf == nil {
 			if d, e := os.ReadFile(pdfPath); e == nil {
 				pdfData = d
 			}
+			// Accurately split the paginated PDF into PNG per page using WinRT!
+			pages = renderPdfToPages(pdfPath, imgDir)
+		} else {
+			log.Printf("[PdfConv] Excel→PDF failed: %v", errPdf)
 		}
-		// Export per-page images via Excel COM
-		pages = extractExcelPages(inputPath, imgDir)
 
 	case ".pdf":
 		// PDF is already a PDF — just render per-page PNGs
@@ -325,6 +327,12 @@ $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
     $wb = $excel.Workbooks.Open($InputPath, 0, $true)
+    
+    # Select all sheets so they are all exported into the paginated PDF
+    if ($wb.Sheets.Count -gt 0) {
+        $wb.Sheets.Select()
+    }
+    
     $wb.ExportAsFixedFormat(0, $OutputPath)
     $wb.Close($false)
 } finally {
@@ -342,84 +350,4 @@ try {
 		return fmt.Errorf("출력 PDF가 생성되지 않았습니다")
 	}
 	return nil
-}
-
-// extractExcelPages exports each printed page of the workbook as a PNG image
-// using Excel COM's ExportAsFixedFormat with XlFixedFormatType xlTypePNG (not available)
-// → instead we export whole-sheet screenshots via CopyPicture + Chart.Export.
-func extractExcelPages(inputPath, outDir string) []string {
-	// Excel doesn't have a direct "save each page as PNG" COM API,
-	// so we export the whole workbook as PDF then use Windows.Data.Pdf WinRT
-	// — but since WinRT may be unreliable, we use a simpler approach:
-	// Export each SHEET as an image using ActiveSheet.CopyPicture + Chart.Export.
-	psCmd := `
-param([string]$InputPath, [string]$OutDir)
-$excel = New-Object -ComObject Excel.Application
-$excel.Visible = $false
-$excel.DisplayAlerts = $false
-$results = @()
-try {
-    $wb = $excel.Workbooks.Open($InputPath, 0, $true)
-    $sheetIdx = 0
-    foreach ($ws in $wb.Worksheets) {
-        $sheetIdx++
-        $fileName = "sheet_{0:D4}.png" -f $sheetIdx
-        $outPath = Join-Path $OutDir $fileName
-        try {
-            # Select used range
-            $range = $ws.UsedRange
-            if ($range -eq $null) { continue }
-            $range.CopyPicture(1, 2) # xlScreen=1, xlBitmap=2
-            # Paste into a temporary chart and export
-            $chart = $wb.Charts.Add()
-            $chart.Paste()
-            $chart.Export($outPath, 'PNG')
-            $chart.Delete()
-            Write-Host "PAGE:$outPath"
-        } catch {
-            Write-Host "SKIP:sheet $sheetIdx error: $_"
-        }
-    }
-    $wb.Close($false)
-} finally {
-    $excel.Quit()
-    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
-}
-`
-
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd, "-InputPath", inputPath, "-OutDir", outDir)
-	out, err := cmd.CombinedOutput()
-	output := string(out)
-	log.Printf("[PdfConv] Excel page export:\n%s", output)
-
-	if err != nil {
-		log.Printf("[PdfConv] Excel page export error: %v", err)
-		return nil
-	}
-
-	// Collect from explicit PAGE: lines first
-	var pages []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "PAGE:") {
-			imgPath := strings.TrimSpace(strings.TrimPrefix(line, "PAGE:"))
-			data, err := os.ReadFile(imgPath)
-			if err == nil && len(data) > 100 {
-				pages = append(pages, base64.StdEncoding.EncodeToString(data))
-			}
-		}
-	}
-
-	// Fallback: glob
-	if len(pages) == 0 {
-		matches, _ := filepath.Glob(filepath.Join(outDir, "sheet_*.png"))
-		sort.Strings(matches)
-		for _, m := range matches {
-			data, err := os.ReadFile(m)
-			if err == nil && len(data) > 100 {
-				pages = append(pages, base64.StdEncoding.EncodeToString(data))
-			}
-		}
-	}
-	return pages
 }

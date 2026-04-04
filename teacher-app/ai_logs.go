@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/google/uuid"
 )
 
@@ -14,22 +15,26 @@ type AILog struct {
 }
 
 func (a *App) SaveAILog(promptType, inputData, generatedContent string) error {
-	if a.attendanceDB == nil {
+	if a.secureDB == nil {
 		return fmt.Errorf("local db not initialized")
 	}
 	id := uuid.New().String()
-	_, err := a.attendanceDB.Exec(`
+
+	encData := Encrypt(inputData)
+	encContent := Encrypt(generatedContent)
+
+	_, err := a.secureDB.Exec(`
 		INSERT INTO local_ai_logs (id, prompt_type, input_data, generated_content)
 		VALUES (?, ?, ?, ?)
-	`, id, promptType, inputData, generatedContent)
+	`, id, promptType, encData, encContent)
 	return err
 }
 
 func (a *App) GetAILogs() []AILog {
-	if a.attendanceDB == nil {
+	if a.secureDB == nil {
 		return []AILog{}
 	}
-	rows, err := a.attendanceDB.Query("SELECT id, prompt_type, input_data, generated_content, created_at FROM local_ai_logs ORDER BY created_at DESC LIMIT 50")
+	rows, err := a.secureDB.Query("SELECT id, prompt_type, input_data, generated_content, created_at FROM local_ai_logs ORDER BY created_at DESC LIMIT 50")
 	if err != nil {
 		return []AILog{}
 	}
@@ -39,6 +44,8 @@ func (a *App) GetAILogs() []AILog {
 	for rows.Next() {
 		var l AILog
 		if err := rows.Scan(&l.ID, &l.PromptType, &l.InputData, &l.GeneratedContent, &l.CreatedAt); err == nil {
+			l.InputData = Decrypt(l.InputData)
+			l.GeneratedContent = Decrypt(l.GeneratedContent)
 			logs = append(logs, l)
 		}
 	}
@@ -46,9 +53,9 @@ func (a *App) GetAILogs() []AILog {
 }
 
 func (a *App) DeleteAILog(id string) error {
-	if a.attendanceDB == nil {
+	if a.secureDB == nil {
 		return fmt.Errorf("local db not initialized")
 	}
-	_, err := a.attendanceDB.Exec("DELETE FROM local_ai_logs WHERE id = ?", id)
+	_, err := a.secureDB.Exec("DELETE FROM local_ai_logs WHERE id = ?", id)
 	return err
 }

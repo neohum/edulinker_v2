@@ -209,7 +209,16 @@ export default function SendocPage({ user }: SendocPageProps) {
       const res = await apiFetch('/api/plugins/sendoc/sign')
       if (res.ok) {
         const data = await res.json()
-        setPendingDocs(data || [])
+        const mapped = (data || []).map((d: any) => ({
+          ...d.sendoc,
+          ...d,
+          id: d.sendoc?.id || d.id, // Keep sendoc.id for fetching actual document
+          recipient_id: d.id,       // Store recipient_id just in case
+          title: d.sendoc?.title || '(제목 없음)',
+          status: d.sendoc?.status || 'draft',
+          created_at: d.sendoc?.created_at || d.created_at || new Date().toISOString()
+        }))
+        setPendingDocs(mapped)
       }
     } catch (e) { console.error(e) } finally { if (!isTeacher) setLoading(false) }
   }
@@ -521,60 +530,72 @@ export default function SendocPage({ user }: SendocPageProps) {
     return URL.createObjectURL(blob)
   }
 
-  const openSignView = async (doc: PendingDoc) => {
-    setActiveDoc(doc); setTitle(doc.title); setBackgroundUrl(null); setDraftCanvasData(null)
+  const openSignView = async (baseDoc: PendingDoc) => {
+    setActiveDoc(baseDoc); setTitle(baseDoc.title); setBackgroundUrl(null); setDraftCanvasData(null)
     try {
-      let f = JSON.parse(doc.fields_json || '[]')
-      let hasDraft = false
+      const res = await apiFetch(`/api/plugins/sendoc/sign/${baseDoc.id}`)
+      if (!res.ok) throw new Error('문서를 불러오지 못했습니다.')
+      const doc = await res.json()
 
-      if (doc.is_signed && doc.form_data_json && doc.form_data_json !== '{}' && doc.form_data_json !== '[]') {
-        try {
-          const recFields = JSON.parse(doc.form_data_json)
-          if (Array.isArray(recFields) && recFields.length > 0) f = recFields
-        } catch { }
-      } else if (!doc.is_signed) {
-        const draftStr = localStorage.getItem(`sendoc_draft_${doc.id}`)
-        if (draftStr) {
-          if (window.confirm('이전에 작성 중이던 임시 저장본이 있습니다. 이어서 작성하시겠습니까?')) {
-            try {
-              const draft = JSON.parse(draftStr)
-              if (draft.fields) f = draft.fields
-              if (draft.fullCanvas) setDraftCanvasData(draft.fullCanvas)
-              hasDraft = true
-            } catch (e) { }
+      try {
+        let f = JSON.parse(doc.fields_json || '[]')
+        let hasDraft = false
+
+        if (doc.is_signed && doc.form_data_json && doc.form_data_json !== '{}' && doc.form_data_json !== '[]') {
+          try {
+            const recFields = JSON.parse(doc.form_data_json)
+            if (Array.isArray(recFields) && recFields.length > 0) f = recFields
+          } catch { }
+        } else if (!doc.is_signed) {
+          const draftStr = localStorage.getItem(`sendoc_draft_${doc.id}`)
+          if (draftStr) {
+            if (window.confirm('이전에 작성 중이던 임시 저장본이 있습니다. 이어서 작성하시겠습니까?')) {
+              try {
+                const draft = JSON.parse(draftStr)
+                if (draft.fields) f = draft.fields
+                if (draft.fullCanvas) setDraftCanvasData(draft.fullCanvas)
+                hasDraft = true
+              } catch (e) { }
+            }
           }
         }
-      }
-      setFields(f)
-      if (!hasDraft) {
-        fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262)
-      }
-    } catch { setFields([]) }
-    setViewMode('signer')
-    try {
-      let isMultiPage = false;
-      if (doc.background_url && doc.background_url.startsWith('[')) {
-        try {
-          const arr = JSON.parse(doc.background_url);
-          if (Array.isArray(arr) && arr.length > 0) {
-            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
-            isMultiPage = true;
-          }
-        } catch { }
-      }
+        setFields(f)
+        if (!hasDraft) {
+          fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262)
+        }
+      } catch { setFields([]) }
+      setViewMode('signer')
+      try {
+        let isMultiPage = false;
+        if (doc.background_url && doc.background_url.startsWith('[')) {
+          try {
+            const arr = JSON.parse(doc.background_url);
+            if (Array.isArray(arr) && arr.length > 0) {
+              setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
+              isMultiPage = true;
+            }
+          } catch { }
+        }
 
-      if (!isMultiPage) {
-        setPageImages([]);
-        const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
-        setBackgroundUrl(blobUrl)
+        if (!isMultiPage) {
+          setPageImages([]);
+          const blobUrl = await fetchImageAsBlob(doc.background_url).catch(() => doc.background_url)
+          setBackgroundUrl(blobUrl)
+        }
+      } catch {
+        toast.error('문서를 불러올 수 없습니다.')
       }
     } catch {
-      toast.error('문서를 불러올 수 없습니다.')
+      toast.error('문서 상세 정보를 불러오지 못했습니다.')
     }
   }
 
-  const openResultViewer = async (doc: Sendoc, recipient: RecipientStatus) => {
+  const openResultViewer = async (baseDoc: Sendoc, recipient: RecipientStatus) => {
     try {
+      const res = await apiFetch(`/api/plugins/sendoc/${baseDoc.id}`)
+      if (!res.ok) throw new Error('문서를 불러오지 못했습니다.')
+      const doc = await res.json()
+
       const baseFields: DocField[] = JSON.parse(doc.fields_json || '[]')
       let finalFields = baseFields
       if (recipient.form_data_json && recipient.form_data_json !== '{}' && recipient.form_data_json !== '[]') {
@@ -613,7 +634,7 @@ export default function SendocPage({ user }: SendocPageProps) {
         setResultViewerData({ doc, fields: finalFields, bgUrl: '' })
       }
     } catch {
-      toast.error('문서를 불러올 수 없습니다.')
+      toast.error('문서 상세 정보를 불러오지 못했습니다.')
     }
   }
 
@@ -636,6 +657,8 @@ export default function SendocPage({ user }: SendocPageProps) {
         if (res.ok) {
           toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
           fetchDocs()
+          fetchPendingDocs()
+          window.dispatchEvent(new Event('sendoc_updated'))
         } else {
           const errorData = await res.json().catch(() => ({}))
           toast.error(`'${title}' 발송 실패: ` + (errorData.error || res.statusText))
@@ -729,6 +752,54 @@ export default function SendocPage({ user }: SendocPageProps) {
         }
       }
     });
+  }
+
+  const handleResendDoc = async (doc: any) => {
+    toast.info('문서 정보를 불러오는 중...')
+    try {
+      const res = await apiFetch(`/api/plugins/sendoc/${doc.id}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+
+      const now = new Date()
+      const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`
+      const cleanTitle = data.title.replace(/\s*\(\d{4}\.\d{2}\.\d{2} 발송\)$/, '').replace(/\s*\(복사본\)$/, '')
+      setTitle(`${cleanTitle} (${dateStr} 발송)`)
+
+      // Clean up fields to remove old signature data only
+      const parsedFields = JSON.parse(data.fields_json || '[]').map((f: any) => {
+        const nf = { ...f };
+        delete nf.signatureData;
+        return nf;
+      })
+      setFields(parsedFields)
+
+      let isMultiPage = false
+      if (data.background_url && data.background_url.startsWith('[')) {
+        try {
+          const arr = JSON.parse(data.background_url)
+          if (Array.isArray(arr) && arr.length > 0) {
+            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')))
+            isMultiPage = true
+          }
+        } catch { }
+      }
+
+      if (!isMultiPage) {
+        setPageImages([])
+        setServerBgUrl(data.background_url)
+        setBackgroundUrl(null)
+      } else {
+        setServerBgUrl(data.background_url)
+        setBackgroundUrl(null)
+      }
+
+      setSelectedUsers([])
+      setViewMode('designer')
+      setShowRecipientModal(true)
+    } catch {
+      toast.error('문서 정보를 불러오지 못했습니다.')
+    }
   }
 
   if (viewMode === 'selector') {
@@ -1166,13 +1237,14 @@ export default function SendocPage({ user }: SendocPageProps) {
                     </div>
                     <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => fetchStatus(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0' }}>진행현황 보기</button>
+                      <button onClick={() => fetchStatus(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0 }}>진행현황 보기</button>
+                      <button onClick={() => handleResendDoc(d)} className="btn-primary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0 }}>재발송</button>
                       {d.status === 'recalled' ? (
-                        <button disabled className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#94a3b8', opacity: 0.7 }}>회수 완료</button>
+                        <button disabled className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#94a3b8', opacity: 0.7 }}>회수 완료</button>
                       ) : (
-                        <button onClick={() => handleRecallDoc(d.id)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#f59e0b' }}>회수</button>
+                        <button onClick={() => handleRecallDoc(d.id)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#f59e0b' }}>회수</button>
                       )}
-                      <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', color: '#ef4444' }}>삭제</button>
+                      <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
                     </div>
                   </div>
                 ))}

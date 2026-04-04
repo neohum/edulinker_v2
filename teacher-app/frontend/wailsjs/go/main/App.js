@@ -6,6 +6,10 @@ export function CancelAIGenerate() {
   return window['go']['main']['App']['CancelAIGenerate']();
 }
 
+export function CheckConnection() {
+  return window['go']['main']['App']['CheckConnection']();
+}
+
 export function CheckHancom() {
   return window['go']['main']['App']['CheckHancom']();
 }
@@ -62,12 +66,24 @@ export function DeleteAttendanceRecord(arg1) {
   return window['go']['main']['App']['DeleteAttendanceRecord'](arg1);
 }
 
+export function DeleteCounselingRecord(arg1) {
+  return window['go']['main']['App']['DeleteCounselingRecord'](arg1);
+}
+
+export function DeleteCurriculumEvaluation(arg1) {
+  return window['go']['main']['App']['DeleteCurriculumEvaluation'](arg1);
+}
+
 export function DeleteDocumentIndex(arg1) {
   return window['go']['main']['App']['DeleteDocumentIndex'](arg1);
 }
 
 export function DeleteOpinionHistory(arg1) {
   return window['go']['main']['App']['DeleteOpinionHistory'](arg1);
+}
+
+export function DeleteTodoItem(arg1) {
+  return window['go']['main']['App']['DeleteTodoItem'](arg1);
 }
 
 export function DownloadFile(arg1, arg2) {
@@ -94,12 +110,28 @@ export function GetAILogs() {
   return window['go']['main']['App']['GetAILogs']();
 }
 
+export function GetCounselingRecords(arg1) {
+  return window['go']['main']['App']['GetCounselingRecords'](arg1);
+}
+
+export function GetCurriculumEvaluations() {
+  return window['go']['main']['App']['GetCurriculumEvaluations']();
+}
+
 export function GetFileDataURL(arg1) {
   return window['go']['main']['App']['GetFileDataURL'](arg1);
 }
 
 export function GetIndexedDocIDs() {
   return window['go']['main']['App']['GetIndexedDocIDs']();
+}
+
+export function GetLocalKnowledge() {
+  return window['go']['main']['App']['GetLocalKnowledge']();
+}
+
+export function GetLocalLinkers() {
+  return window['go']['main']['App']['GetLocalLinkers']();
 }
 
 export function GetLocalModels() {
@@ -130,6 +162,10 @@ export function GetSystemInfo() {
   return window['go']['main']['App']['GetSystemInfo']();
 }
 
+export function GetTodos(arg1, arg2) {
+  return window['go']['main']['App']['GetTodos'](arg1, arg2);
+}
+
 export function GetToken() {
   return window['go']['main']['App']['GetToken']();
 }
@@ -152,6 +188,10 @@ export function Login(arg1, arg2) {
 
 export function Logout() {
   return window['go']['main']['App']['Logout']();
+}
+
+export function OpenLocalKnowledgeFile(arg1, arg2) {
+  return window['go']['main']['App']['OpenLocalKnowledgeFile'](arg1, arg2);
 }
 
 export function PullModel(arg1) {
@@ -178,6 +218,14 @@ export function SaveAttendanceRemarks(arg1, arg2) {
   return window['go']['main']['App']['SaveAttendanceRemarks'](arg1, arg2);
 }
 
+export function SaveCounselingRecord(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveCounselingRecord'](arg1, arg2, arg3, arg4);
+}
+
+export function SaveCurriculumEvaluation(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SaveCurriculumEvaluation'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function SaveFileBytes(arg1, arg2) {
   return window['go']['main']['App']['SaveFileBytes'](arg1, arg2);
 }
@@ -188,6 +236,10 @@ export function SaveOpinionHistory(arg1, arg2) {
 
 export function SaveOpinionRecord(arg1, arg2) {
   return window['go']['main']['App']['SaveOpinionRecord'](arg1, arg2);
+}
+
+export function SaveTodoItem(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveTodoItem'](arg1, arg2, arg3, arg4);
 }
 
 export function SearchKnowledge(arg1, arg2) {
@@ -216,6 +268,18 @@ export function StartOllama() {
 
 export function StopOllama() {
   return window['go']['main']['App']['StopOllama']();
+}
+
+export function SyncKnowledge(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SyncKnowledge'](arg1, arg2, arg3);
+}
+
+export function SyncLinkers(arg1) {
+  return window['go']['main']['App']['SyncLinkers'](arg1);
+}
+
+export function ToggleTodoItem(arg1) {
+  return window['go']['main']['App']['ToggleTodoItem'](arg1);
 }
 
 export function UploadFileFromBytes(arg1, arg2) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
+import ReactMarkdown from 'react-markdown'
 import type { UserInfo } from '../App'
 import { apiFetch, API_BASE } from '../api'
 import Sidebar from '../components/Sidebar'
@@ -50,16 +51,67 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
   const [pendingDocCount, setPendingDocCount] = useState(0)
   const [activeVotingsCount, setActiveVotingsCount] = useState(0)
+  const [announcementCounts, setAnnouncementCounts] = useState({ total: 0, simple: 0, confirm: 0, apply: 0, todo: 0 })
 
   useEffect(() => {
     fetchPendingDocCount()
     fetchVotingsCount()
+    fetchAnnouncementCounts()
+
     const interval = setInterval(() => {
       fetchPendingDocCount()
       fetchVotingsCount()
+      fetchAnnouncementCounts()
     }, 30000) // Poll every 30s
-    return () => clearInterval(interval)
+
+    const handleSendocUpdate = () => fetchPendingDocCount()
+    const handleAnnouncementsUpdate = () => fetchAnnouncementCounts()
+    window.addEventListener('sendoc_updated', handleSendocUpdate)
+    window.addEventListener('announcements_updated', handleAnnouncementsUpdate)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('sendoc_updated', handleSendocUpdate)
+      window.removeEventListener('announcements_updated', handleAnnouncementsUpdate)
+    }
   }, [])
+
+  const fetchAnnouncementCounts = async () => {
+    try {
+      const res = await apiFetch('/api/plugins/announcement?page_size=1000')
+      let anns = []
+      if (res.ok) {
+        const data = await res.json()
+        anns = data.announcements || []
+        localStorage.setItem('announcement_cache', JSON.stringify(anns))
+      } else {
+        const storedAnn = localStorage.getItem('announcement_cache')
+        if (storedAnn) anns = JSON.parse(storedAnn)
+      }
+
+      // Exclude my own announcements
+      anns = anns.filter((a: any) => a.author_id !== user?.id)
+
+      const lastViewedStr = localStorage.getItem(`announcement_last_viewed_${user?.id}`)
+      if (!lastViewedStr) {
+        setAnnouncementCounts({ total: anns.length, simple: anns.filter((a: any) => a.type === 'simple').length, confirm: anns.filter((a: any) => a.type === 'confirm').length, apply: anns.filter((a: any) => a.type === 'apply').length, todo: anns.filter((a: any) => a.type === 'todo').length })
+        return
+      }
+
+      const lastViewed = new Date(lastViewedStr)
+      const newAnns = anns.filter((a: any) => new Date(a.created_at) > lastViewed)
+
+      setAnnouncementCounts({
+        total: newAnns.length,
+        simple: newAnns.filter((a: any) => a.type === 'simple').length,
+        confirm: newAnns.filter((a: any) => a.type === 'confirm').length,
+        apply: newAnns.filter((a: any) => a.type === 'apply').length,
+        todo: newAnns.filter((a: any) => a.type === 'todo').length
+      })
+    } catch (e) {
+      console.error('Failed to fetch announcement counts:', e)
+    }
+  }
 
   const fetchVotingsCount = async () => {
     try {
@@ -100,7 +152,8 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         currentPage={currentPage}
         badges={{
           sendoc: pendingDocCount > 0 ? pendingDocCount : undefined,
-          schoolevents: activeVotingsCount > 0 ? activeVotingsCount : undefined
+          schoolevents: activeVotingsCount > 0 ? activeVotingsCount : undefined,
+          announcement: announcementCounts.total > 0 ? announcementCounts.total : undefined
         }}
         onNavigate={(page) => setCurrentPage(page as PageView)}
         onLogout={onLogout}
@@ -123,7 +176,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
         </header>
 
         <div className="main-body" style={currentPage === 'dashboard' ? { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}}>
-          {currentPage === 'dashboard' && <DashboardView user={user} />}
+          {currentPage === 'dashboard' && <DashboardView user={user} onNavigate={(p) => setCurrentPage(p as PageView)} />}
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage user={user} />}
           {currentPage === 'studentmgmt' && <StudentMgmtPage user={user} />}
@@ -136,7 +189,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'resourcemgmt' && <ResourceMgmtPage />}
           {currentPage === 'schooladmin' && <SchoolAdminPage user={user} />}
 
-          {currentPage === 'announcement' && <AnnouncementPage />}
+          {currentPage === 'announcement' && <AnnouncementPage user={user} counts={announcementCounts} />}
           {currentPage === 'todo' && <TodoPage />}
           {currentPage === 'attendance' && <AttendancePage user={user} />}
           {currentPage === 'student-alert' && <StudentAlertPage />}
@@ -157,10 +210,10 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
   )
 }
 
-function DashboardView({ user }: { user: UserInfo }) {
+function DashboardView({ user, onNavigate }: { user: UserInfo, onNavigate: (page: string) => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <KnowledgeSearchWidget isExpanded={true} />
+      <KnowledgeSearchWidget isExpanded={true} onNavigate={onNavigate} />
     </div>
   )
 }
@@ -194,8 +247,9 @@ interface ChatSession {
   messages: ChatMessage[];
 }
 
-function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean }) {
+function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?: boolean, onNavigate?: (page: string) => void }) {
   const [docs, setDocs] = useState<any[]>([])
+  const [announcements, setAnnouncements] = useState<any[]>([])
   const [query, setQuery] = useState('')
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -308,41 +362,89 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
     // 서버 전체 문서 sync → 로컬 미인덱싱 문서 자동 보완
     const syncDocs = async () => {
       try {
-        // 항상 전체 문서 목록 가져오기 (since 파라미터 없이)
-        const res = await apiFetch('/api/plugins/knowledge/sync')
-        if (!res.ok) return
-
-        const data = await res.json()
-        const allIds: string[] = data.all_ids || []
-        const allDocs: any[] = data.updated_docs || []
-
-        // 로컬 캐시 갱신
-        setDocs(allDocs)
-        localStorage.setItem('knowledge_cache', JSON.stringify(allDocs))
-        localStorage.setItem('knowledge_last_sync', new Date().toISOString())
-
-        if (!wailsApp?.IndexDocument || !wailsApp?.GetIndexedDocIDs) return
-
-        // 로컬 SQLite에 인덱싱된 doc_id 목록 조회
-        let indexedIds: string[] = []
-        try { indexedIds = await wailsApp.GetIndexedDocIDs() ?? [] } catch (e) { }
-
-        // 삭제된 문서 로컬 인덱스 제거
-        if (wailsApp?.DeleteDocumentIndex) {
-          const deletedIds = indexedIds.filter(id => !allIds.includes(id))
-          for (const id of deletedIds) {
-            wailsApp.DeleteDocumentIndex(id).catch(() => { })
+        // 우선 로컬 DB(SQLite)나 localStorage에서 불러오기
+        if ((window as any).go?.main?.App?.GetLocalKnowledge) {
+          try {
+            const localData = await (window as any).go.main.App.GetLocalKnowledge()
+            if (localData && Array.isArray(localData) && localData.length > 0) {
+              setDocs(localData)
+            }
+          } catch (e) { }
+        } else {
+          const storedCache = localStorage.getItem('knowledge_cache')
+          if (storedCache) {
+            try {
+              setDocs(JSON.parse(storedCache))
+            } catch (e) { }
           }
         }
 
-        // 로컬에 없는 문서 + 내용이 있는 문서 인덱싱
-        const toIndex = allDocs.filter(
-          (doc: any) => doc.markdown_content && !indexedIds.includes(doc.id)
-        )
-        for (const doc of toIndex) {
-          wailsApp.IndexDocument(
-            doc.id, doc.title, doc.source_type ?? 'text', doc.markdown_content
-          ).catch(() => { })
+        // 항상 전체 문서 목록 가져오기 (since 파라미터 없이)
+        const res = await apiFetch('/api/plugins/knowledge/sync')
+        if (res.ok) {
+          const data = await res.json()
+          const allIds: string[] = data.all_ids || []
+          const allDocs: any[] = data.updated_docs || []
+
+          // 로컬 캐시 갱신
+          setDocs(allDocs)
+          localStorage.setItem('knowledge_cache', JSON.stringify(allDocs))
+          localStorage.setItem('knowledge_last_sync', new Date().toISOString())
+
+          if (wailsApp?.IndexDocument && wailsApp?.GetIndexedDocIDs) {
+            // 로컬 SQLite에 인덱싱된 doc_id 목록 조회
+            let indexedIds: string[] = []
+            try { indexedIds = await wailsApp.GetIndexedDocIDs() ?? [] } catch (e) { }
+
+            // 삭제된 문서 로컬 인덱스 제거
+            if (wailsApp?.DeleteDocumentIndex) {
+              const deletedIds = indexedIds.filter(id => !allIds.includes(id))
+              for (const id of deletedIds) {
+                wailsApp.DeleteDocumentIndex(id).catch(() => { })
+              }
+            }
+
+            // 로컬에 없는 문서 + 내용이 있는 문서 인덱싱
+            const toIndex = allDocs.filter(
+              (doc: any) => doc.markdown_content && !indexedIds.includes(doc.id)
+            )
+            for (const doc of toIndex) {
+              wailsApp.IndexDocument(
+                doc.id, doc.title, doc.source_type ?? 'text', doc.markdown_content
+              ).catch(() => { })
+            }
+          }
+        }
+
+        // 공문전달(Announcement) 동기화
+        const annRes = await apiFetch('/api/plugins/announcement?page_size=1000')
+        if (annRes.ok) {
+          const annData = await annRes.json()
+          const allAnnouncements: any[] = annData.announcements || []
+
+          setAnnouncements(allAnnouncements)
+          localStorage.setItem('announcement_cache', JSON.stringify(allAnnouncements))
+
+          if (wailsApp?.IndexDocument && wailsApp?.GetIndexedDocIDs) {
+            let indexedIds: string[] = []
+            try { indexedIds = await wailsApp.GetIndexedDocIDs() ?? [] } catch (e) { }
+
+            // 공문 문서 인덱싱 (기존에 없는 경우)
+            const toIndexAnn = allAnnouncements.filter(
+              (ann: any) => ann.content && !indexedIds.includes(ann.id)
+            )
+            for (const ann of toIndexAnn) {
+              wailsApp.IndexDocument(
+                ann.id, ann.title, 'announcement', ann.content
+              ).catch(() => { })
+            }
+          }
+        } else {
+          // 오프라인 fallback
+          const storedAnn = localStorage.getItem('announcement_cache')
+          if (storedAnn) {
+            try { setAnnouncements(JSON.parse(storedAnn)) } catch (e) { }
+          }
         }
 
       } catch (e) {
@@ -373,6 +475,9 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
         if (last && last.role === 'assistant' && last.isGenerating) {
           const updated = [...prev];
           updated[updated.length - 1] = { ...last, isGenerating: false };
+          if (last.references && last.references.length > 0) {
+            setExpandedRefs(refs => ({ ...refs, [last.id]: true }));
+          }
           return updated;
         }
         return prev;
@@ -444,7 +549,7 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
       }
 
       if (wailsApp?.SearchKnowledge) {
-        const raw = await wailsApp.SearchKnowledge(finalQuery, 5);
+        const raw = await wailsApp.SearchKnowledge(finalQuery, 10);
         if (Array.isArray(raw)) {
           localResults = raw.map((r: any) => ({
             doc_id: r.doc_id ?? r.DocID ?? '',
@@ -463,15 +568,20 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     // 로컬 결과를 references 포맷으로 변환
     const finalMatches = localResults.map(r => {
-      const fullDoc = docs.find(d => d.id === r.doc_id) || {};
+      let fullDoc = docs.find(d => d.id === r.doc_id);
+      let isAnnouncement = false;
+      if (!fullDoc) {
+        fullDoc = announcements.find(a => a.id === r.doc_id);
+        if (fullDoc) isAnnouncement = true;
+      }
       return {
         doc: {
           id: r.doc_id,
           title: r.doc_title,
-          source_type: r.source_type,
-          markdown_content: fullDoc.markdown_content || r.display_text,
-          original_filename: fullDoc.original_filename,
-          file_url: fullDoc.file_url
+          source_type: isAnnouncement ? 'announcement' : r.source_type,
+          markdown_content: fullDoc ? (fullDoc.markdown_content || fullDoc.content) : r.display_text,
+          original_filename: fullDoc?.original_filename,
+          file_url: fullDoc?.file_url
         },
         matchSnippet: r.display_text,
         score: r.score,
@@ -509,14 +619,14 @@ function KnowledgeSearchWidget({ isExpanded = false }: { isExpanded?: boolean })
 
     setMessages(newMsgs);
 
-    const matchContext = finalMatches.slice(0, 3).map((m, i) =>
+    const matchContext = finalMatches.map((m, i) =>
       `### [참고${i + 1}] ${m.doc.title}\n${m.matchSnippet}`
     ).join('\n\n---\n');
 
-    const systemPrompt = `당신은 학교 업무 보조 및 규정 안내를 담당하는 AI 어시스턴트입니다.
-오직 아래 제공된 [참고 문서]에 있는 내용만을 근거로 답변을 작성해야 합니다.
-외부 정보를 임의로 추가하거나 지어내지 마십시오.
-질문에 대한 답이 [참고 문서]에 명시되어 있지 않다면 "검색된 규정 문서에서 질문에 해당하는 관련된 내용을 찾을 수 없습니다."라고 안내하세요.
+    const systemPrompt = `당신은 교사들을 위한 학교 규정 및 업무 지침 안내 AI입니다.
+반드시 아래 제공된 [참고 문서]의 내용을 꼼꼼히 종합하여 상세하고 정확하게 답변을 작성하세요.
+답변할 때 어떤 문서(제목)의 내용을 참고했는지 출처를 자연스럽게 명시해 주시고, 여러 문서에 걸쳐 연관된 내용이 있다면 하나로 조합하여 풍부하고 포괄적인 문맥을 제공하십시오.
+제공된 참고 문서에 질문과 관련된 내용이 전혀 없다면, 외부 정보를 임의로 지어내지 말고 "검색된 규정에서 관련 내용을 찾을 수 없습니다."라고 안내하십시오.
 
 [참고 문서]
 ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
@@ -559,7 +669,7 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
             </div>
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 600 }}>업무 규정(지식베이스) 통합 검색</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>동기화된 문서 수: <b>{docs.length}</b>건</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>동기화된 문서 수: <b>{docs.length}</b>건 <span style={{ opacity: 0.5, margin: '0 4px' }}>|</span> 공문전달: <b>{announcements.length}</b>건</p>
             </div>
           </div>
 
@@ -579,11 +689,30 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                   {msg.role === 'assistant' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13, fontWeight: 600, color: 'var(--accent-blue)' }}>
                       <i className="fi fi-rr-robot" /> AI 규정 어시스턴트
-                      {msg.isGenerating && <span style={{ fontSize: 11, opacity: 0.7 }}>답변 작성 중...</span>}
+                      {msg.isGenerating && <span style={{ fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 4 }}><i className="fi fi-rr-spinner fi-spin" /> 작성 중...</span>}
                     </div>
                   )}
-                  <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                    {msg.content}
+                  <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', paddingLeft: msg.role === 'assistant' ? '24px' : undefined }}>
+                    {msg.isGenerating && !msg.content ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                        <style>{`
+                          @keyframes aiTypingBounce {
+                            0%, 80%, 100% { transform: translateY(0) scale(0.8); opacity: 0.5; }
+                            40% { transform: translateY(-6px) scale(1.2); opacity: 1; background-color: var(--accent-purple, #8b5cf6); }
+                          }
+                        `}</style>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(59, 130, 246, 0.05)', padding: '10px 16px', borderRadius: 20, border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', animation: 'aiTypingBounce 1.4s infinite ease-in-out both', animationDelay: '-0.32s' }} />
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', animation: 'aiTypingBounce 1.4s infinite ease-in-out both', animationDelay: '-0.16s' }} />
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', animation: 'aiTypingBounce 1.4s infinite ease-in-out both' }} />
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent-blue)', animation: 'pulse 2s infinite' }}>
+                          규정 및 지침을 확인하며 답변을 작성 중입니다...
+                        </span>
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    )}
                   </div>
                   {msg.role === 'assistant' && !msg.isGenerating && msg.content && msg.id !== 'welcome' && (
                     <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
@@ -606,7 +735,13 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                 {msg.references && msg.references.length > 0 && (
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4, paddingLeft: 8 }}>
                     <div
-                      onClick={() => setExpandedRefs(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                      onClick={() => {
+                        if (msg.isGenerating) {
+                          toast('AI 답변이 완료된 후 참고 규정 문서를 볼 수 있습니다.', { icon: '⏳' })
+                          return
+                        }
+                        setExpandedRefs(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))
+                      }}
                       style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none' }}
                     >
                       <i className={`fi ${expandedRefs[msg.id] ? 'fi-rr-angle-small-down' : 'fi-rr-angle-small-right'}`} />
@@ -618,10 +753,16 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                           <div key={i} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                <i className={`fi ${res.doc.source_type === 'file' ? 'fi-rr-file-hwp' : res.doc.source_type === 'qa' ? 'fi-rr-comment-alt' : 'fi-rr-document'}`} style={{ color: res.doc.source_type === 'qa' ? '#f59e0b' : 'var(--accent-blue)' }} />
-                                {res.doc.title}
+                                <i className={`fi ${res.doc.source_type === 'file' ? 'fi-rr-file-hwp' : res.doc.source_type === 'qa' ? 'fi-rr-comment-alt' : res.doc.source_type === 'announcement' ? 'fi-rr-envelope-open' : 'fi-rr-document'}`} style={{ color: res.doc.source_type === 'qa' ? '#f59e0b' : res.doc.source_type === 'announcement' ? '#8b5cf6' : 'var(--accent-blue)' }} />
+                                {res.doc.source_type === 'announcement' ? `[공문] ${res.doc.title}` : res.doc.title}
                               </div>
-                              <button onClick={() => setSelectedDoc(res.doc)} className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, margin: 0, flexShrink: 0 }}>문서 보기</button>
+                              <button onClick={() => {
+                                if (res.doc.source_type !== 'announcement') {
+                                  setSelectedDoc(res.doc)
+                                } else if (onNavigate) {
+                                  onNavigate('announcement')
+                                }
+                              }} className="btn-secondary" style={{ padding: '4px 8px', fontSize: 11, borderRadius: 4, margin: 0, flexShrink: 0 }}>{res.doc.source_type === 'announcement' ? '공문 확인하기' : '문서 보기'}</button>
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                               {res.matchSnippet}
@@ -748,39 +889,25 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
         </div>
       </div>
 
-      {selectedDoc && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="card" style={{ width: 800, maxWidth: '90%', height: '80vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', background: 'var(--bg-primary)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <h3 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-                <i className={`fi ${selectedDoc.source_type === 'file' ? 'fi-rr-file-hwp' : 'fi-rr-text'}`} style={{ color: 'var(--accent-blue)' }} />
-                {selectedDoc.title}
-              </h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {selectedDoc.file_url ? (
+      {selectedDoc && (() => {
+        const activeDoc = docs.find(d => d.id === selectedDoc.id) || selectedDoc;
+        return (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="card" style={{ width: 800, maxWidth: '90%', height: '80vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', background: 'var(--bg-primary)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                <h3 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                  <i className={`fi ${activeDoc.source_type === 'file' ? 'fi-rr-file-hwp' : 'fi-rr-text'}`} style={{ color: 'var(--accent-blue)' }} />
+                  {activeDoc.title}
+                </h3>
+                <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     type="button"
                     onClick={() => {
-                      const a = document.createElement('a')
-                      a.href = `${API_BASE}${selectedDoc.file_url}`
-                      a.download = selectedDoc.original_filename || 'download'
-                      a.target = '_blank'
-                      a.click()
-                    }}
-                    className="btn-primary"
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 13, borderRadius: 6, margin: 0 }}
-                  >
-                    <i className="fi fi-rr-download" /> 원본 다운로드
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const blob = new Blob([selectedDoc.markdown_content], { type: 'text/markdown;charset=utf-8;' })
+                      const blob = new Blob([activeDoc.markdown_content || selectedDoc.markdown_content], { type: 'text/markdown;charset=utf-8;' })
                       const url = URL.createObjectURL(blob)
                       const a = document.createElement('a')
                       a.href = url
-                      const dlName = selectedDoc.original_filename ? `${selectedDoc.original_filename}.txt` : `${selectedDoc.title}.txt`
+                      const dlName = activeDoc.original_filename ? `${activeDoc.original_filename}.txt` : `${activeDoc.title}.txt`
                       a.download = dlName
                       a.click()
                       URL.revokeObjectURL(url)
@@ -790,86 +917,111 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                   >
                     <i className="fi fi-rr-download" /> 텍스트 다운로드
                   </button>
-                )}
-                <button type="button" onClick={() => setSelectedDoc(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-secondary)', padding: '0 0 0 8px' }}>
-                  <i className="fi fi-rr-cross-small" />
-                </button>
-              </div>
-            </div>
-            <div style={{ padding: '8px 24px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {(() => {
-                let matchCount = 0;
-                if (docSearchQuery.trim()) {
-                  const m = selectedDoc.markdown_content.match(new RegExp(docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
-                  matchCount = m ? m.length : 0;
-                }
-                return (
-                  <>
-                    <i className="fi fi-rr-search" style={{ color: 'var(--text-muted)' }} />
-                    <input
-                      type="text"
-                      placeholder="문서 내 검색 (Enter로 다음 이동)"
-                      value={docSearchQuery}
-                      onChange={e => {
-                        setDocSearchQuery(e.target.value);
-                        setCurrentMatchIndex(0);
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (matchCount > 0) {
-                            setCurrentMatchIndex(prev => (prev + 1) % matchCount);
-                          }
+                  {(activeDoc.file_url || activeDoc.original_filename) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if ((window as any).go?.main?.App?.OpenLocalKnowledgeFile) {
+                          try {
+                            await (window as any).go.main.App.OpenLocalKnowledgeFile(activeDoc.id, activeDoc.original_filename)
+                            return
+                          } catch (e) { }
+                        }
+                        if (activeDoc.file_url) {
+                          const a = document.createElement('a')
+                          a.href = `${API_BASE}${activeDoc.file_url}`
+                          a.download = activeDoc.original_filename || 'download'
+                          a.target = '_blank'
+                          a.click()
                         }
                       }}
-                      className="form-input"
-                      style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', fontSize: 13 }}
-                    />
-                    {docSearchQuery && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
-                          {matchCount > 0 ? `${currentMatchIndex + 1} / ${matchCount}` : '0 / 0'}
-                        </span>
-                        <button type="button" onClick={() => { setDocSearchQuery(''); setCurrentMatchIndex(0); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-                          <i className="fi fi-rr-cross-circle" style={{ fontSize: 14 }} />
-                        </button>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
-              {docSearchQuery.trim() ? (() => {
-                const regex = new RegExp(`(${docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-                const parts = selectedDoc.markdown_content.split(regex);
-                let matchIdx = -1;
-                return parts.map((part: string, i: number) => {
-                  if (part.toLowerCase() === docSearchQuery.trim().toLowerCase()) {
-                    matchIdx++;
-                    const isActive = matchIdx === currentMatchIndex;
-                    return (
-                      <mark
-                        id={isActive ? 'search-match-active' : undefined}
-                        key={i}
-                        style={{ backgroundColor: isActive ? '#f97316' : '#fef08a', color: isActive ? '#fff' : '#000', padding: '0 2px', borderRadius: 2 }}
-                      >
-                        {part}
-                      </mark>
-                    );
-                  }
-                  return part;
-                });
-              })() : selectedDoc.markdown_content}
-            </div>
-            {selectedDoc.original_filename && (
-              <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                <span>원본 파일: {selectedDoc.original_filename} (서버에는 최적화를 위해 추출된 텍스트만 보관됩니다)</span>
+                      className="btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 13, borderRadius: 6, margin: 0 }}
+                    >
+                      <i className="fi fi-rr-document" /> 원본 파일 보기
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setSelectedDoc(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-secondary)', padding: '0 0 0 8px' }}>
+                    <i className="fi fi-rr-cross-small" />
+                  </button>
+                </div>
               </div>
-            )}
+              <div style={{ padding: '8px 24px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {(() => {
+                  let matchCount = 0;
+                  if (docSearchQuery.trim()) {
+                    const m = selectedDoc.markdown_content.match(new RegExp(docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+                    matchCount = m ? m.length : 0;
+                  }
+                  return (
+                    <>
+                      <i className="fi fi-rr-search" style={{ color: 'var(--text-muted)' }} />
+                      <input
+                        type="text"
+                        placeholder="문서 내 검색 (Enter로 다음 이동)"
+                        value={docSearchQuery}
+                        onChange={e => {
+                          setDocSearchQuery(e.target.value);
+                          setCurrentMatchIndex(0);
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (matchCount > 0) {
+                              setCurrentMatchIndex(prev => (prev + 1) % matchCount);
+                            }
+                          }
+                        }}
+                        className="form-input"
+                        style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', fontSize: 13 }}
+                      />
+                      {docSearchQuery && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                            {matchCount > 0 ? `${currentMatchIndex + 1} / ${matchCount}` : '0 / 0'}
+                          </span>
+                          <button type="button" onClick={() => { setDocSearchQuery(''); setCurrentMatchIndex(0); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+                            <i className="fi fi-rr-cross-circle" style={{ fontSize: 14 }} />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
+                {docSearchQuery.trim() ? (() => {
+                  const targetContent = activeDoc.markdown_content || selectedDoc.markdown_content || '';
+                  const regex = new RegExp(`(${docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                  const parts = targetContent.split(regex);
+                  let matchIdx = -1;
+                  return parts.map((part: string, i: number) => {
+                    if (part.toLowerCase() === docSearchQuery.trim().toLowerCase()) {
+                      matchIdx++;
+                      const isActive = matchIdx === currentMatchIndex;
+                      return (
+                        <mark
+                          id={isActive ? 'search-match-active' : undefined}
+                          key={i}
+                          style={{ backgroundColor: isActive ? '#f97316' : '#fef08a', color: isActive ? '#fff' : '#000', padding: '0 2px', borderRadius: 2 }}
+                        >
+                          {part}
+                        </mark>
+                      );
+                    }
+                    return part;
+                  });
+                })() : (activeDoc.markdown_content || selectedDoc.markdown_content)}
+              </div>
+              {selectedDoc.original_filename && (
+                <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>원본 파일: {selectedDoc.original_filename} (서버에는 최적화를 위해 추출된 텍스트만 보관됩니다)</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </>
   )
 }

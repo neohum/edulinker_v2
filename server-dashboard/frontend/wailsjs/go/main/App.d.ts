@@ -6,9 +6,13 @@ export function CheckDependencies():Promise<main.DependencyStatus>;
 
 export function ClearLogs():Promise<void>;
 
+export function DeleteDBAnnouncement(arg1:string):Promise<void>;
+
 export function DeleteDBKnowledgeDoc(arg1:string):Promise<void>;
 
 export function DeleteDBUser(arg1:string):Promise<void>;
+
+export function GetDBAnnouncements():Promise<Array<main.DBAnnouncement>>;
 
 export function GetDBKnowledgeDocs():Promise<Array<main.DBKnowledgeDoc>>;
 

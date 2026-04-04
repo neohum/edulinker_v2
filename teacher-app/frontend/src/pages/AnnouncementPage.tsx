@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { getToken } from '../api'
+import { getToken, apiFetch } from '../api'
+
+import type { UserInfo } from '../App'
+import TargetTreeModal from '../components/TargetTreeModal'
+import ReactMarkdown from 'react-markdown'
 
 interface Announcement {
   id: string
@@ -8,11 +12,18 @@ interface Announcement {
   content: string
   type: 'simple' | 'confirm' | 'apply' | 'todo'
   is_urgent: boolean
+  attachments_json?: string
+  author_id: string
   created_at: string
   due_date?: string
 }
 
-export default function AnnouncementPage() {
+interface AnnouncementPageProps {
+  user?: UserInfo
+  counts?: { total: number, simple: number, confirm: number, apply: number, todo: number }
+}
+
+export default function AnnouncementPage({ user, counts }: AnnouncementPageProps) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
   const [filterType, setFilterType] = useState<string>('')
@@ -23,10 +34,42 @@ export default function AnnouncementPage() {
   const [formContent, setFormContent] = useState('')
   const [formType, setFormType] = useState('simple')
   const [formFiles, setFormFiles] = useState<File[]>([])
+  const [formTargets, setFormTargets] = useState<string[]>(['TEACHER'])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+
+  const [allUsers, setAllUsers] = useState<any[]>([])
+  const [showTargetModal, setShowTargetModal] = useState(false)
+
+  // Status modal
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [activeStatusDoc, setActiveStatusDoc] = useState<Announcement | null>(null)
+  const [statusData, setStatusData] = useState<any>(null)
+
+  const [stationaryCounts] = useState(counts || { total: 0, simple: 0, confirm: 0, apply: 0, todo: 0 })
 
   useEffect(() => {
     fetchAnnouncements()
+    fetchUsers()
   }, [filterType])
+
+  const fetchUsers = async () => {
+    try {
+      const res = await apiFetch('/api/core/users?page_size=1000')
+      if (res.ok) {
+        const data = await res.json()
+        setAllUsers(data.users || [])
+      }
+    } catch { }
+  }
+
+  useEffect(() => {
+    return () => {
+      localStorage.setItem(`announcement_last_viewed_${user.id}`, new Date().toISOString())
+      window.dispatchEvent(new Event('announcements_updated'))
+    }
+  }, [])
 
   const fetchAnnouncements = async () => {
     try {
@@ -45,6 +88,37 @@ export default function AnnouncementPage() {
     }
   }
 
+  const markAsRead = async (id: string) => {
+    try {
+      const token = await getToken()
+      fetch(`http://localhost:5200/api/plugins/announcement/${id}`, { headers: { 'Authorization': `Bearer ${token}` } })
+    } catch (e) { }
+  }
+
+  const handleConfirm = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      const token = await getToken()
+      const res = await fetch(`http://localhost:5200/api/plugins/announcement/${id}/confirm`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } })
+      if (res.ok) {
+        toast.success('확인 처리되었습니다.')
+        fetchAnnouncements()
+      }
+    } catch (e) { }
+  }
+
+  const handleViewStatus = async (a: Announcement, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setActiveStatusDoc(a)
+    setStatusData(null)
+    setShowStatusModal(true)
+    try {
+      const token = await getToken()
+      const res = await fetch(`http://localhost:5200/api/plugins/announcement/${a.id}/status`, { headers: { 'Authorization': `Bearer ${token}` } })
+      if (res.ok) setStatusData(await res.json())
+    } catch (e) { }
+  }
+
   const handleCreate = async () => {
     if (!formTitle.trim()) { toast.warning('제목을 입력하세요'); return }
     try {
@@ -55,13 +129,33 @@ export default function AnnouncementPage() {
       };
 
       if (formFiles.length > 0) {
+        setIsUploading(true)
+        const toastId = toast.loading('파일을 변환하고 업로드하는 중입니다...')
+
+        let markdownContent = ''
+        for (const file of formFiles) {
+          try {
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
+              reader.onerror = () => reject(new Error('파일 읽기 실패'))
+              reader.readAsDataURL(file)
+            })
+            const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
+            if (res.success) markdownContent += `\n\n### ${file.name}\n${res.text}`
+          } catch (e) { }
+        }
+
         const formData = new FormData()
         formData.append('title', formTitle)
         formData.append('content', formContent)
         formData.append('type', formType)
         formData.append('is_urgent', 'false')
+        formData.append('markdown_content', markdownContent.trim())
         formFiles.forEach(f => formData.append('files', f))
         body = formData
+
+        toast.dismiss(toastId)
       } else {
         headers['Content-Type'] = 'application/json'
         body = JSON.stringify({
@@ -81,6 +175,7 @@ export default function AnnouncementPage() {
         setFormContent('')
         setFormType('simple')
         setFormFiles([])
+        setShowPreview(false)
         fetchAnnouncements()
       } else {
         toast.error('공문 등록에 실패했습니다.')
@@ -88,6 +183,58 @@ export default function AnnouncementPage() {
     } catch (e) {
       console.error(e)
       toast.error('서버에 연결할 수 없습니다.')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); }
+
+  const handleFilesAdd = async (newFiles: File[]) => {
+    if (newFiles.length === 0) return
+
+    setIsUploading(true)
+    const toastId = toast.loading(`${newFiles.length}개의 파일을 분석 중입니다...`)
+
+    let appendedTitles: string[] = []
+    let appendedContent = ''
+
+    for (const file of newFiles) {
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
+          reader.onerror = () => reject(new Error('파일 읽기 실패'))
+          reader.readAsDataURL(file)
+        })
+        const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
+        if (res && res.success && res.text) {
+          appendedContent += `\n\n### 📄 ${file.name}\n${res.text}`
+        }
+      } catch (e) {
+      }
+      appendedTitles.push(file.name.replace(/\.[^/.]+$/, ""))
+    }
+
+    setFormTitle(prev => {
+      const merged = prev ? `${prev}, ` + appendedTitles.join(', ') : appendedTitles.join(', ')
+      return merged.length > 200 ? merged.substring(0, 197) + '...' : merged
+    })
+
+    setFormContent(prev => prev + appendedContent)
+    setFormFiles(prev => [...prev, ...newFiles])
+
+    toast.success('문서별로 본문 내용 작성이 완료되었습니다.')
+    toast.dismiss(toastId)
+    setIsUploading(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesAdd(Array.from(e.dataTransfer.files))
     }
   }
 
@@ -110,19 +257,26 @@ export default function AnnouncementPage() {
       </div>
 
       <div style={{ marginBottom: 24, display: 'flex', gap: 12 }}>
-        {['', 'simple', 'confirm', 'apply'].map(t => (
-          <button
-            key={t}
-            onClick={() => setFilterType(t)}
-            style={{
-              padding: '6px 12px', borderRadius: 20, border: filterType === t ? '1px solid var(--primary)' : '1px solid var(--border)', cursor: 'pointer', fontWeight: 600, fontSize: 13,
-              background: filterType === t ? '#eef2ff' : 'white',
-              color: filterType === t ? 'var(--primary)' : 'var(--text-secondary)'
-            }}
-          >
-            {t === '' ? '전체보기' : getTypeStyle(t).label}
-          </button>
-        ))}
+        {['', 'simple', 'confirm', 'apply'].map(t => {
+          const badgeCount = t === '' ? stationaryCounts.total : stationaryCounts[t as keyof typeof stationaryCounts]
+          return (
+            <button
+              key={t}
+              onClick={() => setFilterType(t)}
+              style={{
+                padding: '6px 12px', borderRadius: 20, border: filterType === t ? '1px solid var(--primary)' : '1px solid var(--border)', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                background: filterType === t ? '#eef2ff' : 'white',
+                color: filterType === t ? 'var(--primary)' : 'var(--text-secondary)',
+                display: 'flex', alignItems: 'center', gap: 6
+              }}
+            >
+              {t === '' ? '전체보기' : getTypeStyle(t).label}
+              {badgeCount > 0 && filterType !== t && (
+                <span style={{ background: '#ef4444', color: 'white', fontSize: 11, padding: '2px 6px', borderRadius: 10 }}>{badgeCount}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {loading ? (
@@ -141,12 +295,42 @@ export default function AnnouncementPage() {
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{new Date(a.created_at).toLocaleDateString()}</span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{a.title}</div>
-                <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{a.content}</div>
-                {a.type === 'confirm' && (
-                  <button style={{ alignSelf: 'flex-start', background: '#f8fafc', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, marginTop: 8 }}>
-                    ✅ 확인했습니다
-                  </button>
-                )}
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, maxHeight: 150, overflowY: 'auto', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #f1f5f9' }}>
+                  <ReactMarkdown>{a.content}</ReactMarkdown>
+                </div>
+
+                {(() => {
+                  try {
+                    const attachments = JSON.parse(a.attachments_json || '[]')
+                    if (attachments.length > 0) {
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                          {attachments.map((f: any, i: number) => (
+                            <a key={i} href={`http://localhost:5200${f.url}`} download={f.name} target="_blank" rel="noreferrer" onClick={() => markAsRead(a.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, textDecoration: 'none', color: '#334155', fontSize: 13, fontWeight: 500, width: 'fit-content', transition: 'background 0.2s', cursor: 'pointer' }}>
+                              <i className="fi fi-rr-clip" style={{ color: '#64748b' }} />
+                              {f.name}
+                              <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>({Math.round(f.size / 1024)}KB)</span>
+                            </a>
+                          ))}
+                        </div>
+                      )
+                    }
+                  } catch (e) { }
+                  return null
+                })()}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  {a.type === 'confirm' && a.author_id !== user?.id && (
+                    <button onClick={(e) => handleConfirm(a.id, e)} style={{ alignSelf: 'flex-start', background: '#f8fafc', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569', transition: 'background 0.2s' }}>
+                      ✅ 확인했습니다
+                    </button>
+                  )}
+                  {a.author_id === user?.id && (
+                    <button onClick={(e) => handleViewStatus(a, e)} className="btn-secondary" style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 6, fontSize: 13, margin: 0 }}>
+                      <i className="fi fi-rr-eye" style={{ marginRight: 6 }} />열람 현황 보기
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -154,99 +338,227 @@ export default function AnnouncementPage() {
       )}
 
       {showModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 100
-        }}>
-          <div style={{ background: 'white', padding: 24, borderRadius: 16, width: '100%', maxWidth: 500 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>공문 공유</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div
+          onClick={() => setShowModal(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 100, padding: 20
+          }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'slideUp 0.3s ease-out' }}>
+            <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 28, display: 'flex', alignItems: 'center', gap: 10, color: '#0f172a' }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--accent-blue)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="fi fi-rr-share" style={{ transform: 'translateY(1px)' }} />
+              </div>
+              새 공문 공유
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>공문 형식</label>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 10 }}>공문 형식</label>
                 <select
                   value={formType}
                   onChange={e => setFormType(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none', cursor: 'pointer', appearance: 'none' }}
                 >
-                  <option value="simple">단순전달</option>
-                  <option value="confirm">열람확인</option>
-                  <option value="apply">신청필요</option>
+                  <option value="simple">단순전달 — 회신이나 확인 불필요</option>
+                  <option value="confirm">열람확인 — 수신자의 읽음 확인 필요</option>
+                  <option value="apply">신청필요 — 수신자의 추가 동작 필요</option>
                 </select>
+                {formType === 'confirm' && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <label style={{ fontSize: 14, fontWeight: 700, color: '#334155' }}>열람 확인 대상 <span style={{ color: '#ef4444' }}>*</span></label>
+                      <button type="button" onClick={() => setShowTargetModal(true)} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#475569', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'} onMouseOut={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
+                        <i className="fi fi-rr-list-tree" style={{ marginRight: 4 }} /> 대상 상세 설정하기
+                      </button>
+                    </div>
+                    <div style={{ padding: '12px', borderRadius: 10, background: 'white', border: '1px solid #cbd5e1', minHeight: 44, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {formTargets.includes('TEACHER') && formTargets.length === 1 ? (
+                        <span style={{ fontSize: 13, padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5', borderRadius: 16, border: '1px solid #c7d2fe', fontWeight: 600 }}>교직원 전체</span>
+                      ) : formTargets.includes('ALL') ? (
+                        <span style={{ fontSize: 13, padding: '4px 10px', background: '#f1f5f9', color: '#475569', borderRadius: 16, border: '1px solid #e2e8f0', fontWeight: 600 }}>전체 (교직원·학생·학부모)</span>
+                      ) : formTargets.map(t => {
+                        let text = t
+                        if (t === 'STUDENT') text = '학생 전체'
+                        else if (t.startsWith('STUDENT_')) { const p = t.split('_'); text = p.length === 2 ? `학생 ${p[1]}학년` : `학생 ${p[1]}학년 ${p[2]}반` }
+                        else if (t === 'TEACHER') text = '교직원 전체'
+                        else if (t.startsWith('TEACHER_')) { text = `교직원 ${t.replace('TEACHER_', '')}` }
+                        else if (t === 'PARENT') text = '학부모 전체'
+                        else if (t.startsWith('PARENT_')) { const p = t.split('_'); text = p.length === 2 ? `학부모 ${p[1]}학년` : `학부모 ${p[1]}학년 ${p[2]}반` }
+                        else if (t.startsWith('USER_')) { const u = allUsers.find(x => x.id === t.replace('USER_', '')); text = u ? `${u.name}` : '개별 사용자' }
+                        return <span key={t} style={{ fontSize: 13, padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5', borderRadius: 16, border: '1px solid #c7d2fe', fontWeight: 600 }}>{text} <i className="fi fi-rr-cross-small" style={{ marginLeft: 4, cursor: 'pointer' }} onClick={() => {
+                          const newTargets = formTargets.filter(x => x !== t);
+                          setFormTargets(newTargets.length === 0 ? ['ALL'] : newTargets)
+                        }} /></span>
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>제목</label>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 10 }}>제목</label>
                 <input
                   value={formTitle}
                   onChange={e => setFormTitle(e.target.value)}
-                  placeholder="공문 제목을 입력하세요"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
+                  placeholder="공문 제목을 명확하게 입력하세요"
+                  style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none' }}
                   autoFocus
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>내용</label>
-                <textarea
-                  rows={4}
-                  value={formContent}
-                  onChange={e => setFormContent(e.target.value)}
-                  placeholder="전달할 내용을 입력하세요"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#475569' }}>상세 내용 (Markdown 지원)</label>
+                  <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 4 }}>
+                    <button type="button" onClick={() => setShowPreview(false)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: !showPreview ? 'white' : 'transparent', color: !showPreview ? '#0f172a' : '#64748b', boxShadow: !showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>편집</button>
+                    <button type="button" onClick={() => setShowPreview(true)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: showPreview ? 'white' : 'transparent', color: showPreview ? '#0f172a' : '#64748b', boxShadow: showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>미리보기</button>
+                  </div>
+                </div>
+                {!showPreview ? (
+                  <textarea
+                    rows={8}
+                    value={formContent}
+                    onChange={e => setFormContent(e.target.value)}
+                    placeholder="파일을 첨부하면 내용이 자동으로 요약/추출되어 채워집니다. 마크다운(Markdown) 문법을 지원합니다."
+                    style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, lineHeight: 1.6, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }}
+                  />
+                ) : (
+                  <div style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', overflowY: 'auto', minHeight: 180, maxHeight: 400, fontSize: 14, color: '#334155', lineHeight: 1.6, boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.02)', boxSizing: 'border-box' }}>
+                    {formContent ? <ReactMarkdown>{formContent}</ReactMarkdown> : <span style={{ color: '#94a3b8' }}>작성된 내용이 없습니다.</span>}
+                  </div>
+                )}
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 8 }}>첨부파일 (선택)</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <label style={{
-                    cursor: 'pointer',
-                    background: '#f8fafc',
-                    border: '1px solid var(--border)',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#475569',
-                    width: 'fit-content'
-                  }}>
-                    <i className="fi fi-rr-clip" /> {formFiles.length > 0 ? '파일 추가' : '파일 선택'}
-                    <input
-                      type="file"
-                      multiple
-                      style={{ display: 'none' }}
-                      onChange={e => {
-                        if (e.target.files) {
-                          setFormFiles(prev => [...prev, ...Array.from(e.target.files!)])
-                        }
-                      }}
-                    />
-                  </label>
-                  {formFiles.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 12 }}>
+                  <span>첨부파일 (선택)</span>
+                </label>
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  {formFiles.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafc', border: isDragOver ? '2px dashed var(--accent-blue)' : '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
                       {formFiles.map((f, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#f1f5f9', borderRadius: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#0f172a' }}>
-                            <i className="fi fi-rr-document" style={{ color: '#64748b' }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }}>{f.name}</span>
-                            <span style={{ color: '#94a3b8', fontSize: 11 }}>({Math.round(f.size / 1024)}KB)</span>
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'white', borderRadius: 8, border: '1px solid #f1f5f9', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: '#334155' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 6, background: '#eff6ff', color: '#3b82f6' }}>
+                              <i className="fi fi-rr-file-alt" />
+                            </div>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '300px', fontWeight: 500 }}>{f.name}</span>
+                            <span style={{ color: '#94a3b8', fontSize: 12 }}>({Math.round(f.size / 1024)}KB)</span>
                           </div>
-                          <button type="button" onClick={() => setFormFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <i className="fi fi-rr-cross-circle" />
+                          <button type="button" onClick={() => setFormFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ background: '#fee2e2', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6 }}>
+                            <i className="fi fi-rr-cross-circle" style={{ transform: 'translateY(1px)' }} />
                           </button>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>선택된 파일이 없습니다</div>
                   )}
+
+                  <label style={{ cursor: 'pointer', padding: formFiles.length > 0 ? '12px 0' : '24px 0', border: isDragOver ? '2px dashed var(--accent-blue)' : '2px dashed #cbd5e1', borderRadius: 12, textAlign: 'center', color: isDragOver ? 'var(--accent-blue)' : '#94a3b8', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: isDragOver ? '#eff6ff' : 'transparent', transition: 'all 0.2s' }} onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-blue)'; e.currentTarget.style.color = 'var(--accent-blue)' }} onMouseOut={e => { e.currentTarget.style.borderColor = isDragOver ? 'var(--accent-blue)' : '#cbd5e1'; e.currentTarget.style.color = isDragOver ? 'var(--accent-blue)' : '#94a3b8' }}>
+                    <i className="fi fi-rr-cloud-upload-alt" style={{ fontSize: formFiles.length > 0 ? 20 : 24 }} />
+                    {formFiles.length > 0 ? '추가 파일을 선택하거나 드래그 앤 드롭하세요' : '파일을 선택하거나 드래그 앤 드롭하세요'}
+                    <input
+                      type="file" multiple style={{ display: 'none' }}
+                      onChange={e => {
+                        if (e.target.files) {
+                          handleFilesAdd(Array.from(e.target.files))
+                        }
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button type="button" onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer' }}>취소</button>
-                <button type="button" onClick={handleCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--primary)', color: 'white', fontWeight: 600, cursor: 'pointer' }}>등록</button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 24 }}>
+                <button type="button" disabled={isUploading} onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); setFormTargets(['TEACHER']); setShowPreview(false); }} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 600, cursor: 'pointer', opacity: isUploading ? 0.5 : 1 }}>취소</button>
+                <button type="button" disabled={isUploading} onClick={handleCreate} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: 'none', background: 'var(--accent-blue)', color: 'white', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: isUploading ? 0.5 : 1 }}>
+                  {isUploading ? <i className="fi fi-rr-spinner" style={{ animation: 'spin 1s linear infinite' }} /> : <i className="fi fi-rr-paper-plane" style={{ transform: 'translateY(1px)' }} />} {isUploading ? '전송 중...' : '공문 전달하기'}
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <TargetTreeModal
+        isOpen={showTargetModal}
+        onClose={() => setShowTargetModal(false)}
+        allUsers={allUsers}
+        currentTargets={formTargets}
+        onlyTeachers={formType === 'confirm'}
+        onApply={(newTargets) => {
+          setFormTargets(newTargets)
+          setShowTargetModal(false)
+        }}
+      />
+
+      {showStatusModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 100, padding: 20
+        }}>
+          <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'slideUp 0.3s ease-out', display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>열람 및 확인 현황</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{activeStatusDoc?.title}</span> 공문의 열람 현황입니다.
+            </p>
+
+            <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 24, display: 'flex', justifyContent: 'space-around', border: '1px solid #e2e8f0' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginBottom: 4 }}>열람 인원</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent-blue)' }}>{statusData ? statusData.total_read : '-'}명</div>
+              </div>
+              {activeStatusDoc?.type === 'confirm' && (
+                <>
+                  <div style={{ width: 1, background: '#cbd5e1' }} />
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginBottom: 4 }}>확인 완료</div>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#10b981' }}>{statusData ? statusData.confirmed : '-'}명</div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflowY: 'auto' }}>
+              {statusData ? (
+                statusData.readers.length > 0 ? (
+                  statusData.readers.map((r: any, idx: number) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#eff6ff', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                          {r.user?.name?.charAt(0) || '?'}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{r.user?.name || '알 수 없음'}</div>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>{new Date(r.read_at).toLocaleString()}</div>
+                        </div>
+                      </div>
+                      {activeStatusDoc?.type === 'confirm' && (
+                        <div>
+                          {r.is_confirmed ? (
+                            <span style={{ fontSize: 12, background: '#dcfce3', color: '#15803d', padding: '4px 8px', borderRadius: 20, fontWeight: 600 }}>확인 완료</span>
+                          ) : (
+                            <span style={{ fontSize: 12, background: '#f1f5f9', color: '#64748b', padding: '4px 8px', borderRadius: 20, fontWeight: 600 }}>미확인</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8', fontSize: 14 }}>아직 문서를 열람한 사람이 없습니다.</div>
+                )
+              ) : (
+                <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8', fontSize: 14 }}><i className="fi fi-rr-spinner" style={{ animation: 'spin 1s linear infinite' }} /> 정보 불러오는 중...</div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowStatusModal(false)} className="btn-secondary" style={{ padding: '10px 24px' }}>닫기</button>
             </div>
           </div>
         </div>

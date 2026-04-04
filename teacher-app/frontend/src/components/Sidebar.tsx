@@ -18,6 +18,8 @@ interface NavItem {
   priceType?: 'free' | 'paid' | 'partial'
 }
 
+const OFFLINE_ENABLED_IDS = ['dashboard', 'knowledge', 'aianalysis', 'pcinfo', 'settings', 'profile', 'todo', 'attendance', 'counseling', 'behavior-opinion', 'curriculum', 'linker']
+
 const coreItems: NavItem[] = [
   { id: 'dashboard', label: '통합 검색', icon: 'fi fi-rr-search' },
 ]
@@ -163,28 +165,47 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
     return items.map((item) => {
       const isFav = favorites.includes(item.id)
       const uKey = groupId ? `${groupId}-${item.id}` : `search-${item.id}`
+      const isOfflineDisabled = user.isOffline && !OFFLINE_ENABLED_IDS.includes(item.id)
+
       return (
         <button
           key={uKey}
           className={`sidebar-item ${currentPage === item.id ? 'active' : ''}`}
-          onClick={() => onNavigate(item.id)}
+          onClick={(e) => {
+            if (isOfflineDisabled) {
+              e.preventDefault()
+              return
+            }
+            onNavigate(item.id)
+          }}
           title={isCollapsed ? item.label : undefined}
+          style={isOfflineDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          disabled={isOfflineDisabled}
         >
           <span className="sidebar-item-icon"><i className={item.icon} /></span>
           {!isCollapsed && <span className="sidebar-item-label" style={{ flex: 1, minWidth: 0, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
-          {!isCollapsed && item.priceType && (
+          {!isCollapsed && isOfflineDisabled && (
+            <span className="sidebar-price-badge" style={{ background: '#f87171', color: 'white', border: 'none' }}>
+              사용불가
+            </span>
+          )}
+          {!isCollapsed && !isOfflineDisabled && item.priceType && (
             <span className={`sidebar-price-badge ${item.priceType}`}>
               {item.priceType === 'paid' ? '유료' : item.priceType === 'partial' ? '부분' : '무료'}
             </span>
           )}
-          {((badges && badges[item.id]) || item.badge) ? (
+          {((badges && badges[item.id]) || item.badge) && !isOfflineDisabled ? (
             <span className="sidebar-item-badge">{badges?.[item.id] || item.badge}</span>
           ) : null}
           {!isCollapsed && item.id !== 'dashboard' && item.id !== 'settings' && (
             <div
-              onClick={(e) => toggleFavorite(e, item.id)}
+              onClick={(e) => {
+                if (isOfflineDisabled) return;
+                toggleFavorite(e, item.id)
+              }}
               className={`sidebar-fav-btn ${isFav ? 'active' : ''}`}
               title={isFav ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+              style={isOfflineDisabled ? { display: 'none' } : {}}
             >
               <i className={`fi ${isFav ? 'fi-sr-star' : 'fi-rr-star'}`} style={{ fontSize: 13 }} />
             </div>

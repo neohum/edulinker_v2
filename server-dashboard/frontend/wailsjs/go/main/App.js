@@ -10,12 +10,20 @@ export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
 
+export function DeleteDBAnnouncement(arg1) {
+  return window['go']['main']['App']['DeleteDBAnnouncement'](arg1);
+}
+
 export function DeleteDBKnowledgeDoc(arg1) {
   return window['go']['main']['App']['DeleteDBKnowledgeDoc'](arg1);
 }
 
 export function DeleteDBUser(arg1) {
   return window['go']['main']['App']['DeleteDBUser'](arg1);
+}
+
+export function GetDBAnnouncements() {
+  return window['go']['main']['App']['GetDBAnnouncements']();
 }
 
 export function GetDBKnowledgeDocs() {

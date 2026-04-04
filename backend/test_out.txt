@@ -1,0 +1,21 @@
+Total recipients found in last 10: 10
+Recipient! ID: ed896699-0124-4bdd-88bc-bc0b83220b76, UserID: e85bded6-67f3-46e1-ae87-b97af9c91010, SendocID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a
+  Sendoc preloaded OK. ID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a, Author: 민정일1
+Recipient! ID: f114c136-e839-4139-b244-41ba96db44c5, UserID: 0f4a8b96-3b2a-4451-a1af-97c4c4e9f90c, SendocID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a
+  Sendoc preloaded OK. ID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a, Author: 민정일1
+Recipient! ID: c3bc24bc-51e9-4a17-a7ba-b2d38738dab0, UserID: ec449426-bd11-47dc-b1b1-b0335611e921, SendocID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a
+  Sendoc preloaded OK. ID: 50f10560-11bd-4282-9f5f-a6d9e0bde67a, Author: 민정일1
+Recipient! ID: 5dd18374-6042-4a79-8c1b-0d30945da473, UserID: ec449426-bd11-47dc-b1b1-b0335611e921, SendocID: 190b869c-4e32-4141-92fc-78f8036d5140
+  Sendoc preloaded OK. ID: 190b869c-4e32-4141-92fc-78f8036d5140, Author: 민정일1
+Recipient! ID: 94553666-5309-484c-8ad3-23aa9be55b16, UserID: e85bded6-67f3-46e1-ae87-b97af9c91010, SendocID: 190b869c-4e32-4141-92fc-78f8036d5140
+  Sendoc preloaded OK. ID: 190b869c-4e32-4141-92fc-78f8036d5140, Author: 민정일1
+Recipient! ID: 85e658fe-e333-412e-aeff-cb4d5705688f, UserID: 0f4a8b96-3b2a-4451-a1af-97c4c4e9f90c, SendocID: 190b869c-4e32-4141-92fc-78f8036d5140
+  Sendoc preloaded OK. ID: 190b869c-4e32-4141-92fc-78f8036d5140, Author: 민정일1
+Recipient! ID: b7e7fe51-587d-4f2c-ae97-0b84672be277, UserID: ec449426-bd11-47dc-b1b1-b0335611e921, SendocID: 4260d310-f8e4-4140-aa31-8851a10b8470
+  Sendoc preloaded OK. ID: 4260d310-f8e4-4140-aa31-8851a10b8470, Author: 민정일
+Recipient! ID: 9e0fe070-3954-450c-b0fc-4dfe2129f076, UserID: 0f4a8b96-3b2a-4451-a1af-97c4c4e9f90c, SendocID: 4260d310-f8e4-4140-aa31-8851a10b8470
+  Sendoc preloaded OK. ID: 4260d310-f8e4-4140-aa31-8851a10b8470, Author: 민정일
+Recipient! ID: 8e8a958a-d137-41ca-a95c-6e18fa1ddedd, UserID: e85bded6-67f3-46e1-ae87-b97af9c91010, SendocID: 4260d310-f8e4-4140-aa31-8851a10b8470
+  Sendoc preloaded OK. ID: 4260d310-f8e4-4140-aa31-8851a10b8470, Author: 민정일
+Recipient! ID: 254023dc-8251-44f9-95f7-2344f2a85487, UserID: ec449426-bd11-47dc-b1b1-b0335611e921, SendocID: b52884d8-3a50-4c20-81a0-90546ddcd21e
+  WARNING: Sendoc wasn't preloaded! sendocs status: , Author: {00000000-0000-0000-0000-000000000000 00000000-0000-0000-0000-000000000000  <nil>    0 0 0         false 0001-01-01 00:00:00 +0000 UTC 0001-01-01 00:00:00 +0000 UTC {00000000-0000-0000-0000-000000000000     0001-01-01 00:00:00 +0000 UTC 0001-01-01 00:00:00 +0000 UTC}}

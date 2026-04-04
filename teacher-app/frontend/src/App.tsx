@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Toaster } from 'sonner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import NetworkBanner from './components/NetworkBanner'
 
 // User info stored after login
 export interface UserInfo {
@@ -14,10 +15,38 @@ export interface UserInfo {
   classNum?: number
   taskName?: string
   classPhone?: string
+  isOffline?: boolean
 }
 
 function App() {
   const [user, setUser] = useState<UserInfo | null>(null)
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setUser(prev => {
+        if (prev && prev.isOffline) {
+          return { ...prev, isOffline: false }
+        }
+        return prev
+      })
+    }
+    const handleOffline = () => {
+      setUser(prev => {
+        if (prev && !prev.isOffline) {
+          return { ...prev, isOffline: true }
+        }
+        return prev
+      })
+    }
+
+    window.addEventListener('server-online', handleOnline)
+    window.addEventListener('server-offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('server-online', handleOnline)
+      window.removeEventListener('server-offline', handleOffline)
+    }
+  }, [])
 
   const handleLogin = (userInfo: UserInfo) => {
     setUser(userInfo)
@@ -35,10 +64,10 @@ function App() {
   }
 
   if (!user) {
-    return <><Toaster richColors position="top-center" /><LoginPage onLogin={handleLogin} /></>
+    return <><NetworkBanner /><Toaster richColors position="top-center" /><LoginPage onLogin={handleLogin} /></>
   }
 
-  return <><Toaster richColors position="top-center" /><DashboardPage user={user} onLogout={handleLogout} /></>
+  return <><NetworkBanner /><Toaster richColors position="top-center" /><DashboardPage user={user} onLogout={handleLogout} /></>
 }
 
 export default App

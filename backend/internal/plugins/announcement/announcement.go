@@ -1,10 +1,14 @@
 package announcement
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/edulinker/backend/internal/core/notify"
 	"github.com/edulinker/backend/internal/core/rag"
+	"github.com/edulinker/backend/internal/database/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -21,17 +25,28 @@ const (
 	TypeTodo    AnnouncementType = "todo"    // 관심→투두
 )
 
+type AnnouncementFile struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Size int64  `json:"size"`
+}
+
 type Announcement struct {
-	ID        uuid.UUID        `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SchoolID  uuid.UUID        `json:"school_id" gorm:"type:uuid;index"`
-	AuthorID  uuid.UUID        `json:"author_id" gorm:"type:uuid"`
-	Type      AnnouncementType `json:"type" gorm:"type:varchar(20);default:'simple'"`
-	Title     string           `json:"title" gorm:"type:varchar(200);not null"`
-	Content   string           `json:"content" gorm:"type:text"`
-	IsUrgent  bool             `json:"is_urgent" gorm:"default:false"`
-	DueDate   *time.Time       `json:"due_date,omitempty"`
-	CreatedAt time.Time        `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time        `json:"updated_at" gorm:"autoUpdateTime"`
+	ID              uuid.UUID        `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SchoolID        uuid.UUID        `json:"school_id" gorm:"type:uuid;index"`
+	AuthorID        uuid.UUID        `json:"author_id" gorm:"type:uuid"`
+	Type            AnnouncementType `json:"type" gorm:"type:varchar(20);default:'simple'"`
+	Title           string           `json:"title" gorm:"type:varchar(200);not null"`
+	Content         string           `json:"content" gorm:"type:text"`
+	IsUrgent        bool             `json:"is_urgent" gorm:"default:false"`
+	TargetRoles     string           `json:"target_roles" gorm:"type:text;default:'ALL'"`
+	DueDate         *time.Time       `json:"due_date,omitempty"`
+	MarkdownContent string           `json:"markdown_content" gorm:"type:text"`
+	AttachmentsJSON string           `json:"attachments_json" gorm:"type:jsonb;default:'[]'"`
+	CreatedAt       time.Time        `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time        `json:"updated_at" gorm:"autoUpdateTime"`
+
+	Author models.User `json:"author" gorm:"foreignKey:AuthorID"`
 }
 
 type AnnouncementRead struct {
@@ -40,6 +55,8 @@ type AnnouncementRead struct {
 	IsConfirmed    bool       `json:"is_confirmed" gorm:"default:false"`
 	ConfirmedAt    *time.Time `json:"confirmed_at,omitempty"`
 	ReadAt         time.Time  `json:"read_at" gorm:"autoCreateTime"`
+
+	User models.User `json:"user" gorm:"foreignKey:UserID"`
 }
 
 // ── Plugin ──
@@ -101,7 +118,7 @@ func (p *Plugin) list(c *fiber.Ctx) error {
 
 	var announcements []Announcement
 	offset := (page - 1) * pageSize
-	query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&announcements)
+	query.Preload("Author").Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&announcements)
 
 	return c.JSON(fiber.Map{
 		"announcements": announcements,
@@ -129,23 +146,65 @@ func (p *Plugin) create(c *fiber.Ctx) error {
 	}
 
 	if req.Type == "" {
-		req.Type = TypeSimple
+		req.Type = AnnouncementType(c.FormValue("type", string(TypeSimple)))
+	}
+	if req.Title == "" {
+		req.Title = c.FormValue("title")
+	}
+	if req.Content == "" {
+		req.Content = c.FormValue("content")
+	}
+	if !req.IsUrgent && c.FormValue("is_urgent") == "true" {
+		req.IsUrgent = true
+	}
+
+	var attachments []AnnouncementFile
+	form, formErr := c.MultipartForm()
+	if formErr == nil && form != nil {
+		if files := form.File["files"]; len(files) > 0 {
+			uploadDir := fmt.Sprintf("./uploads/announcement/%s", schoolID.String())
+			os.MkdirAll(uploadDir, 0755)
+			for _, file := range files {
+				safeName := uuid.New().String() + "-" + file.Filename
+				filePath := fmt.Sprintf("%s/%s", uploadDir, safeName)
+				if err := c.SaveFile(file, filePath); err == nil {
+					attachments = append(attachments, AnnouncementFile{
+						Name: file.Filename,
+						URL:  fmt.Sprintf("/uploads/announcement/%s/%s", schoolID.String(), safeName),
+						Size: file.Size,
+					})
+				}
+			}
+		}
+	}
+
+	attachmentsBytes, _ := json.Marshal(attachments)
+	if string(attachmentsBytes) == "null" {
+		attachmentsBytes = []byte("[]")
+	}
+
+	targetRoles := c.FormValue("target_roles", "ALL")
+	if targetRoles == "" {
+		targetRoles = "ALL"
 	}
 
 	ann := Announcement{
-		SchoolID: schoolID,
-		AuthorID: userID,
-		Type:     req.Type,
-		Title:    req.Title,
-		Content:  req.Content,
-		IsUrgent: req.IsUrgent,
-		DueDate:  req.DueDate,
+		SchoolID:        schoolID,
+		AuthorID:        userID,
+		Type:            AnnouncementType(req.Type),
+		Title:           req.Title,
+		Content:         req.Content,
+		IsUrgent:        req.IsUrgent,
+		TargetRoles:     targetRoles,
+		DueDate:         req.DueDate,
+		AttachmentsJSON: string(attachmentsBytes),
+		MarkdownContent: c.FormValue("markdown_content"),
 	}
 	p.db.Create(&ann)
 
 	// Index for RAG
 	if p.ragSvc != nil {
-		go p.ragSvc.IndexDocument(schoolID, "announcement", ann.ID, ann.Title, ann.Content, "")
+		go p.ragSvc.IndexDocument(schoolID, "announcement", ann.ID, ann.Title, ann.Content+"\n\n"+ann.MarkdownContent, "")
 	}
 
 	// Send notification to all teachers in the school
@@ -221,7 +280,7 @@ func (p *Plugin) readStatus(c *fiber.Ctx) error {
 	}
 
 	var reads []AnnouncementRead
-	p.db.Where("announcement_id = ?", id).Find(&reads)
+	p.db.Preload("User").Where("announcement_id = ?", id).Find(&reads)
 
 	confirmed := 0
 	for _, r := range reads {

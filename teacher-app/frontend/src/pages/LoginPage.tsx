@@ -59,14 +59,31 @@ function LoginPage({ onLogin }: LoginPageProps) {
     ip = ip.split(':')[0].replace(/https?:\/\//, '')
     setServerStatus('checking')
 
+    const wailsApp = (window as any).go?.main?.App
+    if (wailsApp?.SetAPIBase) {
+      wailsApp.SetAPIBase(`http://${ip}:5200`)
+    }
+
     const checkConn = async () => {
       try {
-        await fetch(`http://${ip}:5200/api/core/plugins`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-        })
-        setServerStatus('connected')
-        window.dispatchEvent(new Event('server-online'))
+        let isOnline = false
+        if (wailsApp?.CheckConnection) {
+          isOnline = await wailsApp.CheckConnection()
+        } else {
+          const res = await fetch(`http://${ip}:5200/health`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+          })
+          isOnline = res.ok
+        }
+
+        if (isOnline) {
+          setServerStatus('connected')
+          window.dispatchEvent(new Event('server-online'))
+        } else {
+          setServerStatus('error')
+          window.dispatchEvent(new Event('server-offline'))
+        }
       } catch (err) {
         setServerStatus('error')
         window.dispatchEvent(new Event('server-offline'))
@@ -120,9 +137,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
       if (wailsApp?.Login) {
         const result = await wailsApp.Login(p, pw)
         if (result.success) {
-          // Token is stored in Go memory (per-instance), not localStorage
-          // This prevents cross-instance token sharing when running multiple Wails apps
-          onLogin({
+          const userProfile = {
             id: result.user_id,
             name: result.user_name,
             role: result.user_role,
@@ -131,8 +146,13 @@ function LoginPage({ onLogin }: LoginPageProps) {
             grade: result.grade,
             classNum: result.class_num,
             taskName: result.task_name,
-            classPhone: result.class_phone
-          })
+            classPhone: result.class_phone,
+            isOffline: result.is_offline
+          }
+          if (result.is_offline) {
+            toast.warning('서버와의 연결이 필요해 일부 서비스는 사용할 수 없습니다.', { duration: 6000 })
+          }
+          onLogin(userProfile)
         } else {
           toast.error(result.error || '로그인에 실패했습니다')
           if (isAuto) setIsAutoLoggingIn(false)
@@ -149,7 +169,7 @@ function LoginPage({ onLogin }: LoginPageProps) {
           localStorage.setItem('token', data.token)
           const user = data.user || {}
           const school = user.school || {}
-          onLogin({
+          const userProfile = {
             id: user.id || '',
             name: user.name || '교사',
             role: user.role || 'teacher',
@@ -159,13 +179,27 @@ function LoginPage({ onLogin }: LoginPageProps) {
             classNum: user.class_num,
             taskName: user.task_name,
             classPhone: user.class_phone
-          })
+          }
+          localStorage.setItem('offlineUserProfile', JSON.stringify(userProfile))
+          localStorage.setItem('offlinePhone', p)
+          localStorage.setItem('offlinePassword', pw)
+          onLogin(userProfile)
         } else {
           toast.error(data.error || '로그인에 실패했습니다')
           if (isAuto) setIsAutoLoggingIn(false)
         }
       }
     } catch (err) {
+      const cachedProfile = localStorage.getItem('offlineUserProfile')
+      const cachedPhone = localStorage.getItem('offlinePhone')
+      const cachedPassword = localStorage.getItem('offlinePassword')
+      if (cachedProfile && p === cachedPhone && pw === cachedPassword) {
+        toast.warning('서버와의 연결이 필요해 일부 서비스는 사용할 수 없습니다.', { duration: 6000 })
+        const user = JSON.parse(cachedProfile)
+        user.isOffline = true
+        onLogin(user)
+        return
+      }
       toast.error('서버에 연결할 수 없습니다')
       if (isAuto) setIsAutoLoggingIn(false)
     } finally {

@@ -21,6 +21,9 @@ export default function DocumentManagement() {
   const [filterType, setFilterType] = useState<'all' | 'file' | 'text' | 'qa'>('all');
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const ITEMS_PER_PAGE = 10;
 
   const wapp = () => (window as any).go?.main?.App;
 
@@ -67,6 +70,13 @@ export default function DocumentManagement() {
       d.created_by_name?.toLowerCase().includes(search.toLowerCase());
     return matchType && matchSearch;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterType, docs]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const paginatedDocs = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const typeInfo = (type: string) => {
     if (type === 'file') return { label: '파일', icon: 'fi-rr-document', color: 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30' };
@@ -180,7 +190,7 @@ export default function DocumentManagement() {
           </div>
         ) : (
           <div className="flex flex-col gap-3 pb-6">
-            {filtered.map(doc => {
+            {paginatedDocs.map(doc => {
               const { label, icon, color } = typeInfo(doc.source_type);
               const isExpanded = expandedDoc === doc.id;
               return (
@@ -285,6 +295,32 @@ export default function DocumentManagement() {
                 </div>
               );
             })}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-4 mt-6">
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className="w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10 flex items-center justify-center disabled:opacity-50 disabled:hover:text-slate-500 disabled:hover:border-slate-200 transition-all shadow-sm"
+                >
+                  <i className="fi fi-rr-angle-small-left text-lg" />
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{currentPage}</span>
+                  <span className="text-sm font-medium text-slate-400 dark:text-slate-500">/</span>
+                  <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{totalPages}</span>
+                </div>
+
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className="w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10 flex items-center justify-center disabled:opacity-50 disabled:hover:text-slate-500 disabled:hover:border-slate-200 transition-all shadow-sm"
+                >
+                  <i className="fi fi-rr-angle-small-right text-lg" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -63,11 +63,17 @@ export default function CounselingPage({ user }: CounselingPageProps) {
 
   const fetchRecords = async (studentId: string) => {
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/students/${studentId}/counseling`)
-      if (res.ok) {
-        const data = await res.json()
-        setRecords(data || [])
-      }
+      const data = await (window as any).go.main.App.GetCounselingRecords(studentId);
+      // Data mapping to match frontend properties
+      const mapped = (data || []).map((r: any) => ({
+        id: r.id,
+        student_id: r.student_id,
+        counseling_date: r.date,
+        category: r.type,
+        content: r.content,
+        created_at: r.created_at
+      }));
+      setRecords(mapped)
     } catch (e) { setRecords([]) }
   }
 
@@ -76,34 +82,26 @@ export default function CounselingPage({ user }: CounselingPageProps) {
     if (!form.content.trim()) { toast.error('상담 내용을 입력해주세요.'); return }
     setSubmitting(true)
     try {
-      const res = await apiFetch(`/api/plugins/studentmgmt/students/${selectedStudent.id}/counseling`, {
-        method: 'POST',
-        body: JSON.stringify({
-          student_id: selectedStudent.id,
-          counseling_date: new Date(form.date).toISOString(),
-          category: form.category,
-          content: form.content
-        })
-      })
-      if (res.ok) {
-        toast.success('상담 기록이 저장되었습니다.')
-        setShowForm(false)
-        setForm({ date: new Date().toISOString().slice(0, 10), category: '학업', content: '' })
-        fetchRecords(selectedStudent.id)
-      } else {
-        const d = await res.json(); toast.error(d.error || '저장에 실패했습니다.')
-      }
-    } catch (e) { toast.error('서버에 연결할 수 없습니다.') }
+      await (window as any).go.main.App.SaveCounselingRecord(selectedStudent.id, new Date(form.date).toISOString(), form.category, form.content);
+      toast.success('상담 기록이 저장되었습니다.')
+      setShowForm(false)
+      setForm({ date: new Date().toISOString().slice(0, 10), category: '학업', content: '' })
+      fetchRecords(selectedStudent.id)
+    } catch (e) {
+      toast.error('저장에 실패했습니다.')
+    }
     finally { setSubmitting(false) }
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('이 상담 기록을 삭제하시겠습니까?')) return
     try {
-      // NOTE: backend does not actually expose DELETE /students/:id/counseling/:id currently, 
-      // but if we had it, this would be the correct place. Handled as is for frontend.
-      toast.error('삭제 기능은 백엔드에서 지원하지 않습니다.')
-    } catch (e) { }
+      await (window as any).go.main.App.DeleteCounselingRecord(id);
+      toast.success('삭제되었습니다.');
+      if (selectedStudent) fetchRecords(selectedStudent.id);
+    } catch (e) {
+      toast.error('삭제에 실패했습니다.')
+    }
   }
 
   const categoryColor: Record<string, string> = {

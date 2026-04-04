@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import { apiFetch, API_BASE } from '../api'
 
@@ -25,6 +27,7 @@ export default function KnowledgePage() {
   const [docs, setDocs] = useState<KnowledgeDoc[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<KnowledgeDoc | null>(null)
+  const [isOfflineMode, setIsOfflineMode] = useState(false)
 
   // List State
   const [searchQuery, setSearchQuery] = useState('')
@@ -43,6 +46,21 @@ export default function KnowledgePage() {
     if (activeTab === 'list') {
       fetchDocs()
     }
+
+    const handleOnline = () => {
+      setIsOfflineMode(prev => {
+        if (prev) {
+          // If we were offline and now online, fetch again!
+          setTimeout(() => {
+            if (activeTab === 'list') fetchDocs()
+          }, 0)
+          return false
+        }
+        return false
+      })
+    }
+    window.addEventListener('server-online', handleOnline)
+    return () => window.removeEventListener('server-online', handleOnline)
   }, [activeTab])
 
   // Reset to page 1 when search query changes
@@ -52,20 +70,118 @@ export default function KnowledgePage() {
 
   const [deleteData, setDeleteData] = useState<KnowledgeDoc | null>(null)
   const [deleteInput, setDeleteInput] = useState('')
+  const [previewMode, setPreviewMode] = useState(false)
 
   const fetchDocs = async () => {
     try {
       setLoading(true)
+
+      // 로컬 DB에서 먼저 데이터를 즉시 불러와서 화면에 빠르게 그려줌 (SWR 패턴)
+      if ((window as any).go?.main?.App?.GetLocalKnowledge) {
+        try {
+          const localData = await (window as any).go.main.App.GetLocalKnowledge()
+          if (localData && localData.length > 0) {
+            setDocs(localData)
+            setLoading(false) // 로컬 데이터가 있으면 로딩 스피너를 즉시 끔
+          }
+        } catch (e) { }
+      }
+      if (isOfflineMode || !navigator.onLine) {
+        throw new Error('already offline')
+      }
+
+      // 백그라운드에서 최신 데이터를 서버로부터 패치
       const res = await apiFetch('/api/plugins/knowledge/docs')
       if (res.ok) {
-        setDocs(await res.json())
+        const data = await res.json()
+        setDocs(data || [])
+        setIsOfflineMode(false)
+        if ((window as any).go?.main?.App?.SyncKnowledge) {
+          try {
+            const { getToken } = await import('../api');
+            const token = await getToken();
+            (window as any).go.main.App.SyncKnowledge(JSON.stringify(data || []), API_BASE, token).catch((e: any) => console.error(e));
+          } catch (err) { }
+        }
+      } else {
+        throw new Error('Server !ok')
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
+      setIsOfflineMode(true)
+      // 최신 서버 호출 실패 시 다시 로컬 데이터 확인해서 offline fallback 알림
+      if ((window as any).go?.main?.App?.GetLocalKnowledge) {
+        try {
+          const localData = await (window as any).go.main.App.GetLocalKnowledge()
+          setDocs(localData || [])
+          if (e.message !== 'already offline') {
+            toast.info("오프라인 모드로 로컬에 저장된 규정/정보를 불러왔습니다.", { duration: 3000 })
+          }
+        } catch (err) { }
+      }
     } finally {
       setLoading(false)
     }
   }
+
+  // 오프라인 대기 큐 비우기 기능 추가
+  const flushOfflineKnowledgeQueue = async () => {
+    const queueStr = localStorage.getItem('offline_knowledge_queue')
+    if (!queueStr) return
+    let queue = []
+    try { queue = JSON.parse(queueStr) } catch (e) { return }
+    if (queue.length === 0) return
+
+    let anyFailed = false
+    let successCount = 0
+    const newQueue = []
+
+    for (const doc of queue) {
+      try {
+        const body = JSON.stringify({
+          title: doc.title,
+          source_type: doc.source_type,
+          original_filename: doc.original_filename || '',
+          content: doc.markdown_content
+        })
+        const { getToken } = await import('../api')
+        const token = await getToken()
+        const res = await fetch(`${API_BASE}/api/plugins/knowledge/docs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body
+        })
+        if (!res.ok) {
+          anyFailed = true
+          newQueue.push(doc)
+        } else {
+          successCount++
+        }
+      } catch (e) {
+        anyFailed = true
+        newQueue.push(doc)
+      }
+    }
+
+    if (newQueue.length === 0) {
+      localStorage.removeItem('offline_knowledge_queue')
+    } else {
+      localStorage.setItem('offline_knowledge_queue', JSON.stringify(newQueue))
+    }
+
+    if (successCount > 0) {
+      toast.success(`${successCount}개의 오프라인 등록 문서가 서버와 동기화되었습니다.`)
+      // Refresh documents after upload
+      fetchDocs()
+    }
+  }
+
+  // Mount 시에 큐 플러시 시도
+  useEffect(() => {
+    if (!isOfflineMode) {
+      flushOfflineKnowledgeQueue()
+    }
+  }, [isOfflineMode])
 
   const handleDeleteClick = (doc: KnowledgeDoc) => {
     setDeleteData(doc)
@@ -93,21 +209,52 @@ export default function KnowledgePage() {
     setIsConverting(true)
 
     try {
-      const reader = new FileReader()
-      reader.onload = async (evt) => {
-        const base64data = (evt.target?.result as string).split(',')[1]
+      if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        let mdText = '';
+        workbook.SheetNames.forEach(sheetName => {
+          const worksheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+          if (rows.length > 0) {
+            mdText += `### ${sheetName}\n\n`;
+            const maxCols = Math.max(...rows.map(r => r.length));
+            if (maxCols > 0) {
+              const paddedRows = rows.map(r => {
+                const newRow = [...r];
+                while (newRow.length < maxCols) newRow.push("");
+                return newRow.map(c => String(c).replace(/\|/g, '\\|').replace(/\n/g, '<br>'));
+              });
+              mdText += '| ' + paddedRows[0].join(' | ') + ' |\n';
+              mdText += '| ' + paddedRows[0].map(() => '---').join(' | ') + ' |\n';
+              for (let i = 1; i < paddedRows.length; i++) {
+                mdText += '| ' + paddedRows[i].join(' | ') + ' |\n';
+              }
+              mdText += '\n\n';
+            }
+          }
+        });
+        if (!mdText.trim()) mdText = '엑셀 내용을 추출할 수 없거나 빈 시트입니다.';
+        setContent(prev => prev ? prev + '\n\n' + mdText : mdText);
+        toast.success('엑셀 문서 추출 완료');
+        setIsConverting(false);
+      } else {
+        const reader = new FileReader()
+        reader.onload = async (evt) => {
+          const base64data = (evt.target?.result as string).split(',')[1]
 
-        // Call Wails Backend
-        const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64data)
-        if (res.success) {
-          setContent(prev => prev ? prev + '\n\n' + res.text : res.text)
-          toast.success('문서 텍스트 추출 완료')
-        } else {
-          toast.error('텍스트 추출 실패: ' + res.error)
+          // Call Wails Backend
+          const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64data)
+          if (res.success) {
+            setContent(prev => prev ? prev + '\n\n' + res.text : res.text)
+            toast.success('문서 텍스트 추출 완료')
+          } else {
+            toast.error('텍스트 추출 실패: ' + res.error)
+          }
+          setIsConverting(false)
         }
-        setIsConverting(false)
+        reader.readAsDataURL(file)
       }
-      reader.readAsDataURL(file)
     } catch (err: any) {
       toast.error('파일 처리 중 오류 발생')
       setIsConverting(false)
@@ -169,12 +316,35 @@ export default function KnowledgePage() {
         })
       }
 
+      if (isOfflineMode || !navigator.onLine) {
+        throw new Error('already offline')
+      }
+
       const res = await apiFetch('/api/plugins/knowledge/docs', {
         method: 'POST',
         body
       })
 
       if (res.ok) {
+        const publishedDoc = await res.json()
+
+        // Optimistic UI update: 새 문서를 즉시 화면 목록에 반영
+        const newDocs = [publishedDoc, ...docs]
+        setDocs(newDocs)
+
+        // 로컬 SQLite에도 즉시 반영하여 이후 fetchDocs에서 딜레이 없이 나오게 함
+        if ((window as any).go?.main?.App?.SyncKnowledge) {
+          try {
+            const { getToken } = await import('../api')
+            const token = await getToken()
+              ; (window as any).go.main.App.SyncKnowledge(JSON.stringify(newDocs), API_BASE, token).then(() => {
+                if ((window as any).go?.main?.App?.IndexDocument) {
+                  return (window as any).go.main.App.IndexDocument(publishedDoc.id, publishedDoc.title, publishedDoc.source_type, publishedDoc.markdown_content)
+                }
+              }).catch((err: any) => console.error('[Online Syncing/Indexing]', err))
+          } catch (err) { }
+        }
+
         toast.success('문서가 지식베이스에 등록되었습니다.')
         // Reset form
         setTitle('')
@@ -186,7 +356,52 @@ export default function KnowledgePage() {
         toast.error('등록 실패')
       }
     } catch (e) {
-      toast.error('네트워크 오류')
+      setIsOfflineMode(true)
+      toast.info('오프라인 상태입니다. 기기에 우선 저장되며, 온라인 시 자동 등록됩니다.', { duration: 5000 })
+
+      const currentSourceType = selectedFile ? 'file' : 'text'
+      const offlineDoc = {
+        id: 'local-' + Date.now(),
+        school_id: '',
+        title,
+        source_type: currentSourceType,
+        original_filename: filename,
+        markdown_content: content.trim(),
+        created_at: new Date().toISOString(),
+        user: { name: '나 (오프라인)' }
+      }
+
+      // localStorage 큐에 저장
+      const queueStr = localStorage.getItem('offline_knowledge_queue')
+      let queue = []
+      try { queue = queueStr ? JSON.parse(queueStr) : [] } catch (e) { }
+      queue.push(offlineDoc)
+      localStorage.setItem('offline_knowledge_queue', JSON.stringify(queue))
+
+      // UI 업데이트 및 SQLite 저장
+      const newDocs = [offlineDoc, ...docs]
+      setDocs(newDocs)
+
+      if ((window as any).go?.main?.App?.SyncKnowledge) {
+        try {
+          const { getToken } = await import('../api')
+          const token = await getToken()
+            // 비동기 처리로 UI 블로킹 방지 (Ollama 로컬 임베딩이 5~10초 지연될 수 있으므로 분리)
+            ; (window as any).go.main.App.SyncKnowledge(JSON.stringify(newDocs), API_BASE, token).then(() => {
+              if ((window as any).go?.main?.App?.IndexDocument) {
+                return (window as any).go.main.App.IndexDocument(offlineDoc.id, offlineDoc.title, offlineDoc.source_type, offlineDoc.markdown_content)
+              }
+            }).catch((err: any) => console.error('[Offline Syncing/Indexing]', err))
+        } catch (err) {
+          console.error('[Offline Setup]', err)
+        }
+      }
+
+      setTitle('')
+      setContent('')
+      setFilename('')
+      setSelectedFile(null)
+      setActiveTab('list')
     } finally {
       setLoading(false)
     }
@@ -336,7 +551,9 @@ export default function KnowledgePage() {
                               {new Date(doc.created_at).toLocaleDateString()}
                             </td>
                             <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                              <button onClick={() => handleDeleteClick(doc)} className="btn-danger" style={{ padding: '6px 12px', fontSize: '13px' }}>삭제</button>
+                              {!isOfflineMode && (
+                                <button onClick={() => handleDeleteClick(doc)} className="btn-danger" style={{ padding: '6px 12px', fontSize: '13px' }}>삭제</button>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -435,12 +652,12 @@ export default function KnowledgePage() {
                 {filename ? filename : '클릭하여 파일 선택'}
               </span>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                지원 포맷: HWP, HWPX, PDF, TXT, CSV, MD
+                지원 포맷: HWP, HWPX, PDF, TXT, CSV, MD, XLSX, XLS
               </span>
               <input
                 type="file"
                 style={{ display: 'none' }}
-                accept=".hwp,.hwpx,.pdf,.txt,.csv,.md"
+                accept=".hwp,.hwpx,.pdf,.txt,.csv,.md,.xlsx,.xls"
                 onChange={handleFileSelect}
                 disabled={isConverting}
               />
@@ -454,24 +671,82 @@ export default function KnowledgePage() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontWeight: 500 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                본문 내용
-                <span style={{ color: 'var(--accent-blue)', fontSize: 13, fontWeight: 500, background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: 12 }}>(파일 업로드 시 자동 추출 및 추가됨)</span>
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, fontWeight: 500 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  본문 내용
+                  <span style={{ color: 'var(--accent-blue)', fontSize: 13, fontWeight: 500, background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: 12 }}>(파일 업로드 시 자동 추출 및 추가됨)</span>
+                </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 400, marginTop: 4 }}>이 내용이 AI 검색에 활용됩니다.</div>
               </div>
-              <span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 400 }}>이 내용이 AI 검색에 활용됩니다.</span>
+              <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: 4, borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(false)}
+                  style={{
+                    padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
+                    background: !previewMode ? 'var(--bg-primary)' : 'transparent',
+                    color: !previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                    boxShadow: !previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    fontWeight: !previewMode ? 600 : 400
+                  }}
+                >
+                  작성 모드
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode(true)}
+                  style={{
+                    padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
+                    background: previewMode ? 'var(--bg-primary)' : 'transparent',
+                    color: previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                    boxShadow: previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    fontWeight: previewMode ? 600 : 400
+                  }}
+                >
+                  미리보기
+                </button>
+              </div>
             </label>
-            <textarea
-              className="form-input"
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              placeholder="직접 문서를 작성하거나 파일을 업로드하여 텍스트를 추출하세요."
-              style={{ width: '100%', height: 300, resize: 'vertical', fontFamily: 'monospace', fontSize: 14 }}
-              disabled={isConverting}
-            />
+
+            {previewMode ? (
+              <div
+                className="form-input markdown-body"
+                style={{ width: '100%', height: 300, overflowY: 'auto', background: 'var(--bg-primary)', padding: '16px', fontSize: 15, lineHeight: 1.6, color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+              >
+                {content.trim() ? (
+                  <ReactMarkdown>{content}</ReactMarkdown>
+                ) : (
+                  <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>미리보기할 내용이 없습니다.</div>
+                )}
+              </div>
+            ) : (
+              <textarea
+                className="form-input"
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                placeholder="직접 문서를 작성하거나 파일을 업로드하여 텍스트를 추출하세요. (마크다운 문법 지원)"
+                style={{ width: '100%', height: 300, resize: 'none', overflowY: 'auto', fontFamily: 'monospace', fontSize: 14 }}
+                disabled={isConverting}
+              />
+            )}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setTitle('')
+                setContent('')
+                setFilename('')
+                setSelectedFile(null)
+                setActiveTab('list')
+              }}
+              className="btn-secondary"
+              disabled={loading || isConverting}
+            >
+              취소
+            </button>
             <button onClick={handleSave} className="btn-primary" disabled={loading || isConverting}>
               {loading ? '저장 중...' : '지식베이스에 등록'}
             </button>
@@ -491,17 +766,25 @@ export default function KnowledgePage() {
                 {selectedDoc.file_url ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      const a = document.createElement('a')
-                      a.href = `${API_BASE}${selectedDoc.file_url}`
-                      a.download = selectedDoc.original_filename || 'download'
-                      a.target = '_blank'
-                      a.click()
+                    onClick={async () => {
+                      if (isOfflineMode) {
+                        try {
+                          await (window as any).go.main.App.OpenLocalKnowledgeFile(selectedDoc.id, selectedDoc.original_filename)
+                        } catch (e: any) {
+                          toast.error(typeof e === 'string' ? e : e.message || '파일을 열 수 없습니다.')
+                        }
+                      } else {
+                        const a = document.createElement('a')
+                        a.href = `${API_BASE}${selectedDoc.file_url}`
+                        a.download = selectedDoc.original_filename || 'download'
+                        a.target = '_blank'
+                        a.click()
+                      }
                     }}
                     className="btn-primary"
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 13, borderRadius: 6, margin: 0 }}
                   >
-                    <i className="fi fi-rr-download" /> 원본 다운로드
+                    <i className="fi fi-rr-download" /> {isOfflineMode ? '오프라인에서 열기' : '원본 다운로드'}
                   </button>
                 ) : (
                   <button
@@ -527,8 +810,10 @@ export default function KnowledgePage() {
                 </button>
               </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
-              {selectedDoc.markdown_content}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', fontSize: 15, lineHeight: 1.6, color: 'var(--text-primary)', fontFamily: 'sans-serif', background: 'var(--bg-primary)' }}>
+              <div className="markdown-body" style={{ background: 'transparent' }}>
+                <ReactMarkdown>{selectedDoc.markdown_content || ''}</ReactMarkdown>
+              </div>
             </div>
             {selectedDoc.original_filename && (
               <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-color)', fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between' }}>

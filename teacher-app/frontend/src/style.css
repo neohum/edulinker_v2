@@ -501,7 +501,7 @@ body {
 .btn-primary {
   background: var(--gradient-blue);
   color: white;
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   padding: 11px 20px;
   font-size: 14px;

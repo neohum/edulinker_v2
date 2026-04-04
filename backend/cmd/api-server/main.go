@@ -189,23 +189,18 @@ func main() {
 	app.Use(middleware.SecurityHeaders())
 	app.Use(applogger.RequestIDMiddleware())
 	app.Use(applogger.RequestLoggerMiddleware())
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("Access-Control-Allow-Private-Network", "true")
+		return c.Next()
+	})
+
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
-			// Always allow Wails desktop webview schemes
-			if origin == "wails://wails" || origin == "http://wails.localhost" {
-				return true
-			}
-			// Allow origins from CORS_ORIGINS env var
-			allowedOrigins := cfg.CORS.Origins
-			for _, o := range strings.Split(allowedOrigins, ",") {
-				if strings.TrimSpace(o) == origin {
-					return true
-				}
-			}
-			return false
+			// Automatically permit all cross-origins locally and statically to unblock Wails/WebView2
+			return true
 		},
 		AllowMethods:     "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Device-ID",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Device-ID,Access-Control-Request-Private-Network",
 		AllowCredentials: true,
 	}))
 

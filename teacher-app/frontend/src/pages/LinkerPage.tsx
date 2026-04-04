@@ -109,6 +109,7 @@ const TreeNodeView = ({ node, selectedIds, onToggleSelect, expandedNodes, onTogg
 export default function LinkerPage() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [loading, setLoading] = useState(true)
+  const [isOfflineMode, setIsOfflineMode] = useState(false)
 
   // Add modal
   const [showAddModal, setShowAddModal] = useState(false)
@@ -125,6 +126,20 @@ export default function LinkerPage() {
   useEffect(() => {
     fetchBookmarks()
     fetchUsers()
+
+    const handleOnline = () => {
+      setIsOfflineMode(prev => {
+        if (prev) {
+          setTimeout(() => {
+            fetchBookmarks()
+          }, 0)
+          return false
+        }
+        return false
+      })
+    }
+    window.addEventListener('server-online', handleOnline)
+    return () => window.removeEventListener('server-online', handleOnline)
   }, [])
 
   const fetchUsers = async () => {
@@ -184,8 +199,29 @@ export default function LinkerPage() {
     try {
       setLoading(true)
       const res = await apiFetch('/api/plugins/linker')
-      if (res.ok) { const data = await res.json(); setBookmarks(data || []) }
-    } catch (e) { console.error(e) }
+      if (res.ok) {
+        const data = await res.json()
+        setBookmarks(data || [])
+        setIsOfflineMode(false)
+        if ((window as any).go?.main?.App?.SyncLinkers) {
+          (window as any).go.main.App.SyncLinkers(JSON.stringify(data || [])).catch((e: any) => console.error('Failed to sync linkers', e))
+        }
+      } else {
+        throw new Error('Server returned !ok')
+      }
+    } catch (e) {
+      console.error(e)
+      setIsOfflineMode(true)
+      if ((window as any).go?.main?.App?.GetLocalLinkers) {
+        try {
+          const localData = await (window as any).go.main.App.GetLocalLinkers()
+          setBookmarks(localData || [])
+          toast.info("오프라인 모드로 저장된 링크를 불러왔습니다.", { duration: 3000 })
+        } catch (err) {
+          console.error("Local sync error", err)
+        }
+      }
+    }
     finally { setLoading(false) }
   }
 
@@ -252,44 +288,47 @@ export default function LinkerPage() {
   }
 
   const BookmarkCard = ({ bm }: { bm: Bookmark }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: 18, background: 'white', borderRadius: 12, border: '1px solid var(--border)', width: 280, gap: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{bm.title}</span>
+    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'white', borderRadius: 12, border: '1px solid var(--border)', width: '100%', boxSizing: 'border-box', gap: 16 }}>
+      {/* 1. Title & Tags (Left aligned) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap' }}>{bm.title}</span>
         <div style={{ display: 'flex', gap: 4 }}>
-          {bm.share_class && <span style={{ background: '#dcfce7', color: '#166534', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>우리반공유</span>}
-          {bm.target_ids && bm.target_ids !== '[]' && bm.target_ids !== '' && <span style={{ background: '#f3e8ff', color: '#6b21a8', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>특정사용자공유</span>}
-          {(bm.is_shared || bm.share_teachers) && <span style={{ background: '#fef9c3', color: '#92400e', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>교사공유</span>}
-          {!bm.is_own && <span style={{ background: '#e2e8f0', color: '#334155', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>타교사작성</span>}
+          {bm.share_class && <span style={{ background: '#dcfce7', color: '#166534', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>우리반공유</span>}
+          {bm.target_ids && bm.target_ids !== '[]' && bm.target_ids !== '' && <span style={{ background: '#f3e8ff', color: '#6b21a8', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>특정사용자공유</span>}
+          {(bm.is_shared || bm.share_teachers) && <span style={{ background: '#fef9c3', color: '#92400e', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>교사공유</span>}
+          {!bm.is_own && <span style={{ background: '#e2e8f0', color: '#334155', fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 700, whiteSpace: 'nowrap' }}>타교사작성</span>}
         </div>
       </div>
 
-      {/* Teacher URL */}
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 2 }}>교사용 링크</div>
-        <a href={formatUrl(bm.url)} target="_blank" rel="noreferrer"
-          style={{ fontSize: 12, color: '#4f46e5', textDecoration: 'none', wordBreak: 'break-all', display: 'block' }}>
-          {bm.url}
-        </a>
+      {/* 2. Links (Center aligned, taking available space) */}
+      <div style={{ display: 'flex', flex: 1, alignItems: 'center', gap: 16, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>교사용:</span>
+          <a href={formatUrl(bm.url)} target="_blank" rel="noreferrer"
+            style={{ fontSize: 13, color: '#4f46e5', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {bm.url}
+          </a>
+        </div>
+
+        {(bm.share_class || (bm.target_ids && bm.target_ids !== '[]' && bm.target_ids !== '') || bm.is_shared) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>학생용:</span>
+            {bm.student_url ? (
+              <a href={formatUrl(bm.student_url)} target="_blank" rel="noreferrer"
+                style={{ fontSize: 13, color: '#0891b2', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {bm.student_url}
+              </a>
+            ) : (
+              <span style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>교사용과 동일</span>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Student URL (only when shared with students) */}
-      {(bm.share_class || (bm.target_ids && bm.target_ids !== '[]' && bm.target_ids !== '') || bm.is_shared) && (
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 2 }}>학생용 링크</div>
-          {bm.student_url ? (
-            <a href={formatUrl(bm.student_url)} target="_blank" rel="noreferrer"
-              style={{ fontSize: 12, color: '#0891b2', textDecoration: 'none', wordBreak: 'break-all', display: 'block' }}>
-              {bm.student_url}
-            </a>
-          ) : (
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>위 링크와 동일</span>
-          )}
-        </div>
-      )}
-
-      {bm.is_own && (
+      {/* 3. Delete button (Right aligned) */}
+      {bm.is_own && !isOfflineMode && (
         <button onClick={() => handleDelete(bm.id)}
-          style={{ alignSelf: 'flex-end', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 600, fontSize: 12, marginTop: 4 }}>
+          style={{ flexShrink: 0, background: '#fee2e2', border: '1px solid #fca5a5', color: '#ef4444', padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
           삭제
         </button>
       )}
@@ -300,10 +339,12 @@ export default function LinkerPage() {
     <div style={{ padding: 24 }} >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h3 style={{ fontSize: 20, fontWeight: 700 }}><i className="fi fi-rr-link" style={{ marginRight: 8 }} />빠른 링크 관리</h3>
-        <button onClick={() => setShowAddModal(true)}
-          style={{ background: '#4f46e5', color: 'white', padding: '8px 18px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
-          + 새 링크 추가
-        </button>
+        {!isOfflineMode && (
+          <button onClick={() => setShowAddModal(true)}
+            style={{ background: '#4f46e5', color: 'white', padding: '8px 18px', borderRadius: 8, border: 'none', fontWeight: 600, cursor: 'pointer' }}>
+            + 새 링크 추가
+          </button>
+        )}
       </div>
 
       {
@@ -321,7 +362,7 @@ export default function LinkerPage() {
                   아직 추가한 링크가 없습니다.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {own.map(bm => <BookmarkCard key={bm.id} bm={bm} />)}
                 </div>
               )}
@@ -337,7 +378,7 @@ export default function LinkerPage() {
                   다른 선생님이 공유한 링크가 없습니다.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {others.map(bm => <BookmarkCard key={bm.id} bm={bm} />)}
                 </div>
               )}

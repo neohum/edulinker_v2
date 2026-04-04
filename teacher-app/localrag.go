@@ -561,16 +561,16 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 
 	// 문서별 중복 제거
 	results := make([]RAGSearchResult, 0, topK)
-	seenDocs := make(map[string]bool)
+	seenDocs := make(map[string]int)
 
 	for _, item := range fusionList {
 		if len(results) >= topK {
 			break
 		}
-		if seenDocs[item.c.docID] {
+		if seenDocs[item.c.docID] >= 3 {
 			continue
 		}
-		seenDocs[item.c.docID] = true
+		seenDocs[item.c.docID]++
 
 		displayText := item.c.displayText
 		if item.c.headingContext != "" && item.c.headingContext != item.c.docTitle {

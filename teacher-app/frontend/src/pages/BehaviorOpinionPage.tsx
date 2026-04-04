@@ -30,7 +30,7 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
   const abortControllerRef = useRef<AbortController | null>(null)
   const abortBatchRef = useRef<boolean>(false)
   const [generating, setGenerating] = useState(false)
-  const [batchProgress, setBatchProgress] = useState<{current: number, total: number, name: string} | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{ current: number, total: number, name: string } | null>(null)
   const [elapsedSecs, setElapsedSecs] = useState(0)
   const timerRef = useRef<any>(null)
 
@@ -45,7 +45,7 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
       if ((window as any).runtime && (window as any).runtime.WindowSetAlwaysOnTop) {
         (window as any).runtime.WindowSetAlwaysOnTop(nextMode)
       }
-    } catch(e) {}
+    } catch (e) { }
 
     if (nextMode) {
       toast.success('나이스 자동 클립보드 켜짐 (항상 위 고정)\n학생 칸을 누르면 즉시 복사됩니다!', { duration: 4000 })
@@ -66,7 +66,7 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
 
   const restoreHistory = async (studentId: string, content: string) => {
     if (!window.confirm('이전 내용으로 되돌리시겠습니까? 현재 작성된 내용은 히스토리에 보관됩니다.')) return
-    
+
     try {
       const existing = getOpinionForStudent(studentId)
       if (existing && existing.trim() !== '') {
@@ -81,7 +81,7 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
           next[idx] = { ...next[idx], content }
           return next
         }
-        return [...prev, { id: 'temp-'+studentId, student_id: studentId, content, created_at: new Date().toISOString() }]
+        return [...prev, { id: 'temp-' + studentId, student_id: studentId, content, created_at: new Date().toISOString() }]
       })
       toast.success('선택한 이전 기록으로 복구되었습니다.')
       setSelectedHistoryStudent(null)
@@ -158,11 +158,12 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
 
-      const allEvalsRes = await apiFetch(`/api/plugins/curriculum/evaluations`)
       let allEvals: any[] = []
-      if (allEvalsRes.ok) allEvals = await allEvalsRes.json()
+      try {
+        allEvals = await (window as any).go.main.App.GetCurriculumEvaluations() || []
+      } catch (e) { }
 
       let count = 0
       for (const student of students) {
@@ -174,10 +175,11 @@ export default function BehaviorOpinionPage({ user }: BehaviorOpinionPageProps) 
         }
 
         setBatchProgress({ current: count + 1, total: students.length, name: student.name })
-        
-        const cRes = await apiFetch(`/api/plugins/studentmgmt/students/${student.id}/counseling`)
+
         let cLogs = []
-        if (cRes.ok) cLogs = await cRes.json()
+        try {
+          cLogs = await (window as any).go.main.App.GetCounselingRecords(student.id) || []
+        } catch (e) { }
 
         const eLogs = allEvals.filter((e: any) => e.student_id === student.id)
 
@@ -210,17 +212,17 @@ ${context}
 
         const controller = new AbortController()
         abortControllerRef.current = controller
-        
+
         try {
           // Use Wails native binding to bypass browser CORS headers
           const wailsApp = (window as any).go.main.App
           if (!wailsApp || !wailsApp.GenerateAISync) {
             throw new Error("Wails 백엔드 AI 메서드를 찾을 수 없습니다. (앱을 다시 빌드해주세요)")
           }
-          
+
           const opinion = await wailsApp.GenerateAISync(modelToUse, prompt)
           const trimmedOpinion = opinion?.trim() || ''
-          
+
           if (trimmedOpinion) {
             await wailsApp.SaveOpinionRecord(student.id, trimmedOpinion)
             setOpinions(prev => {
@@ -230,16 +232,16 @@ ${context}
                 next[idx] = { ...next[idx], content: trimmedOpinion }
                 return next
               }
-              return [...prev, { id: 'temp-'+student.id, student_id: student.id, content: trimmedOpinion, created_at: new Date().toISOString() }]
+              return [...prev, { id: 'temp-' + student.id, student_id: student.id, content: trimmedOpinion, created_at: new Date().toISOString() }]
             })
           }
         } catch (genError: any) {
           throw new Error(genError.message || String(genError))
         }
-        
+
         count++
       }
-      
+
       if (!abortBatchRef.current) {
         toast.success(`학생들 행동특성 자동 완성이 종료되었습니다!`)
       }
@@ -272,7 +274,7 @@ ${context}
       const res = await apiFetch(url)
       if (res.ok) {
         const data = await res.json()
-        const list: Student[] = (data.users || []).filter((s: any) => 
+        const list: Student[] = (data.users || []).filter((s: any) =>
           (!user?.grade || s.grade === user.grade) && (!user?.classNum || s.class_num === user.classNum)
         ).sort((a: any, b: any) => a.number - b.number)
         setStudents(list)
@@ -302,7 +304,7 @@ ${context}
     try {
       await (window as any).go.main.App.SaveOpinionRecord(studentId, content)
       toast.success('저장되었습니다.')
-      
+
       setOpinions(prev => {
         const idx = prev.findIndex(o => o.student_id === studentId)
         if (idx !== -1) {
@@ -324,7 +326,7 @@ ${context}
           <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <i className="fi fi-rr-document-signed" style={{ color: 'var(--accent-blue)' }} /> 행동특성 및 종합의견 관리
           </h2>
-          
+
           {!generating ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
@@ -354,7 +356,7 @@ ${context}
           )}
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>
-          학생별 행동특성 및 종합의견을 작성하고 관리합니다. AI를 활용해 클릭 한 번으로 수집된 상담/수행평가 기록을 토대로 종합의견을 스케치할 수 있습니다. 
+          학생별 행동특성 및 종합의견을 작성하고 관리합니다. AI를 활용해 클릭 한 번으로 수집된 상담/수행평가 기록을 토대로 종합의견을 스케치할 수 있습니다.
         </p>
       </div>
 
@@ -372,12 +374,12 @@ ${context}
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {students.map((student, idx) => (
-              <div 
-                key={student.id} 
-                style={{ 
-                  display: 'flex', 
+              <div
+                key={student.id}
+                style={{
+                  display: 'flex',
                   borderBottom: idx === students.length - 1 ? 'none' : '1px solid var(--border)',
-                  background: idx % 2 === 0 ? 'white' : '#f8fafc' 
+                  background: idx % 2 === 0 ? 'white' : '#f8fafc'
                 }}
               >
                 <div style={{ width: 180, padding: 20, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center' }}>
@@ -390,7 +392,7 @@ ${context}
                       </div>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => openHistory(student)}
                     style={{ background: 'white', border: '1px solid var(--border)', padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, width: 'fit-content' }}
                   >
@@ -417,7 +419,7 @@ ${context}
                     onFocus={(e) => e.target.style.borderColor = 'var(--accent-blue)'}
                   />
                   {clipboardMode && (
-                    <div 
+                    <div
                       onClick={() => {
                         const text = getOpinionForStudent(student.id)
                         if (!text) {
@@ -428,7 +430,7 @@ ${context}
                         toast.success(`[${student.name}] 복사 완료! 나이스 창에 붙여넣으세요.`, { id: 'copy-toast' })
                       }}
                       style={{
-                        position: 'absolute', top: 20, left: 20, right: 20, bottom: 20, 
+                        position: 'absolute', top: 20, left: 20, right: 20, bottom: 20,
                         background: 'rgba(245, 158, 11, 0.1)', cursor: 'pointer',
                         border: '2px dashed #f59e0b', borderRadius: 8,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -458,7 +460,7 @@ ${context}
               <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <i className="fi fi-rr-time-past" style={{ color: 'var(--accent-blue)' }} /> {selectedHistoryStudent.name} 학생 작성 히스토리
               </h3>
-              <button 
+              <button
                 onClick={() => setSelectedHistoryStudent(null)}
                 style={{ background: 'transparent', border: 'none', fontSize: 28, color: 'var(--text-muted)', cursor: 'pointer', lineHeight: 1 }}
               >×</button>
@@ -474,14 +476,14 @@ ${context}
                         🕒 {new Date(h.created_at).toLocaleString('ko-KR')} 보관됨
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button 
+                        <button
                           onClick={(e) => deleteHistory(h.id, e)}
                           title="기록 삭제"
                           style={{ background: 'white', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#ef4444', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           onMouseOver={e => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.borderColor = '#ef4444' }}
                           onMouseOut={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#fecaca' }}
                         ><i className="fi fi-rr-trash" /></button>
-                        <button 
+                        <button
                           onClick={() => restoreHistory(selectedHistoryStudent.id, h.content)}
                           style={{ background: 'white', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--primary)', transition: 'all 0.2s' }}
                           onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}

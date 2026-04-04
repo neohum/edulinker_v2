@@ -1,0 +1,4 @@
+
+2026/04/04 13:01:55 [31;1mE:/works/project/edulinker/backend/test_sendoc.go:41 [35;1mERROR: column sendoc_recipients.created_at does not exist (SQLSTATE 42703)
+[0m[33m[3.030ms] [34;1m[rows:0][0m SELECT "sendoc_recipients"."id","sendoc_recipients"."sendoc_id","sendoc_recipients"."user_id","sendoc_recipients"."read_at","sendoc_recipients"."is_signed","sendoc_recipients"."signature_image_url","sendoc_recipients"."form_data_json","sendoc_recipients"."signed_at","sendoc_recipients"."deleted_at" FROM "sendoc_recipients" JOIN users ON users.id = sendoc_recipients.user_id WHERE users.role = 'student' AND "sendoc_recipients"."deleted_at" IS NULL ORDER BY sendoc_recipients.created_at desc,"sendoc_recipients"."id" LIMIT 1
+No student recipients found
