@@ -161,7 +161,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
           return;
         }
       }
-      
+
       await navigator.clipboard.writeText(generatedDraft);
       toast.success('단순 텍스트가 원본 기호와 함께 복사되었습니다.');
     } catch (e) {
@@ -407,7 +407,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>작성 모드</label>
                 <select value={promptType} onChange={e => setPromptType(e.target.value)} disabled={generating} style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <option value="general">일반 자유 작성</option>
-                  <option value="knowledge_based">업무 규칙/정보(지식베이스) 기반 작성</option>
+                  <option value="knowledge_based">통합 검색 기반 작성</option>
                 </select>
               </div>
             </div>
@@ -445,8 +445,8 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>생성 결과</div>
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    <button 
-                      onClick={handleCopyContent} 
+                    <button
+                      onClick={handleCopyContent}
                       style={{ background: 'white', border: '1px solid var(--border)', padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', transition: 'all 0.2s' }}
                       onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
                       onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}
@@ -497,7 +497,7 @@ export default function AIAnalysisPage({ onNavigate, user }: AIAnalysisPageProps
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
                       {log.prompt_type === 'general' ? '일반 문서' : log.prompt_type} · {new Date(log.created_at).toLocaleString()}
                     </div>
-                    <button 
+                    <button
                       onClick={(e) => handleDeleteLog(log.id, e)}
                       style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s', fontSize: 14 }}
                       onMouseOver={e => e.currentTarget.style.color = '#ef4444'}

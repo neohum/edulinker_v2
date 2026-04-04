@@ -652,12 +652,13 @@ export default function KnowledgePage() {
                 {filename ? filename : '클릭하여 파일 선택'}
               </span>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                지원 포맷: HWP, HWPX, PDF, TXT, CSV, MD, XLSX, XLS
+                지원 포맷: HWP, HWPX, PDF, PPTX, PPT, TXT, CSV, MD, XLSX, XLS
               </span>
               <input
                 type="file"
                 style={{ display: 'none' }}
-                accept=".hwp,.hwpx,.pdf,.txt,.csv,.md,.xlsx,.xls"
+                multiple
+                accept=".hwp,.hwpx,.pdf,.ppt,.pptx,.txt,.csv,.md,.xlsx,.xls"
                 onChange={handleFileSelect}
                 disabled={isConverting}
               />

@@ -3,6 +3,41 @@ import { toast } from 'sonner'
 import { getToken, apiFetch, API_BASE } from '../api'
 import * as XLSX from 'xlsx'
 
+const openDB = () => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('AnnouncementDB', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('pending_announcements', { keyPath: 'id' });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+const savePendingAnnouncement = async (data: any) => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('pending_announcements', 'readwrite');
+    tx.objectStore('pending_announcements').add({ id: Date.now(), ...data });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+const getPendingAnnouncements = async () => {
+  const db = await openDB();
+  return new Promise<any[]>((resolve, reject) => {
+    const request = db.transaction('pending_announcements', 'readonly').objectStore('pending_announcements').getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+const deletePendingAnnouncement = async (id: number) => {
+  const db = await openDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('pending_announcements', 'readwrite');
+    tx.objectStore('pending_announcements').delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
 import type { UserInfo } from '../App'
 import TargetTreeModal from '../components/TargetTreeModal'
 import ReactMarkdown from 'react-markdown'
@@ -43,6 +78,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
   const [formContent, setFormContent] = useState('')
   const [formType, setFormType] = useState('simple')
   const [formFiles, setFormFiles] = useState<File[]>([])
+  const parsedMarkdownRef = useRef<{ [key: string]: string }>({})
   const [formTargets, setFormTargets] = useState<string[]>(['TEACHER'])
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -58,6 +94,51 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
   const [stationaryCounts] = useState(counts || { total: 0, simple: 0, confirm: 0, apply: 0, todo: 0 })
 
+  const syncPendingAnnouncements = async () => {
+    try {
+      const pending = await getPendingAnnouncements();
+      if (pending.length === 0) return;
+      const token = await getToken();
+      let successCount = 0;
+      toast.info(`오프라인에 임시 저장된 ${pending.length}건의 공문을 전송합니다...`, { duration: 3000 });
+      for (const item of pending) {
+        const formData = new FormData();
+        formData.append('title', item.title);
+        formData.append('content', item.content);
+        formData.append('type', item.type);
+        formData.append('is_urgent', item.is_urgent ? 'true' : 'false');
+        formData.append('markdown_content', item.markdown_content);
+
+        if (item.files && item.files.length > 0) {
+          for (const f of item.files) {
+            const byteString = atob(f.base64);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+            const blob = new Blob([ab]);
+            formData.append('files', blob, f.name);
+          }
+        }
+
+        const res = await fetch(`${API_BASE || 'http://localhost:5200'}/api/plugins/announcement`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+        if (res.ok) {
+          await deletePendingAnnouncement(item.id);
+          successCount++;
+        }
+      }
+      if (successCount > 0) {
+        toast.success(`${successCount}개의 공문 전송이 완료되었습니다.`);
+        fetchAnnouncements();
+      }
+    } catch (err) {
+      console.error('Failed to sync offline announcements:', err);
+    }
+  };
+
   useEffect(() => {
     fetchAnnouncements()
     fetchUsers()
@@ -67,6 +148,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         setIsOfflineMode(false)
         setTimeout(() => {
           fetchAnnouncements()
+          syncPendingAnnouncements()
         }, 0)
       }
     }
@@ -107,6 +189,9 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         setAnnouncements(data.announcements || [])
         setIsOfflineMode(false)
 
+        // Push locally stuck items if the app was restarted and connected online
+        syncPendingAnnouncements()
+
         if ((window as any).go?.main?.App?.SyncAnnouncements) {
           try {
             (window as any).go.main.App.SyncAnnouncements(JSON.stringify(data.announcements || []), API_BASE, token).catch((e: any) => console.error(e));
@@ -118,18 +203,35 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
     } catch (e: any) {
       console.error(e)
       setIsOfflineMode(true)
+      let merged: any[] = []
       if ((window as any).go?.main?.App?.GetLocalAnnouncements) {
         try {
           const localData = await (window as any).go.main.App.GetLocalAnnouncements()
-          if (filterType) {
-            setAnnouncements(localData.filter((a: any) => a.type === filterType) || [])
-          } else {
-            setAnnouncements(localData || [])
-          }
-          if (e.message !== 'already offline') {
-            toast.info("오프라인 모드로 로컬에 동기화된 공문 목록을 불러왔습니다.", { duration: 3000 })
-          }
+          merged = localData || []
         } catch (err) { }
+      }
+      try {
+        const pending = await getPendingAnnouncements()
+        const pseudo = pending.map(p => ({
+          id: `pending-${p.id}`,
+          title: `[오프라인 전송대기] ${p.title}`,
+          content: p.content,
+          type: p.type,
+          is_urgent: p.is_urgent,
+          markdown_content: p.markdown_content || '> ⏳ **오프라인 송신 대기 중**\\n> 네트워크 연결 시 자동으로 전송됩니다.',
+          author_id: user?.id,
+          author_name: user?.name,
+          created_at: new Date(p.id).toISOString(),
+          is_confirmed: false
+        }))
+        merged = [...pseudo, ...merged]
+      } catch (err) { }
+
+      if (filterType) merged = merged.filter((a: any) => a.type === filterType)
+      setAnnouncements(merged)
+
+      if (e.message !== 'already offline') {
+        toast.info("오프라인 모드로 로컬에 동기화된 공문 목록을 불러왔습니다.", { duration: 3000 })
       }
     } finally {
       setLoading(false)
@@ -211,47 +313,51 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
         let markdownContent = ''
         for (const file of formFiles) {
-          try {
-            if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-              const arrayBuffer = await file.arrayBuffer();
-              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-              let mdText = '';
-              workbook.SheetNames.forEach(sheetName => {
-                const worksheet = workbook.Sheets[sheetName];
-                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
-                if (rows.length > 0) {
-                  mdText += `### ${sheetName}\n\n`;
-                  const maxCols = Math.max(...rows.map(r => r.length));
-                  if (maxCols > 0) {
-                    const paddedRows = rows.map(r => {
-                      const newRow = [...r];
-                      while (newRow.length < maxCols) newRow.push("");
-                      return newRow.map(c => String(c).replace(/\|/g, '\\|').replace(/\n/g, '<br>'));
-                    });
-                    mdText += '| ' + paddedRows[0].join(' | ') + ' |\n';
-                    mdText += '| ' + paddedRows[0].map(() => '---').join(' | ') + ' |\n';
-                    for (let i = 1; i < paddedRows.length; i++) {
-                      mdText += '| ' + paddedRows[i].join(' | ') + ' |\n';
-                    }
-                    mdText += '\n\n';
-                  }
-                }
-              });
-              if (!mdText.trim()) mdText = '엑셀 내용을 추출할 수 없거나 빈 시트입니다.';
-              markdownContent += `\n\n### ${file.name}\n${mdText}`
-            } else {
-              const base64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader()
-                reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
-                reader.onerror = () => reject(new Error('파일 읽기 실패'))
-                reader.readAsDataURL(file)
-              })
-              const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
-              if (res.success) markdownContent += `\n\n### ${file.name}\n${res.text}`
-            }
-          } catch (e) {
-            console.error(e)
+          const cachedMd = parsedMarkdownRef.current[file.name] || '';
+          if (cachedMd.trim()) {
+            markdownContent += `\n\n### ${file.name}\n${cachedMd}`;
           }
+        }
+
+        const fileDataArray = [];
+        for (const file of formFiles) {
+          try {
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
+              reader.onerror = () => reject(new Error('파일 읽기 실패'))
+              reader.readAsDataURL(file)
+            })
+            fileDataArray.push({ name: file.name, base64 })
+          } catch (e) { }
+        }
+
+        if (isOfflineMode) {
+          // Serialize to indexedDB
+          try {
+            await savePendingAnnouncement({
+              title: formTitle,
+              content: formContent,
+              type: formType,
+              is_urgent: false,
+              markdown_content: markdownContent.trim(),
+              files: fileDataArray
+            });
+            toast.success('오프라인 환경이라 네트워크 복구 시 전송되도록 저장했습니다.');
+            setShowModal(false)
+            setFormTitle('')
+            setFormContent('')
+            setFormType('simple')
+            setFormFiles([])
+            setShowPreview(false)
+          } catch (e) {
+            toast.error('오프라인 저장을 실패했습니다.');
+          } finally {
+            setIsUploading(false);
+            toast.dismiss(toastId)
+            fetchAnnouncements()
+          }
+          return;
         }
 
         const formData = new FormData()
@@ -265,13 +371,35 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
         toast.dismiss(toastId)
       } else {
+        if (isOfflineMode) {
+          try {
+            await savePendingAnnouncement({
+              title: formTitle,
+              content: formContent,
+              type: formType,
+              is_urgent: false,
+              markdown_content: '',
+              files: []
+            });
+            toast.success('오프라인 환경이라 네트워크 복구 시 전송되도록 저장했습니다.');
+            setShowModal(false)
+            setFormTitle('')
+            setFormContent('')
+            setFormType('simple')
+            setFormFiles([])
+            setShowPreview(false)
+          } catch (e) { toast.error('저장에 실패했습니다.'); }
+          fetchAnnouncements()
+          return;
+        }
+
         headers['Content-Type'] = 'application/json'
         body = JSON.stringify({
           title: formTitle, content: formContent, type: formType, is_urgent: false
         })
       }
 
-      const res = await fetch('http://localhost:5200/api/plugins/announcement', {
+      const res = await fetch(`${API_BASE || 'http://localhost:5200'}/api/plugins/announcement`, {
         method: 'POST',
         headers,
         body
@@ -283,6 +411,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         setFormContent('')
         setFormType('simple')
         setFormFiles([])
+        parsedMarkdownRef.current = {}
         setShowPreview(false)
         fetchAnnouncements()
       } else {
@@ -310,15 +439,46 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
     for (const file of newFiles) {
       try {
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
-          reader.onerror = () => reject(new Error('파일 읽기 실패'))
-          reader.readAsDataURL(file)
-        })
-        const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
-        if (res && res.success && res.text) {
-          appendedContent += `\n\n### 📄 ${file.name}\n${res.text}`
+        if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+          const arrayBuffer = await file.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+          let mdText = '';
+          workbook.SheetNames.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+            if (rows.length > 0) {
+              mdText += `### ${sheetName}\n\n`;
+              const maxCols = Math.max(...rows.map(r => r.length));
+              if (maxCols > 0) {
+                const paddedRows = rows.map(r => {
+                  const newRow = [...r];
+                  while (newRow.length < maxCols) newRow.push("");
+                  return newRow.map(c => String(c).replace(/\|/g, '\\|').replace(/\n/g, '<br>'));
+                });
+                mdText += '| ' + paddedRows[0].join(' | ') + ' |\n';
+                mdText += '| ' + paddedRows[0].map(() => '---').join(' | ') + ' |\n';
+                for (let i = 1; i < paddedRows.length; i++) {
+                  mdText += '| ' + paddedRows[i].join(' | ') + ' |\n';
+                }
+                mdText += '\n\n';
+              }
+            }
+          });
+          if (!mdText.trim()) mdText = '엑셀 내용을 추출할 수 없거나 빈 시트입니다.';
+          parsedMarkdownRef.current[file.name] = mdText;
+          appendedContent += `\n\n### 📄 ${file.name}\n${mdText}`
+        } else {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve((reader.result as string).split(',')[1] || '')
+            reader.onerror = () => reject(new Error('파일 읽기 실패'))
+            reader.readAsDataURL(file)
+          })
+          const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64)
+          if (res && res.success && res.text) {
+            parsedMarkdownRef.current[file.name] = res.text;
+            appendedContent += `\n\n### 📄 ${file.name}\n${res.text}`
+          }
         }
       } catch (e) {
       }
@@ -401,7 +561,6 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                   {a.is_urgent && <span style={{ background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 'bold' }}>긴급</span>}
                   <span style={{ background: styleInfo.bg, color: styleInfo.color, padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 'bold' }}>{styleInfo.label}</span>
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{new Date(a.created_at).toLocaleDateString()}</span>
-                  <span style={{ fontSize: 10, color: 'red' }}>DEBUG: is_confirmed={a.is_confirmed ? 'TRUE' : 'FALSE'}</span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{a.title}</div>
                 <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, maxHeight: 150, overflowY: 'auto', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #f1f5f9' }}>
@@ -633,7 +792,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 24 }}>
-                <button type="button" disabled={isUploading} onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); setFormTargets(['TEACHER']); setShowPreview(false); }} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 600, cursor: 'pointer', opacity: isUploading ? 0.5 : 1 }}>취소</button>
+                <button type="button" disabled={isUploading} onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); parsedMarkdownRef.current = {}; setFormTargets(['TEACHER']); setShowPreview(false); }} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 600, cursor: 'pointer', opacity: isUploading ? 0.5 : 1 }}>취소</button>
                 <button type="button" disabled={isUploading} onClick={handleCreate} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: 'none', background: 'var(--accent-blue)', color: 'white', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: isUploading ? 0.5 : 1 }}>
                   {isUploading ? <i className="fi fi-rr-spinner" style={{ animation: 'spin 1s linear infinite' }} /> : <i className="fi fi-rr-paper-plane" style={{ transform: 'translateY(1px)' }} />} {isUploading ? '전송 중...' : '공문 전달하기'}
                 </button>

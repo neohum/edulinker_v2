@@ -180,6 +180,18 @@ type ConvertToMarkdownResult struct {
 func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 
+	if ext == ".ppt" || ext == ".pptx" {
+		pdfRes := a.ConvertPptToPdf(filename, base64data)
+		if !pdfRes.Success {
+			return ConvertToMarkdownResult{Error: pdfRes.Error}
+		}
+		res := a.ConvertPdfToText(pdfRes.Data)
+		if !res.Success {
+			return ConvertToMarkdownResult{Error: res.Error}
+		}
+		return ConvertToMarkdownResult{Success: true, Text: res.Text}
+	}
+
 	if ext == ".hwp" || ext == ".hwpx" || ext == ".pdf" {
 		resKordoc := a.ConvertWithKordoc(filename, base64data)
 		if resKordoc.Success {

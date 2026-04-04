@@ -479,9 +479,6 @@ function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?
         if (last && last.role === 'assistant' && last.isGenerating) {
           const updated = [...prev];
           updated[updated.length - 1] = { ...last, isGenerating: false };
-          if (last.references && last.references.length > 0) {
-            setExpandedRefs(refs => ({ ...refs, [last.id]: true }));
-          }
           return updated;
         }
         return prev;
