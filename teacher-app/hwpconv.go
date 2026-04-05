@@ -637,3 +637,18 @@ func (a *App) CheckHancom() map[string]interface{} {
 
 	return result
 }
+
+func (a *App) CheckExcel() map[string]interface{} {
+	result := map[string]interface{}{"installed": false, "version": "", "path": ""}
+
+	ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
+	unknown, err := oleutil.CreateObject("Excel.Application")
+	if err == nil && unknown != nil {
+		unknown.Release()
+		result["installed"] = true
+		result["version"] = "COM 등록됨"
+		result["path"] = "Registry"
+	}
+
+	return result
+}

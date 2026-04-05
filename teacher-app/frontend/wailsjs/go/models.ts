@@ -258,6 +258,22 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class KnowledgeDocUser {
+	    name: string;
+	    grade: number;
+	    class_num: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new KnowledgeDocUser(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.grade = source["grade"];
+	        this.class_num = source["class_num"];
+	    }
+	}
 	export class KnowledgeDoc {
 	    id: string;
 	    title: string;
@@ -266,8 +282,7 @@ export namespace main {
 	    file_url: string;
 	    markdown_content: string;
 	    created_at: string;
-	    // Go type: struct { Name string "json:\"name\""; Grade int "json:\"grade\""; ClassNum int "json:\"class_num\"" }
-	    user?: any;
+	    user?: KnowledgeDocUser;
 	
 	    static createFrom(source: any = {}) {
 	        return new KnowledgeDoc(source);
@@ -282,7 +297,7 @@ export namespace main {
 	        this.file_url = source["file_url"];
 	        this.markdown_content = source["markdown_content"];
 	        this.created_at = source["created_at"];
-	        this.user = this.convertValues(source["user"], Object);
+	        this.user = this.convertValues(source["user"], KnowledgeDocUser);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -303,6 +318,7 @@ export namespace main {
 		    return a;
 		}
 	}
+	
 	export class LocalAnnouncement {
 	    id: string;
 	    type: string;

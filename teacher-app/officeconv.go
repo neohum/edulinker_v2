@@ -33,10 +33,14 @@ func (a *App) ConvertPptToPdf(inputName string, inputBase64 string) OfficeConver
 
 func (a *App) convertOfficeDoc(inputName string, inputBase64 string, appType string) OfficeConvertResult {
 	data, err := base64.StdEncoding.DecodeString(inputBase64)
-	if err != nil { return OfficeConvertResult{Error: "데이터 디코딩 실패"} }
+	if err != nil {
+		return OfficeConvertResult{Error: "데이터 디코딩 실패"}
+	}
 
 	tmpDir, err := os.MkdirTemp("", "officeconv_")
-	if err != nil { return OfficeConvertResult{Error: "임시 폴더 생성 실패"} }
+	if err != nil {
+		return OfficeConvertResult{Error: "임시 폴더 생성 실패"}
+	}
 	defer os.RemoveAll(tmpDir)
 
 	inputPath := filepath.Join(tmpDir, inputName)
@@ -50,6 +54,7 @@ func (a *App) convertOfficeDoc(inputName string, inputBase64 string, appType str
 	var psCmd string
 	if appType == "excel" {
 		psCmd = fmt.Sprintf(`
+			[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 			$excel = New-Object -ComObject Excel.Application
 			$excel.Visible = $false
 			$excel.DisplayAlerts = $false
@@ -58,25 +63,34 @@ func (a *App) convertOfficeDoc(inputName string, inputBase64 string, appType str
 				$wb.ExportAsFixedFormat(0, '%s')
 				$wb.Close($false)
 			} finally {
-				$excel.Quit()
-				[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+				if ($excel) {
+					$excel.Quit()
+					[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+				}
 			}
 		`, inputPath, outputPath)
 	} else {
 		psCmd = fmt.Sprintf(`
+			[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 			$ppt = New-Object -ComObject PowerPoint.Application
 			try {
 				$pres = $ppt.Presentations.Open('%s', $true, $false, $false)
 				$pres.ExportAsFixedFormat('%s', 2) # 2 is ppFixedFormatTypePDF
 				$pres.Close()
 			} finally {
-				$ppt.Quit()
-				[System.Runtime.Interopservices.Marshal]::ReleaseComObject($ppt) | Out-Null
+				if ($ppt) {
+					$ppt.Quit()
+					[System.Runtime.Interopservices.Marshal]::ReleaseComObject($ppt) | Out-Null
+				}
 			}
 		`, inputPath, outputPath)
 	}
 
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", psCmd)
+	psScriptPath := filepath.Join(tmpDir, "convert.ps1")
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	os.WriteFile(psScriptPath, append(bom, []byte(psCmd)...), 0644)
+
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[App] Office conversion error: %v\nOutput: %s", err, string(out))
@@ -85,7 +99,9 @@ func (a *App) convertOfficeDoc(inputName string, inputBase64 string, appType str
 
 	// Read result
 	outData, err := os.ReadFile(outputPath)
-	if err != nil { return OfficeConvertResult{Error: "변환 결과 파일 읽기 실패"} }
+	if err != nil {
+		return OfficeConvertResult{Error: "변환 결과 파일 읽기 실패"}
+	}
 
 	return OfficeConvertResult{
 		Success:  true,

@@ -10,6 +10,10 @@ export function CheckConnection() {
   return window['go']['main']['App']['CheckConnection']();
 }
 
+export function CheckExcel() {
+  return window['go']['main']['App']['CheckExcel']();
+}
+
 export function CheckHancom() {
   return window['go']['main']['App']['CheckHancom']();
 }

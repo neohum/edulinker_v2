@@ -161,7 +161,7 @@ func (a *App) extractHwpPages(inputPath, outDir, ext string) []string {
 func renderPdfToPages(pdfPath, outDir string) []string {
 	psScript := `
 param($PdfPath = "%s", $OutDir = "%s")
-
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 try {
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
@@ -228,8 +228,12 @@ try {
 	// Use fmt.Sprintf to format the variables directly inside the script
 	psResolved := fmt.Sprintf(psScript, pdfPath, outDir)
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
-	cmd.Stdin = strings.NewReader(psResolved)
+	psScriptPath := filepath.Join(outDir, "render.ps1")
+	// Make sure to write as UTF-8 with BOM for PowerShell
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	os.WriteFile(psScriptPath, append(bom, []byte(psResolved)...), 0644)
+
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	log.Printf("[PdfConv] PDF→PNG render output:\n%s", output)
@@ -315,17 +319,29 @@ func (a *App) extractHwpPagesDirect(inputPath, outDir string) []string {
 // convertExcelToPdfDirect uses ExportAsFixedFormat via PowerShell Excel COM.
 func convertExcelToPdfDirect(inputPath, outputPath string) error {
 	psCmd := fmt.Sprintf(`
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 try {
+    $ErrorActionPreference = 'Stop'
+    
+    # 인터넷 다운로드 차단(MOTW) 해제
+    Unblock-File -Path '%s' -ErrorAction SilentlyContinue
+
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $false
     $excel.DisplayAlerts = $false
-    $wb = $excel.Workbooks.Open('%s', 0, $true)
     
-    # Write-Host "Exporting workbook directly..."
-    $wb.ExportAsFixedFormat(0, '%s')
+    # 엑셀 파일 열기 (열리지 않으면 $null 반환)
+    $wb = $excel.Workbooks.Open('%s', 0, $true)
+    if ($null -eq $wb) {
+        throw "Workbook 객체를 생성할 수 없습니다 (파일 손상 혹은 제한된 보기 상태)"
+    }
+    
+    # PDF로 변환 (0=xlTypePDF, filename, quality, includeDocProperties, ignorePrintAreas)
+    $wb.ExportAsFixedFormat(0, '%s', 0, $true, $false)
     $wb.Close($false)
+    Write-Output "SUCCESS"
 } catch {
-    Write-Host "Excel COM Error: $($_.Exception.Message)"
+    Write-Output "Excel COM Error: $($_.Exception.Message)"
     exit 1
 } finally {
     if ($excel) {
@@ -333,16 +349,22 @@ try {
         [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
     }
 }
-`, inputPath, outputPath)
+`, inputPath, inputPath, outputPath)
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", "-")
-	cmd.Stdin = strings.NewReader(psCmd)
+	psScriptPath := filepath.Join(filepath.Dir(outputPath), "convert.ps1")
+	// Make sure to add BOM for PowerShell to read as UTF-8
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	os.WriteFile(psScriptPath, append(bom, []byte(psCmd)...), 0644)
+
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
 	out, err := cmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+
 	if err != nil {
-		return fmt.Errorf("Excel PDF 변환 실패: %v\n%s", err, string(out))
+		return fmt.Errorf("Excel PDF 변환 실패: %v\n%s", err, outStr)
 	}
 	if info, err := os.Stat(outputPath); err != nil || info.Size() == 0 {
-		return fmt.Errorf("출력 PDF가 생성되지 않았습니다")
+		return fmt.Errorf("출력 PDF가 생성되지 않았습니다 (PS출력: %s)", outStr)
 	}
 	return nil
 }

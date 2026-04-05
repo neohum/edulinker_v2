@@ -6,6 +6,8 @@ export function CancelAIGenerate():Promise<void>;
 
 export function CheckConnection():Promise<boolean>;
 
+export function CheckExcel():Promise<Record<string, any>>;
+
 export function CheckHancom():Promise<Record<string, any>>;
 
 export function CheckOfficeStatus():Promise<Record<string, boolean>>;

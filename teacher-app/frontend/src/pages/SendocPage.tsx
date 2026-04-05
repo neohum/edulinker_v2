@@ -86,6 +86,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [convertProgress, setConvertProgress] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [hancom, setHancom] = useState<{ installed: boolean, version: string } | null>(null)
+  const [excelStatus, setExcelStatus] = useState<{ installed: boolean, version: string } | null>(null)
   const [pageImages, setPageImages] = useState<string[]>([])   // base64 per page
   const [currentPageIdx, setCurrentPageIdx] = useState(0)      // which page is shown
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -113,13 +114,12 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [zoom, setZoom] = useState(1)
   const [isDrawingMode, setIsDrawingMode] = useState(false)
   const fullCanvasRef = useRef<HTMLCanvasElement>(null)
-  const [isFullDrawing, setIsFullDrawing] = useState(false)
+  const isFullDrawingRef = useRef(false)
   const [penSize, setPenSize] = useState(3)
   const [isEraser, setIsEraser] = useState(false)
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const currentStrokeRef = useRef<Stroke | null>(null)
   const totalDrawnRef = useRef(0)
-  const isAddingStrokeRef = useRef(false)
   const [activeCharPicker, setActiveCharPicker] = useState<string | null>(null)
   const specialChars = ['✓', 'O', 'X', '※', '★', '☆', '■', '□', '●']
 
@@ -169,7 +169,8 @@ export default function SendocPage({ user }: SendocPageProps) {
         localStorage.setItem(`sendoc_draft_${activeDoc.id}`, JSON.stringify({ fields, strokes }))
       }
       setIsDraftSaved(true)
-      setTimeout(() => setIsDraftSaved(false), 2000)
+      setStrokeRedrawTrigger(n => n + 1)
+      setTimeout(() => { setIsDraftSaved(false); setStrokeRedrawTrigger(n => n + 1) }, 2000)
       // Update cache for list view badge
       if (isTeacher) {
         (window as any).__sendocDraftCache = { ...((window as any).__sendocDraftCache || {}), [activeDoc.id]: true }
@@ -221,31 +222,15 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
 
-  // Auto save whenever fields or strokes change
-  useEffect(() => {
-    if (viewMode !== 'signer' || !activeDoc) return
-    const timeout = setTimeout(() => {
-      handleSaveDraft(true);
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [fields, strokes, activeDoc?.id, viewMode])
-
   // Redraw strokes intelligently
   useEffect(() => {
-    const canvas = fullCanvasRef.current
-    const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
-
-    // Prevent clearing and redrawing if we are just finalizing a live stroke.
-    // The line is already drawn on the canvas by `drawFull`!
-    if (isAddingStrokeRef.current) {
-      isAddingStrokeRef.current = false
-      return
-    }
-
     const handleRedraw = () => {
+      const currentCanvas = fullCanvasRef.current
+      const currentCtx = currentCanvas?.getContext('2d')
+      if (!currentCanvas || !currentCtx) return
+
       // Always completely clear and rebuild from scratch when switching docs, resetting, or loading drafts
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      currentCtx.clearRect(0, 0, currentCanvas.width, currentCanvas.height)
 
       strokes.forEach(stroke => {
         if (!stroke || !stroke.points || stroke.points.length === 0) return
@@ -254,40 +239,54 @@ export default function SendocPage({ user }: SendocPageProps) {
         let lw = effectivePen * 2
         if (lw < 2) lw = 2
 
-        ctx.lineWidth = lw
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
+        currentCtx.lineWidth = lw
+        currentCtx.lineCap = 'round'
+        currentCtx.lineJoin = 'round'
 
         if (stroke.isEraser) {
-          ctx.globalCompositeOperation = 'destination-out'
-          ctx.strokeStyle = 'rgba(0,0,0,1)'
+          currentCtx.globalCompositeOperation = 'destination-out'
+          currentCtx.strokeStyle = 'rgba(0,0,0,1)'
         } else {
-          ctx.globalCompositeOperation = 'source-over'
-          ctx.strokeStyle = '#000'
+          currentCtx.globalCompositeOperation = 'source-over'
+          currentCtx.strokeStyle = '#000'
         }
 
-        ctx.beginPath()
-        ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
-        for (let i = 1; i < stroke.points.length; i++) {
-          ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+        currentCtx.beginPath()
+        if (stroke.points.length === 1) {
+          currentCtx.arc(stroke.points[0].x, stroke.points[0].y, lw / 2, 0, Math.PI * 2)
+          currentCtx.fill()
+        } else if (stroke.points.length > 1) {
+          currentCtx.moveTo(stroke.points[0].x, stroke.points[0].y)
+          for (let i = 1; i < stroke.points.length - 1; i++) {
+            const p1 = stroke.points[i]
+            const p2 = stroke.points[i + 1]
+            if (!p1 || !p2 || isNaN(p1.x) || isNaN(p1.y) || isNaN(p2.x) || isNaN(p2.y)) continue;
+            const xc = (p1.x + p2.x) / 2
+            const yc = (p1.y + p2.y) / 2
+            currentCtx.quadraticCurveTo(p1.x, p1.y, xc, yc)
+          }
+          currentCtx.lineTo(stroke.points[stroke.points.length - 1].x, stroke.points[stroke.points.length - 1].y)
+          currentCtx.stroke()
         }
-        ctx.stroke()
       })
 
       // Reset back to normal
-      ctx.globalCompositeOperation = 'source-over'
+      currentCtx.globalCompositeOperation = 'source-over'
     }
 
-    // Wrap in a tiny timeout + rAF sequence to prevent Windows WebView2 silent buffer wipe race condition
-    // This happens because canvas.height updates in the DOM but the GPU buffer isn't allocated fully yet
-    let rafId: number;
+    // Atomic Double-Redraw Engine:
+    // 1) Instant synchronous paint to immediately reflect react state
+    // 2) 200ms delayed paint to restore drops caused by WebView2 texture swapping on DOM reflows (like clicking "Save").
+    let raf1: number, raf2: number;
+    raf1 = requestAnimationFrame(handleRedraw)
     const timeoutId = setTimeout(() => {
-      rafId = requestAnimationFrame(handleRedraw)
-    }, 10)
+      raf2 = requestAnimationFrame(handleRedraw)
+    }, 200)
 
     return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
       clearTimeout(timeoutId)
-      cancelAnimationFrame(rafId)
     }
   }, [strokes, viewMode, pageImages.length, strokeRedrawTrigger])
 
@@ -296,12 +295,20 @@ export default function SendocPage({ user }: SendocPageProps) {
     fetchPendingDocs()
     fetchUsers()
     checkHancom()
+    checkExcel()
   }, [])
 
   const checkHancom = async () => {
     try {
       const wailsApp = (window as any).go?.main?.App
       if (wailsApp?.CheckHancom) setHancom(await wailsApp.CheckHancom())
+    } catch { }
+  }
+
+  const checkExcel = async () => {
+    try {
+      const wailsApp = (window as any).go?.main?.App
+      if (wailsApp?.CheckExcel) setExcelStatus(await wailsApp.CheckExcel())
     } catch { }
   }
 
@@ -640,28 +647,32 @@ export default function SendocPage({ user }: SendocPageProps) {
     if (!isDrawingMode || !fullCanvasRef.current) return
     const rect = fullCanvasRef.current.getBoundingClientRect()
     const scaleFactor = 2
-    const x = (((e.clientX || e.touches?.[0]?.clientX) - rect.left) / zoom) * scaleFactor
-    const y = (((e.clientY || e.touches?.[0]?.clientY) - rect.top) / zoom) * scaleFactor
+    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches.length > 0 ? e.touches[0].clientX : 0)
+    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches.length > 0 ? e.touches[0].clientY : 0)
+    const x = ((clientX - rect.left) / zoom) * scaleFactor
+    const y = ((clientY - rect.top) / zoom) * scaleFactor
 
     currentStrokeRef.current = { points: [{ x, y }], size: penSize, isEraser }
-    setIsFullDrawing(true)
+    isFullDrawingRef.current = true
   }
   const stopFullDrawing = () => {
-    if (isFullDrawing && currentStrokeRef.current) {
-      isAddingStrokeRef.current = true
-      setStrokes(prev => [...prev, currentStrokeRef.current!])
+    if (isFullDrawingRef.current && currentStrokeRef.current) {
+      const finishedStroke = currentStrokeRef.current
+      setStrokes(prev => [...prev, finishedStroke])
       currentStrokeRef.current = null
     }
-    setIsFullDrawing(false)
+    isFullDrawingRef.current = false
   }
   const drawFull = (e: any) => {
-    if (!isDrawingMode || !isFullDrawing || !fullCanvasRef.current || !currentStrokeRef.current) return
+    if (!isDrawingMode || !isFullDrawingRef.current || !fullCanvasRef.current || !currentStrokeRef.current) return
     const canvas = fullCanvasRef.current; const ctx = canvas.getContext('2d')
     if (!ctx) return
     const rect = canvas.getBoundingClientRect()
     const scaleFactor = 2
-    const x = (((e.clientX || e.touches?.[0]?.clientX) - rect.left) / zoom) * scaleFactor
-    const y = (((e.clientY || e.touches?.[0]?.clientY) - rect.top) / zoom) * scaleFactor
+    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches.length > 0 ? e.touches[0].clientX : 0)
+    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches.length > 0 ? e.touches[0].clientY : 0)
+    const x = ((clientX - rect.left) / zoom) * scaleFactor
+    const y = ((clientY - rect.top) / zoom) * scaleFactor
 
     // Add to ongoing stroke
     currentStrokeRef.current.points.push({ x, y })
@@ -681,8 +692,25 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
     const pts = currentStrokeRef.current.points
     ctx.beginPath()
-    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y)
-    ctx.lineTo(x, y)
+    if (pts.length < 3) {
+      ctx.moveTo(pts[0].x, pts[0].y)
+      ctx.lineTo(x, y)
+    } else {
+      const p1 = pts[pts.length - 3]
+      const p2 = pts[pts.length - 2]
+      const p3 = pts[pts.length - 1]
+      if (!p1 || !p2 || !p3 || isNaN(p1.x) || isNaN(p1.y) || isNaN(p2.x) || isNaN(p2.y) || isNaN(p3.x) || isNaN(p3.y)) {
+        ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y)
+        ctx.lineTo(x, y)
+      } else {
+        const xc1 = (p1.x + p2.x) / 2
+        const yc1 = (p1.y + p2.y) / 2
+        const xc2 = (p2.x + p3.x) / 2
+        const yc2 = (p2.y + p3.y) / 2
+        ctx.moveTo(xc1, yc1)
+        ctx.quadraticCurveTo(p2.x, p2.y, xc2, yc2)
+      }
+    }
     ctx.stroke()
   }
 
@@ -928,45 +956,52 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   const handleSubmitSignature = async () => {
     if (!activeDoc) return
-    try {
-      let sigData = ''
-      let finalFields = [...fields];
-      if (fullCanvasRef.current && strokes.length > 0) {
-        sigData = fullCanvasRef.current.toDataURL('image/webp', 0.6)
-        finalFields.push({
-          id: 'full_canvas_overlay',
-          type: 'signature',
-          x: 0,
-          y: 0,
-          width: 800,
-          height: 1131,
-          label: '전체 화면 펜선'
-        } as any);
-      } else {
-        sigData = fields.find(f => f.type === 'signature')?.signatureData || ''
-      }
 
-      const res = await apiFetch(`/api/plugins/sendoc/sign/${activeDoc.id}/submit`, {
-        method: 'POST',
-        body: JSON.stringify({ signature_image_url: sigData, form_data_json: JSON.stringify(finalFields) })
-      })
-      if (res.ok) {
-        // Delete draft from SQLite (teacher) or localStorage (student/parent)
-        const wailsApp = (window as any).go?.main?.App
-        if (isTeacher && wailsApp?.DeleteSendocDraft) {
-          wailsApp.DeleteSendocDraft(activeDoc.id).catch(() => { })
-          if ((window as any).__sendocDraftCache) delete (window as any).__sendocDraftCache[activeDoc.id]
-        } else {
-          localStorage.removeItem(`sendoc_draft_${activeDoc.id}`)
+    setConfirmDialog({
+      message: '다시 수정할 수 없습니다. 신중하게 확인 후 제출해주세요.',
+      onConfirm: async () => {
+        try {
+          let sigData = ''
+          let finalFields = [...fields];
+          if (fullCanvasRef.current && strokes.length > 0) {
+            sigData = fullCanvasRef.current.toDataURL('image/webp', 0.6)
+            finalFields.push({
+              id: 'full_canvas_overlay',
+              type: 'signature',
+              x: 0,
+              y: 0,
+              width: 800,
+              height: 1131 * Math.max(1, pageImages.length),
+              label: '전체 화면 펜선',
+              signatureData: sigData
+            } as any);
+          } else {
+            sigData = fields.find(f => f.type === 'signature')?.signatureData || ''
+          }
+
+          const res = await apiFetch(`/api/plugins/sendoc/sign/${activeDoc.id}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({ signature_image_url: sigData, form_data_json: JSON.stringify(finalFields) })
+          })
+          if (res.ok) {
+            // Delete draft from SQLite (teacher) or localStorage (student/parent)
+            const wailsApp = (window as any).go?.main?.App
+            if (isTeacher && wailsApp?.DeleteSendocDraft) {
+              wailsApp.DeleteSendocDraft(activeDoc.id).catch(() => { })
+              if ((window as any).__sendocDraftCache) delete (window as any).__sendocDraftCache[activeDoc.id]
+            } else {
+              localStorage.removeItem(`sendoc_draft_${activeDoc.id}`)
+            }
+            toast.success('제출 완료!'); setViewMode('list'); fetchPendingDocs()
+          } else {
+            const errorData = await res.json().catch(() => ({}));
+            toast.error('제출 실패: ' + (errorData.error || res.statusText));
+          }
+        } catch (e: any) {
+          toast.error('제출 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
         }
-        toast.success('제출 완료!'); setViewMode('list'); fetchPendingDocs()
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        toast.error('제출 실패: ' + (errorData.error || res.statusText));
       }
-    } catch (e: any) {
-      toast.error('제출 중 오류 발생: ' + (e.message || '알 수 없는 오류'))
-    }
+    });
   }
 
   const handleDeleteDoc = async (id: string, forTeacher: boolean) => {
@@ -1068,12 +1103,20 @@ export default function SendocPage({ user }: SendocPageProps) {
           <h3 style={{ fontSize: 22, fontWeight: 700 }}>새 문서 작성 - 파일 선택</h3>
         </div>
 
-        {hancom && (
-          <div style={{ marginBottom: 20, padding: '12px 20px', borderRadius: 12, background: hancom.installed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${hancom.installed ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`, display: 'flex', alignItems: 'center', gap: 12, fontSize: 14 }}>
-            <i className={`fi ${hancom.installed ? 'fi-rr-check-circle' : 'fi-rr-exclamation'}`} style={{ color: hancom.installed ? '#22c55e' : '#ef4444', fontSize: 18 }} />
-            <div>{hancom.installed ? <span>한컴오피스 <strong>{hancom.version}</strong> 감지됨 — HWP 변환이 가능합니다.</span> : <span style={{ color: '#ef4444' }}>한컴오피스가 감지되지 않았습니다. PDF 파일만 사용 가능합니다.</span>}</div>
-          </div>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {hancom && (
+            <div style={{ padding: '12px 20px', borderRadius: 12, background: hancom.installed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${hancom.installed ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`, display: 'flex', alignItems: 'center', gap: 12, fontSize: 14 }}>
+              <i className={`fi ${hancom.installed ? 'fi-rr-check-circle' : 'fi-rr-exclamation'}`} style={{ color: hancom.installed ? '#22c55e' : '#ef4444', fontSize: 18 }} />
+              <div>{hancom.installed ? <span>한컴오피스 <strong>{hancom.version}</strong> 감지됨 — HWP 변환이 가능합니다.</span> : <span style={{ color: '#ef4444' }}>한컴오피스가 감지되지 않았습니다. HWP 문서는 변환이 불가합니다.</span>}</div>
+            </div>
+          )}
+          {excelStatus && (
+            <div style={{ padding: '12px 20px', borderRadius: 12, background: excelStatus.installed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${excelStatus.installed ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`, display: 'flex', alignItems: 'center', gap: 12, fontSize: 14 }}>
+              <i className={`fi ${excelStatus.installed ? 'fi-rr-check-circle' : 'fi-rr-exclamation'}`} style={{ color: excelStatus.installed ? '#22c55e' : '#ef4444', fontSize: 18 }} />
+              <div>{excelStatus.installed ? <span>MS 엑셀 <strong>{excelStatus.version}</strong> 감지됨 — 엑셀 파일(XLSX) 변환이 가능합니다.</span> : <span style={{ color: '#ef4444' }}>MS 엑셀이 감지되지 않았습니다. 엑셀 파일은 변환이 불가합니다.</span>}</div>
+            </div>
+          )}
+        </div>
 
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
@@ -1254,8 +1297,8 @@ export default function SendocPage({ user }: SendocPageProps) {
                 <canvas
                   ref={fullCanvasRef}
                   width={1600} height={2262 * Math.max(1, pageImages.length)}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default' }}
-                  onMouseDown={startFullDrawing} onMouseMove={drawFull} onMouseUp={stopFullDrawing} onMouseLeave={stopFullDrawing}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default', touchAction: 'none' }}
+                  onPointerDown={startFullDrawing} onPointerMove={drawFull} onPointerUp={stopFullDrawing} onPointerOut={stopFullDrawing} onPointerCancel={stopFullDrawing}
                 />
 
                 <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: isDrawingMode ? 'none' : 'auto' }}>
@@ -1466,6 +1509,23 @@ export default function SendocPage({ user }: SendocPageProps) {
             </div>
           )
         })()}
+
+        {/* Confirm Dialog */}
+        {confirmDialog && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div style={{ background: 'white', padding: 32, borderRadius: 24, width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 24, background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                <i className="fi fi-rr-info" style={{ fontSize: 24 }} />
+              </div>
+              <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>확인창</h4>
+              <p style={{ color: '#64748b', fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>{confirmDialog.message}</p>
+              <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+                <button onClick={() => setConfirmDialog(null)} className="btn-secondary" style={{ flex: 1, padding: '12px 0' }}>취소</button>
+                <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="btn-primary" style={{ flex: 1, padding: '12px 0', background: '#ef4444' }}>확인</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1684,8 +1744,9 @@ export default function SendocPage({ user }: SendocPageProps) {
                         {f.type === 'text' ? (
                           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
                         ) : (
-                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: '100%', height: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
                             {f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                            {f.signatureData && <div style={{ position: 'absolute', bottom: 0, background: 'red', color: 'white', fontSize: 16, zIndex: 99 }}>DEBUG LEN: {f.signatureData.length} | HDR: {f.signatureData.substring(0, 30)}</div>}
                           </div>
                         )}
                       </div>

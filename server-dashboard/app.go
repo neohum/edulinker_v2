@@ -462,11 +462,14 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 
 Write-Host "🚀 [INFO] 인프라 설치 스크립트 시작..."
+$NeedsReboot = $false
+
 # Ensure Scoop is installed
 if (!(Get-Command scoop -ErrorAction SilentlyContinue)) {
     Write-Host "🚀 [INFO] Scoop이 설치되어 있지 않습니다. 자동 설치를 진행합니다..."
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
     Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+    $NeedsReboot = $true
 } else {
     Write-Host "🚀 [INFO] Scoop이 이미 설치되어 있습니다."
 }
@@ -477,9 +480,23 @@ if ($env:PATH -notlike "*$shims*") {
     $env:PATH = "$shims;" + $env:PATH
 }
 
+# Install git required for bucket operations if missing
+if (!(Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "🚀 [INFO] Scoop 버킷 추가를 위해 Git을 설치합니다..."
+    scoop install git | Out-Default
+}
+
 # Add main buckets if not present
 scoop bucket add main
 scoop bucket add versions
+scoop bucket add extra
+
+if ($NeedsReboot) {
+    Write-Host "🚀 [INFO] Scoop 및 필수 버킷(extra 등)이 설치되었습니다. 완벽한 구동을 위해 5초 후 컴퓨터를 재시작합니다..."
+    Start-Sleep -Seconds 5
+    Restart-Computer -Force
+    exit
+}
 
 # Install packages
 Write-Host "🚀 [INFO] PostgreSQL, Redis, MinIO 설치 확인 중 (Scoop)..."

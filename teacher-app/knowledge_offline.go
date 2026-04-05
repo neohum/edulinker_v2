@@ -12,19 +12,21 @@ import (
 	"strings"
 )
 
+type KnowledgeDocUser struct {
+	Name     string `json:"name"`
+	Grade    int    `json:"grade"`
+	ClassNum int    `json:"class_num"`
+}
+
 type KnowledgeDoc struct {
-	ID               string `json:"id"`
-	Title            string `json:"title"`
-	SourceType       string `json:"source_type"`
-	OriginalFilename string `json:"original_filename"`
-	FileUrl          string `json:"file_url"`
-	MarkdownContent  string `json:"markdown_content"`
-	CreatedAt        string `json:"created_at"`
-	User             *struct {
-		Name     string `json:"name"`
-		Grade    int    `json:"grade"`
-		ClassNum int    `json:"class_num"`
-	} `json:"user,omitempty"`
+	ID               string            `json:"id"`
+	Title            string            `json:"title"`
+	SourceType       string            `json:"source_type"`
+	OriginalFilename string            `json:"original_filename"`
+	FileUrl          string            `json:"file_url"`
+	MarkdownContent  string            `json:"markdown_content"`
+	CreatedAt        string            `json:"created_at"`
+	User             *KnowledgeDocUser `json:"user,omitempty"`
 }
 
 func (a *App) getKnowledgeDir() string {
@@ -168,11 +170,7 @@ func (a *App) GetLocalKnowledge() []KnowledgeDoc {
 		err := rows.Scan(&d.ID, &d.Title, &d.SourceType, &d.OriginalFilename, &d.FileUrl, &d.MarkdownContent, &d.CreatedAt, &uName, &uGrade, &uClass)
 		if err == nil {
 			if uName != "" {
-				d.User = &struct {
-					Name     string `json:"name"`
-					Grade    int    `json:"grade"`
-					ClassNum int    `json:"class_num"`
-				}{Name: uName, Grade: uGrade, ClassNum: uClass}
+				d.User = &KnowledgeDocUser{Name: uName, Grade: uGrade, ClassNum: uClass}
 			}
 			res = append(res, d)
 		}
