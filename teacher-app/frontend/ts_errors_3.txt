@@ -1,0 +1,232 @@
+src/pages/DashboardPage.tsx(8,8): error TS1192: Module '"E:/works/project/edulinker/teacher-app/frontend/src/pages/SendocPage"' has no default export.
+src/pages/SendocPage.tsx(12,25): error TS2304: Cannot find name 'isDrawingMode'.
+src/pages/SendocPage.tsx(13,3): error TS2304: Cannot find name 'isPanningRef'.
+src/pages/SendocPage.tsx(14,7): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(15,5): error TS2304: Cannot find name 'panStartRef'.
+src/pages/SendocPage.tsx(15,69): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(15,119): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(16,5): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(17,5): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(22,8): error TS2304: Cannot find name 'isPanningRef'.
+src/pages/SendocPage.tsx(22,33): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(23,26): error TS2304: Cannot find name 'panStartRef'.
+src/pages/SendocPage.tsx(24,26): error TS2304: Cannot find name 'panStartRef'.
+src/pages/SendocPage.tsx(25,3): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(25,43): error TS2304: Cannot find name 'panStartRef'.
+src/pages/SendocPage.tsx(26,3): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(26,42): error TS2304: Cannot find name 'panStartRef'.
+src/pages/SendocPage.tsx(30,3): error TS2304: Cannot find name 'isPanningRef'.
+src/pages/SendocPage.tsx(31,7): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(32,5): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(32,47): error TS2304: Cannot find name 'isDrawingMode'.
+src/pages/SendocPage.tsx(32,76): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(33,5): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(39,8): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(39,21): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(42,9): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(43,38): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(43,67): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(43,91): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(45,44): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(45,77): error TS18004: No value exists in scope for the shorthand property 'fields'. Either declare one or provide an initializer.
+src/pages/SendocPage.tsx(45,85): error TS18004: No value exists in scope for the shorthand property 'strokes'. Either declare one or provide an initializer.
+src/pages/SendocPage.tsx(47,5): error TS2304: Cannot find name 'setIsDraftSaved'.
+src/pages/SendocPage.tsx(48,5): error TS2304: Cannot find name 'setStrokeRedrawTrigger'.
+src/pages/SendocPage.tsx(48,28): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(49,24): error TS2304: Cannot find name 'setIsDraftSaved'.
+src/pages/SendocPage.tsx(49,48): error TS2304: Cannot find name 'setStrokeRedrawTrigger'.
+src/pages/SendocPage.tsx(49,71): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(51,9): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(52,94): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(54,54): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(78,17): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(78,37): error TS2304: Cannot find name 'resultViewerData'.
+src/pages/SendocPage.tsx(104,27): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(111,5): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(111,21): error TS7006: Parameter 'stroke' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(167,5): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(167,14): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(167,24): error TS2304: Cannot find name 'pageImages'.
+src/pages/SendocPage.tsx(167,43): error TS2304: Cannot find name 'strokeRedrawTrigger'.
+src/pages/SendocPage.tsx(173,32): error TS2304: Cannot find name 'setHancom'.
+src/pages/SendocPage.tsx(180,31): error TS2304: Cannot find name 'setExcelStatus'.
+src/pages/SendocPage.tsx(187,17): error TS2304: Cannot find name 'setDocs'.
+src/pages/SendocPage.tsx(188,46): error TS2304: Cannot find name 'setLoading'.
+src/pages/SendocPage.tsx(197,5): error TS2304: Cannot find name 'setEditingDraftId'.
+src/pages/SendocPage.tsx(198,5): error TS2304: Cannot find name 'setTitle'.
+src/pages/SendocPage.tsx(199,5): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(202,7): error TS2304: Cannot find name 'setSelectedUsers'.
+src/pages/SendocPage.tsx(209,11): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(212,7): error TS2304: Cannot find name 'setServerBgUrl'.
+src/pages/SendocPage.tsx(213,7): error TS2304: Cannot find name 'setBackgroundUrl'.
+src/pages/SendocPage.tsx(215,7): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(216,7): error TS2304: Cannot find name 'setBackgroundUrl'.
+src/pages/SendocPage.tsx(217,7): error TS2304: Cannot find name 'setServerBgUrl'.
+src/pages/SendocPage.tsx(219,5): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(220,5): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(221,5): error TS2304: Cannot find name 'setViewMode'.
+src/pages/SendocPage.tsx(229,8): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(229,21): error TS2304: Cannot find name 'pendingDocs'.
+src/pages/SendocPage.tsx(234,21): error TS2304: Cannot find name 'pendingDocs'.
+src/pages/SendocPage.tsx(243,5): error TS2304: Cannot find name 'pendingDocs'.
+src/pages/SendocPage.tsx(243,18): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(246,3): error TS2304: Cannot find name 'setActiveDoc'.
+src/pages/SendocPage.tsx(246,22): error TS2304: Cannot find name 'setLoadingStatus'.
+src/pages/SendocPage.tsx(246,46): error TS2304: Cannot find name 'setShowStatusModal'.
+src/pages/SendocPage.tsx(249,17): error TS2304: Cannot find name 'setRecipients'.
+src/pages/SendocPage.tsx(251,13): error TS2304: Cannot find name 'setLoadingStatus'.
+src/pages/SendocPage.tsx(259,7): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(259,37): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(260,24): error TS2304: Cannot find name 'scrollContainerRef'.
+src/pages/SendocPage.tsx(261,27): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(266,69): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(267,68): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(269,32): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(270,32): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(272,21): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(282,3): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(282,13): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(287,7): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(288,8): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(289,16): error TS2304: Cannot find name 'containerRef'.
+src/pages/SendocPage.tsx(291,17): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(291,29): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(296,47): error TS2304: Cannot find name 'isDraggingField'.
+src/pages/SendocPage.tsx(297,5): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(297,15): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(297,32): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(299,156): error TS2304: Cannot find name 'isDraggingField'.
+src/pages/SendocPage.tsx(305,7): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(307,17): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(307,29): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(312,40): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(313,40): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(314,47): error TS2304: Cannot find name 'isDraggingField'.
+src/pages/SendocPage.tsx(315,5): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(315,15): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(315,32): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(317,156): error TS2304: Cannot find name 'isDraggingField'.
+src/pages/SendocPage.tsx(322,36): error TS2304: Cannot find name 'setIsDrawing'.
+src/pages/SendocPage.tsx(323,29): error TS2304: Cannot find name 'setIsDrawing'.
+src/pages/SendocPage.tsx(323,50): error TS2304: Cannot find name 'signatureCanvasRef'.
+src/pages/SendocPage.tsx(325,8): error TS2304: Cannot find name 'isDrawing'.
+src/pages/SendocPage.tsx(325,22): error TS2304: Cannot find name 'signatureCanvasRef'.
+src/pages/SendocPage.tsx(326,18): error TS2304: Cannot find name 'signatureCanvasRef'.
+src/pages/SendocPage.tsx(334,7): error TS2304: Cannot find name 'activeSignField'.
+src/pages/SendocPage.tsx(334,26): error TS2304: Cannot find name 'signatureCanvasRef'.
+src/pages/SendocPage.tsx(335,18): error TS2304: Cannot find name 'signatureCanvasRef'.
+src/pages/SendocPage.tsx(336,5): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(336,15): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(336,32): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(336,46): error TS2304: Cannot find name 'activeSignField'.
+src/pages/SendocPage.tsx(337,5): error TS2304: Cannot find name 'setActiveSignField'.
+src/pages/SendocPage.tsx(343,8): error TS2304: Cannot find name 'isDrawingMode'.
+src/pages/SendocPage.tsx(343,26): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(344,16): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(348,38): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(349,37): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(351,3): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(351,58): error TS2304: Cannot find name 'penSize'.
+src/pages/SendocPage.tsx(351,67): error TS18004: No value exists in scope for the shorthand property 'isEraser'. Either declare one or provide an initializer.
+src/pages/SendocPage.tsx(352,3): error TS2304: Cannot find name 'isFullDrawingRef'.
+src/pages/SendocPage.tsx(355,7): error TS2304: Cannot find name 'isFullDrawingRef'.
+src/pages/SendocPage.tsx(355,35): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(356,28): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(357,5): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(357,16): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(358,5): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(360,3): error TS2304: Cannot find name 'isFullDrawingRef'.
+src/pages/SendocPage.tsx(363,8): error TS2304: Cannot find name 'isDrawingMode'.
+src/pages/SendocPage.tsx(363,26): error TS2304: Cannot find name 'isFullDrawingRef'.
+src/pages/SendocPage.tsx(363,55): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(363,81): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(364,18): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(370,38): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(371,37): error TS2304: Cannot find name 'zoom'.
+src/pages/SendocPage.tsx(374,3): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(377,22): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(377,64): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(382,7): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(389,15): error TS2304: Cannot find name 'currentStrokeRef'.
+src/pages/SendocPage.tsx(422,3): error TS2304: Cannot find name 'setActiveDoc'.
+src/pages/SendocPage.tsx(422,26): error TS2304: Cannot find name 'setTitle'.
+src/pages/SendocPage.tsx(422,51): error TS2304: Cannot find name 'setBackgroundUrl'.
+src/pages/SendocPage.tsx(422,75): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(440,13): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(448,17): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(460,17): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(480,7): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(484,9): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(486,15): error TS2304: Cannot find name 'setFields'.
+src/pages/SendocPage.tsx(487,5): error TS2304: Cannot find name 'setViewMode'.
+src/pages/SendocPage.tsx(489,22): error TS2304: Cannot find name 'setStrokeRedrawTrigger'.
+src/pages/SendocPage.tsx(489,45): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(496,13): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(503,9): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(505,9): error TS2304: Cannot find name 'setBackgroundUrl'.
+src/pages/SendocPage.tsx(545,11): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(552,7): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(554,7): error TS2304: Cannot find name 'setResultViewerData'.
+src/pages/SendocPage.tsx(556,7): error TS2304: Cannot find name 'setResultViewerData'.
+src/pages/SendocPage.tsx(597,11): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(604,7): error TS2304: Cannot find name 'setPageImages'.
+src/pages/SendocPage.tsx(606,7): error TS2304: Cannot find name 'setResultViewerData'.
+src/pages/SendocPage.tsx(608,7): error TS2304: Cannot find name 'setResultViewerData'.
+src/pages/SendocPage.tsx(616,8): error TS2304: Cannot find name 'title'.
+src/pages/SendocPage.tsx(617,19): error TS2304: Cannot find name 'selectedUsers'.
+src/pages/SendocPage.tsx(621,7): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(621,32): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(622,30): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(627,5): error TS2304: Cannot find name 'setViewMode'.
+src/pages/SendocPage.tsx(628,5): error TS2304: Cannot find name 'setShowRecipientModal'.
+src/pages/SendocPage.tsx(629,5): error TS2304: Cannot find name 'setIsSending'.
+src/pages/SendocPage.tsx(632,5): error TS2304: Cannot find name 'setIsSending'.
+src/pages/SendocPage.tsx(637,29): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(645,38): error TS2304: Cannot find name 'pageImages'.
+src/pages/SendocPage.tsx(652,9): error TS18004: No value exists in scope for the shorthand property 'title'. Either declare one or provide an initializer.
+src/pages/SendocPage.tsx(654,25): error TS2304: Cannot find name 'serverBgUrl'.
+src/pages/SendocPage.tsx(654,40): error TS2304: Cannot find name 'backgroundUrl'.
+src/pages/SendocPage.tsx(657,26): error TS2304: Cannot find name 'selectedUsers'.
+src/pages/SendocPage.tsx(662,11): error TS2304: Cannot find name 'editingDraftId'.
+src/pages/SendocPage.tsx(663,53): error TS2304: Cannot find name 'editingDraftId'.
+src/pages/SendocPage.tsx(677,11): error TS2304: Cannot find name 'setEditingDraftId'.
+src/pages/SendocPage.tsx(678,29): error TS2304: Cannot find name 'title'.
+src/pages/SendocPage.tsx(679,15): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(681,13): error TS2304: Cannot find name 'setStrokes'.
+src/pages/SendocPage.tsx(681,29): error TS2304: Cannot find name 'setEditingDraftId'.
+src/pages/SendocPage.tsx(681,54): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(681,129): error TS2304: Cannot find name 'setViewMode'.
+src/pages/SendocPage.tsx(684,29): error TS2304: Cannot find name 'title'.
+src/pages/SendocPage.tsx(685,11): error TS2304: Cannot find name 'setEditingDraftId'.
+src/pages/SendocPage.tsx(687,11): error TS2304: Cannot find name 'fetchPendingDocs'.
+src/pages/SendocPage.tsx(692,25): error TS2304: Cannot find name 'title'.
+src/pages/SendocPage.tsx(695,23): error TS2304: Cannot find name 'title'.
+src/pages/SendocPage.tsx(697,7): error TS2304: Cannot find name 'setIsSending'.
+src/pages/SendocPage.tsx(705,8): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(709,7): error TS2304: Cannot find name 'fullCanvasRef'.
+src/pages/SendocPage.tsx(709,32): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(710,34): error TS2304: Cannot find name 'strokes'.
+src/pages/SendocPage.tsx(713,3): error TS2304: Cannot find name 'setConfirmDialog'.
+src/pages/SendocPage.tsx(718,31): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(726,40): error TS2304: Cannot find name 'pageImages'.
+src/pages/SendocPage.tsx(731,21): error TS2304: Cannot find name 'fields'.
+src/pages/SendocPage.tsx(731,33): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/pages/SendocPage.tsx(734,64): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(741,15): error TS2304: Cannot find name 'isTeacher'.
+src/pages/SendocPage.tsx(742,40): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(743,95): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(745,53): error TS2304: Cannot find name 'activeDoc'.
+src/pages/SendocPage.tsx(747,36): error TS2304: Cannot find name 'setViewMode'.
+src/pages/SendocPage.tsx(747,57): error TS2304: Cannot find name 'fetchPendingDocs'.
+src/pages/SendocPage.tsx(760,3): error TS2304: Cannot find name 'setConfirmDialog'.
+src/pages/SendocPage.tsx(769,16): error TS2304: Cannot find name 'fetchPendingDocs'.
+src/pages/SendocPage.tsx(781,3): error TS2304: Cannot find name 'setConfirmDialog'.
+src/pages/SendocPage.tsx(846,5): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(847,3): error TS1108: A 'return' statement can only be used within a function body.
+src/pages/SendocPage.tsx(907,5): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(907,32): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(907,57): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(908,20): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(908,60): error TS2304: Cannot find name 'viewMode'.
+src/pages/SendocPage.tsx(909,3): error TS1108: A 'return' statement can only be used within a function body.
+src/pages/SendocPage.tsx(999,1): error TS1108: A 'return' statement can only be used within a function body.

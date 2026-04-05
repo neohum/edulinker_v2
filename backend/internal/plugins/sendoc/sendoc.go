@@ -144,6 +144,7 @@ func (p *Plugin) RegisterRoutes(router fiber.Router) {
 	teacherAPI.Get("/:id/pdf", p.downloadPDF)
 	teacherAPI.Delete("/:id", p.deleteDocument)
 	teacherAPI.Put("/:id/recall", p.recallDocument)
+	teacherAPI.Put("/:id", p.updateDocument)
 }
 
 func (p *Plugin) RegisterPublicRoutes(router fiber.Router) {
@@ -169,10 +170,16 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 		FieldsJSON        string      `json:"fields_json"`
 		RequiresSignature bool        `json:"requires_signature"`
 		TargetUserIDs     []uuid.UUID `json:"target_user_ids"`
+		IsDraft           bool        `json:"is_draft"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
+	}
+
+	status := "sent"
+	if req.IsDraft {
+		status = "draft"
 	}
 
 	doc := models.Sendoc{
@@ -183,7 +190,7 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 		BackgroundURL:     req.BackgroundURL,
 		FieldsJSON:        req.FieldsJSON,
 		RequiresSignature: req.RequiresSignature,
-		Status:            "sent",
+		Status:            status,
 	}
 
 	if err := p.db.Create(&doc).Error; err != nil {
@@ -219,6 +226,103 @@ func (p *Plugin) createDocument(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(doc)
+}
+
+func (p *Plugin) updateDocument(c *fiber.Ctx) error {
+	userID, ok := c.Locals("userID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	schoolID, ok := c.Locals("schoolID").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	docID := c.Params("id")
+
+	var req struct {
+		Title             string      `json:"title"`
+		Content           string      `json:"content"`
+		BackgroundURL     string      `json:"background_url"`
+		FieldsJSON        string      `json:"fields_json"`
+		RequiresSignature bool        `json:"requires_signature"`
+		TargetUserIDs     []uuid.UUID `json:"target_user_ids"`
+		IsDraft           bool        `json:"is_draft"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
+	}
+
+	var doc models.Sendoc
+	if err := p.db.Where("id = ? AND school_id = ? AND author_id = ?", docID, schoolID, userID).First(&doc).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found or permission denied"})
+	}
+
+	if doc.Status != "draft" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "only draft documents can be updated"})
+	}
+
+	doc.Title = req.Title
+	if req.Content != "" {
+		doc.Content = req.Content
+	}
+	doc.BackgroundURL = req.BackgroundURL
+	doc.FieldsJSON = req.FieldsJSON
+	doc.RequiresSignature = req.RequiresSignature
+
+	if req.IsDraft {
+		doc.Status = "draft"
+	} else {
+		doc.Status = "sent"
+		// If it is finally being sent, we set the date
+		doc.CreatedAt = time.Now()
+	}
+
+	tx := p.db.Begin()
+	if tx.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to start transaction"})
+	}
+
+	if err := tx.Save(&doc).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update document"})
+	}
+
+	// Always clear out existing recipients for a draft update to replace them
+	tx.Where("sendoc_id = ?", doc.ID).Delete(&models.SendocRecipient{})
+
+	// Always include the author themselves if they are not in the list
+	hasAuthor := false
+	for _, targetID := range req.TargetUserIDs {
+		if targetID == userID {
+			hasAuthor = true
+			break
+		}
+	}
+	if !hasAuthor {
+		req.TargetUserIDs = append(req.TargetUserIDs, userID)
+	}
+
+	var recipients []models.SendocRecipient
+	for _, targetID := range req.TargetUserIDs {
+		recipients = append(recipients, models.SendocRecipient{
+			SendocID: doc.ID,
+			UserID:   targetID,
+		})
+	}
+
+	if len(recipients) > 0 {
+		if err := tx.CreateInBatches(&recipients, 100).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update recipients"})
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to commit transaction"})
+	}
+
+	return c.JSON(doc)
 }
 
 func (p *Plugin) listDocuments(c *fiber.Ctx) error {
@@ -282,8 +386,8 @@ func (p *Plugin) listPendingDocuments(c *fiber.Ctx) error {
 
 	var recipients []models.SendocRecipient
 	for _, r := range allRecipients {
-		// If Sendoc is not loaded (deleted manually or soft deleted) or recalled, skip it
-		if r.Sendoc.ID == uuid.Nil || r.Sendoc.Status == "recalled" {
+		// If Sendoc is not loaded (deleted manually or soft deleted) or recalled/draft, skip it
+		if r.Sendoc.ID == uuid.Nil || r.Sendoc.Status == "recalled" || r.Sendoc.Status == "draft" {
 			continue
 		}
 		recipients = append(recipients, r)
@@ -575,11 +679,11 @@ func (p *Plugin) recallDocument(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found or permission denied"})
 	}
 
-	if doc.Status == "recalled" {
+	if doc.Status == "draft" {
 		return c.JSON(fiber.Map{"status": "already_recalled"})
 	}
 
-	doc.Status = "recalled"
+	doc.Status = "draft"
 	if err := p.db.Save(&doc).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to recall document"})
 	}
