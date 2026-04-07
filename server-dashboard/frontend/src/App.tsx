@@ -21,7 +21,16 @@ function App() {
   const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') !== 'false');
   const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') !== 'false');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => localStorage.getItem('sidebar_open') !== 'false');
+  const [downloadTicks, setDownloadTicks] = useState(0);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const bootLogEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDownloadTicks(t => t + 1);
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sidebar_open', isSidebarOpen.toString());
@@ -87,28 +96,34 @@ function App() {
           setBootStep(1); // Infra check
         }
 
-        // 1. Wait for infrastructure to be ready
+        // 1. Initial Quick Check (5 seconds wait for existing services to boot)
         let ready = false;
         let currentDeps = { postgres: false, redis: false, minio: false };
 
-        // Give local infra a chance to boot (up to 60 seconds) if we are auto-starting
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 5; i++) {
           currentDeps = await CheckDependencies();
           setDependencies(currentDeps);
           if (currentDeps.postgres && currentDeps.redis && currentDeps.minio) {
             ready = true;
             break;
           }
-
-          if (!autoInfra && !autoStart) break; // Don't wait if not auto-starting
-
-          if (autoInfra && i === 2 && !ready) {
-            // After 2 seconds of waiting, if autoInfra is true, try to install/start via scoop
-            toast.info("인프라 구동 스크립트를 시도합니다... (표시되지 않더라도 백그라운드에서 진행 중입니다)");
-            InstallAndStartWithScoop().catch(console.error);
-          }
-
+          if (!autoInfra && !autoStart) break;
           await new Promise(res => setTimeout(res, 1000));
+        }
+
+        // 2. If not ready, explicitly await the full installation script!
+        if (!ready && autoInfra) {
+          toast.info("일부 인프라가 구동되지 않았습니다. 자동 설치 및 복구를 시작합니다...");
+          try {
+            await InstallAndStartWithScoop();
+          } catch(e) { console.error(e); }
+          
+          // Check again after long installation completes
+          currentDeps = await CheckDependencies();
+          setDependencies(currentDeps);
+          if (currentDeps.postgres && currentDeps.redis && currentDeps.minio) {
+            ready = true;
+          }
         }
 
         if (autoStart || autoInfra) {
@@ -116,14 +131,14 @@ function App() {
           await new Promise(res => setTimeout(res, 500)); // UI delay
         }
 
-        // 2. Check & start backend server if needed (including DB Auto-setup)
+        // 3. Start Backend if requested and ready
         if (autoStart) {
           if (ready) {
             await handleStartCore();
             setBootStep(3);
             setTimeout(() => setBootSequenceActive(false), 2000);
           } else {
-            toast.error("인프라(DB/Redis/MinIO)가 준비되지 않아 서버 자동 구동을 실패했습니다.");
+            toast.error("자동 설치 후에도 인프라(DB/Redis/MinIO)가 연결되지 않아 서버 구동을 중단합니다.");
             setBootSequenceActive(false);
           }
         } else {
@@ -168,7 +183,8 @@ function App() {
   // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs, activeTab]);
+    bootLogEndRef.current?.scrollIntoView({ behavior: 'auto' });
+  }, [logs, activeTab, bootSequenceActive]);
 
   const fetchStatus = async () => {
     // Check dependencies first
@@ -187,9 +203,11 @@ function App() {
     try {
       await InstallAndStartWithScoop();
       toast.success("필수 인프라가 모두 성공적으로 구동되었습니다!");
+      return true;
     } catch (err: any) {
       console.error(err);
       toast.error("인프라 구동 실패: " + err);
+      return false;
     } finally {
       setIsStartingInfra(false);
     }
@@ -198,9 +216,14 @@ function App() {
   const handleStartInfra = async () => {
     setBootSequenceActive(true);
     setBootStep(1);
-    await handleStartInfraCore();
+    const success = await handleStartInfraCore();
     await fetchStatus();
-    setBootStep(2);
+    if (success) {
+      setBootStep(2);
+      await fetchStatus();
+      await handleStartCore();
+      setBootStep(3);
+    }
     setTimeout(() => { setBootSequenceActive(false); }, 1500);
   };
 
@@ -249,10 +272,19 @@ function App() {
       {bootSequenceActive && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-800">
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-3">
-              <i className="fi fi-rr-rocket text-indigo-500" />
-              자동 초기화 시퀀스
-            </h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold flex items-center gap-3">
+                <i className="fi fi-rr-rocket text-indigo-500" />
+                자동 초기화 시퀀스
+              </h2>
+              <button 
+                onClick={() => setBootSequenceActive(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1"
+                title="모달 닫기"
+              >
+                <i className="fi fi-rr-cross" />
+              </button>
+            </div>
             <div className="space-y-4">
               <div className={`flex items-center gap-4 ${bootStep >= 1 ? 'opacity-100' : 'opacity-40'}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${bootStep > 1 ? 'bg-emerald-100 text-emerald-600' : bootStep === 1 ? 'bg-indigo-100 text-indigo-600 animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
@@ -284,6 +316,58 @@ function App() {
                 </div>
               </div>
             </div>
+
+            {/* Live Logs inside Boot Sequence */}
+            <div className="mt-8 bg-slate-950 rounded-lg border border-slate-800 p-3 shadow-inner h-36 flex flex-col relative overflow-hidden">
+              <div className="text-[10px] text-slate-500 font-bold justify-between flex items-center mb-2 uppercase tracking-wider relative z-10 bg-slate-950/80 pb-1">
+                <div className="flex items-center gap-2">
+                  <i className="fi fi-rr-terminal" />
+                  실시간 진행 상황
+                </div>
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto font-mono text-[10px] text-slate-400 flex flex-col justify-start space-y-1 pr-1 custom-scrollbar">
+                {logs.length === 0 ? (
+                  <span className="text-slate-600 italic h-full flex items-center justify-center">시스템 초기화 중...</span>
+                ) : (
+                  <>
+                    {logs.map((log, i, arr) => {
+                      const isLast = i === arr.length - 1;
+                      const text = log.replace(/\[(INFO|ERR|WARN)\]|🚀/g, '').trim();
+                      const lowerText = text.toLowerCase();
+                      const isDownload = text.includes('설치 중') || text.includes('다운로드') || text.includes('진행 중') || lowerText.includes('download') || lowerText.includes('install') || lowerText.includes('extract');
+                      
+                      return (
+                        <div key={i} className={`break-all leading-relaxed flex items-start gap-2 ${isLast ? 'text-emerald-400 font-bold' : 'opacity-60'}`}>
+                          <span className="shrink-0 select-none text-[8px] mt-0.5">{isLast ? '▶' : '·'}</span>
+                          <div className="flex-1">
+                            {text}
+                            {isLast && (
+                              <span className="inline-flex items-center ml-1 space-x-0.5">
+                                {isDownload ? (
+                                  <span className="text-[10px] text-emerald-400 font-bold ml-1 font-mono tracking-tighter">
+                                    {'-'.repeat((downloadTicks % 15) + 1)}&gt;
+                                  </span>
+                                ) : (
+                                  <span className="inline-block w-1.5 h-2.5 bg-emerald-400 animate-pulse align-middle rounded-sm"></span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={bootLogEndRef} className="h-1" />
+                  </>
+                )}
+              </div>
+            </div>
+
           </div>
         </div>
       )}
@@ -481,15 +565,44 @@ function App() {
                     if (logFilter === 'error') return log.includes('ERR');
                     if (logFilter === 'warn') return log.includes('WARN');
                     return true;
-                  }).map((log, i) => (
-                    <div key={i} className="whitespace-pre-wrap break-words border-b border-slate-800/50 pb-1 mb-1 last:border-0 hover:bg-slate-800/30 px-1 rounded-sm">
-                      {log.includes('INFO') && <span className="text-blue-400 font-bold mr-2">[INFO]</span>}
-                      {log.includes('ERR') && <span className="text-rose-400 font-bold mr-2">[ERR]</span>}
-                      {log.includes('WARN') && <span className="text-orange-400 font-bold mr-2">[WARN]</span>}
-                      {log.includes('🚀') && <span className="text-emerald-400 font-bold mr-2">🚀</span>}
-                      {log.replace(/\[(INFO|ERR|WARN)\]|🚀/g, '')}
-                    </div>
-                  ))
+                  }).map((log, i, arr) => {
+                    const isLast = i === arr.length - 1;
+                    const textContent = log.replace(/\[(INFO|ERR|WARN)\]|🚀|🛑|🧹|🔨|✅|🎉/g, '');
+                    const lowerText = textContent.toLowerCase();
+                    const isDownload = isLast && (textContent.includes('설치 중') || textContent.includes('다운로드') || textContent.includes('대기 중') || textContent.includes('진행 중') || lowerText.includes('download') || lowerText.includes('install') || lowerText.includes('extract'));
+                    
+                    return (
+                      <div key={i} className={`whitespace-pre-wrap break-words border-b border-slate-800/50 pb-1.5 mb-1.5 last:border-0 hover:bg-slate-800/30 px-1 rounded-sm flex items-start ${isLast ? 'text-slate-100' : 'text-slate-300'}`}>
+                        <div className="flex-1 leading-relaxed">
+                          {log.includes('INFO') && <span className="text-blue-400 font-bold mr-2">[INFO]</span>}
+                          {log.includes('ERR') && <span className="text-rose-400 font-bold mr-2">[ERR]</span>}
+                          {log.includes('WARN') && <span className="text-orange-400 font-bold mr-2">[WARN]</span>}
+                          {log.includes('🚀') && <span className="text-emerald-400 font-bold mr-2">🚀</span>}
+                          {log.includes('🛑') && <span className="text-rose-400 font-bold mr-2">🛑</span>}
+                          {log.includes('🧹') && <span className="text-amber-400 font-bold mr-2">🧹</span>}
+                          {log.includes('🔨') && <span className="text-indigo-400 font-bold mr-2">🔨</span>}
+                          {log.includes('✅') && <span className="text-emerald-400 font-bold mr-2">✅</span>}
+                          {log.includes('🎉') && <span className="text-fuchsia-400 font-bold mr-2">🎉</span>}
+                          {textContent}
+                          
+                          {isLast && (
+                            <span className="inline-flex items-center ml-2 space-x-1 border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 rounded shadow-sm relative -top-0.5 h-[22px]">
+                              {isDownload ? (
+                                <>
+                                  <span className="text-[10px] text-emerald-400 font-bold ml-1 font-mono tracking-tighter inline-block w-[60px] text-left">
+                                    {'-'.repeat((downloadTicks % 15) + 1)}&gt;
+                                  </span>
+                                  <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider ml-1">진행중</span>
+                                </>
+                              ) : (
+                                <span className="inline-block w-1.5 h-2.5 bg-slate-400 animate-pulse align-middle rounded-[1px]"></span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
                 <div ref={logEndRef} />
               </div>

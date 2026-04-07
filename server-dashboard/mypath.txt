@@ -1,0 +1,13 @@
+C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files\dotnet\;C:\Program Files\PowerShell\7\;C:\Program Files (x86)\Go\bin;C:\Users\user\scoop\apps\postgresql\current\bin;C:\Users\user\scoop\apps\gcc\current\bin;C:\Users\user\go\bin;C:\Users\user\scoop\apps\nvm\current;C:\Users\user\scoop\apps\nvm\current\nodejs\nodejs;C:\Users\user\scoop\apps\nodejs\current\bin;C:\Users\user\scoop\apps\nodejs\current;C:\Users\user\scoop\apps\git\current\cmd;C:\Users\user\scoop\shims;C:\Users\user\AppData\Local\Microsoft\WindowsApps;C:\Users\user\.local\bin;C:\Users\user\.dotnet\tools;C:\Users\user\AppData\Local\Programs\Ollama;C:\Users\user\AppData\Local\Programs\Antigravity\bin;C:\Users\user\AppData\Local\Microsoft\WinGet\Links;C:\Users\user\go\bin
+
+CommandType     Name
+-----------     ----        
+Application     go.exe      
+
+Get-Command: The term 'npm' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+CommandType     Name
+-----------     ----        
+Application     wails.exe   
+

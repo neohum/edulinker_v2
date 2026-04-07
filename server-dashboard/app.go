@@ -139,17 +139,18 @@ func waitForPortCleared() {
 	}
 }
 
-// emitLog appends to internal log buffer and pushes to frontend
+// emitLog appends to internal log buffer and pushes to frontend (with wall-clock timestamp prefix)
 func (a *App) emitLog(msg string) {
+	stamped := time.Now().Format("15:04:05") + " " + msg
 	a.serverLock.Lock()
-	a.logs = append(a.logs, msg)
+	a.logs = append(a.logs, stamped)
 	if len(a.logs) > a.logLimit {
 		a.logs = a.logs[1:]
 	}
 	a.serverLock.Unlock()
 
 	if a.ctx != nil {
-		wailsRuntime.EventsEmit(a.ctx, "server-log", msg)
+		wailsRuntime.EventsEmit(a.ctx, "server-log", stamped)
 	}
 }
 
@@ -268,12 +269,42 @@ func (a *App) StartServer() error {
 	return nil
 }
 
+func (a *App) ensureLocalInfra() {
+	userProfile := os.Getenv("USERPROFILE")
+	if userProfile == "" { return }
+
+	if !checkPort("6379") {
+		redisExe := filepath.Join(userProfile, "scoop", "apps", "redis", "current", "redis-server.exe")
+		if _, err := os.Stat(redisExe); err == nil {
+			a.emitLog("🔄 [DASHBOARD] 백그라운드 Redis 서버를 연동 구동합니다...")
+			cmd := exec.Command(redisExe)
+			hiddenProcAttr(cmd)
+			cmd.Start()
+		}
+	}
+
+	if !checkPort("9000") {
+		minioExe := filepath.Join(userProfile, "scoop", "apps", "minio", "current", "minio.exe")
+		minioData := filepath.Join(userProfile, "minio_data")
+		if _, err := os.Stat(minioExe); err == nil {
+			a.emitLog("🔄 [DASHBOARD] 백그라운드 MinIO 스토리지 서버를 연동 구동합니다...")
+			cmd := exec.Command(minioExe, "server", minioData)
+			hiddenProcAttr(cmd)
+			cmd.Start()
+		}
+	}
+	time.Sleep(1 * time.Second) // 포트 개방 대기
+}
+
 func (a *App) buildAndStart() {
 	defer func() {
 		a.serverLock.Lock()
 		a.isStarting = false
 		a.serverLock.Unlock()
 	}()
+
+	// 인프라가 강제 종료되어 있다면 대시보드가 직접 백그라운드 구동을 보장함
+	a.ensureLocalInfra()
 
 	// Step 0: Kill anything on port 5200
 	a.emitLog("🧹 [DASHBOARD] 기존 프로세스 정리 중...")
@@ -284,7 +315,27 @@ func (a *App) buildAndStart() {
 	a.emitLog("🔨 [DASHBOARD] 백엔드 빌드 중... (첫 실행 시 시간이 걸릴 수 있습니다)")
 
 	exePath := filepath.Join(a.backendDir, "api-server.exe")
-	buildCmd := exec.Command("go", "build", "-o", exePath, "./cmd/api-server/")
+
+	// 환경 변수 PATH 갱신이 반영되지 않은 경우(예: Go 설치 직후)를 대비해 go 경로 동적 탐색
+	goExe := "go"
+	if path, err := exec.LookPath("go"); err == nil {
+		goExe = path
+	} else {
+		possiblePaths := []string{
+			filepath.Join(os.Getenv("USERPROFILE"), "scoop", "apps", "go", "current", "bin", "go.exe"),
+			`C:\Program Files\Go\bin\go.exe`,
+			`C:\Program Files (x86)\Go\bin\go.exe`,
+			filepath.Join(os.Getenv("USERPROFILE"), "go", "bin", "go.exe"),
+		}
+		for _, p := range possiblePaths {
+			if _, err := os.Stat(p); err == nil {
+				goExe = p
+				break
+			}
+		}
+	}
+
+	buildCmd := exec.Command(goExe, "build", "-o", exePath, "./cmd/api-server/")
 	buildCmd.Dir = a.backendDir
 	hiddenProcAttr(buildCmd)
 
@@ -456,103 +507,179 @@ func checkPort(port string) bool {
 func (a *App) InstallAndStartWithScoop() error {
 	script := `
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+# NOTE: ErrorActionPreference is intentionally NOT set to Stop.
+# Each step is wrapped in try/catch so a failure in one step does not abort all steps.
+$ErrorActionPreference = "Continue"
 
-$ErrorActionPreference = "Stop"
+$globalSW = [System.Diagnostics.Stopwatch]::StartNew()
 
-Write-Host "🚀 [INFO] 인프라 설치 스크립트 시작..."
-$NeedsReboot = $false
-
-# Ensure Scoop is installed
-if (!(Get-Command scoop -ErrorAction SilentlyContinue)) {
-    Write-Host "🚀 [INFO] Scoop이 설치되어 있지 않습니다. 자동 설치를 진행합니다..."
-    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-    Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-    $NeedsReboot = $true
-} else {
-    Write-Host "🚀 [INFO] Scoop이 이미 설치되어 있습니다."
+function ts {
+    $e = $globalSW.Elapsed
+    return "[{0:D2}:{1:D2}:{2:D2}]" -f $e.Hours, $e.Minutes, $e.Seconds
 }
 
-# 현재 세션의 PATH에 Scoop shims 경로 임시 추가 (새로 설치된 명령어들 인식 목적)
+function Run-Step {
+    param([string]$Label, [scriptblock]$Block)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Host "$(ts) ▶ $Label 시작..."
+    try {
+        & $Block
+        $sw.Stop()
+        Write-Host "$(ts) ✅ $Label 완료 (+$([math]::Round($sw.Elapsed.TotalSeconds,1))s)"
+    } catch {
+        $sw.Stop()
+        Write-Host "$(ts) ⚠️ $Label 실패/경고 (+$([math]::Round($sw.Elapsed.TotalSeconds,1))s): $_"
+    }
+}
+
+Write-Host "$(ts) 🚀 인프라 설치 스크립트 시작"
+
+# ── Step 1: Scoop ────────────────────────────────────────────────────────────
+Run-Step "Scoop 설치 확인" {
+    if (!(Get-Command scoop -ErrorAction SilentlyContinue)) {
+        Write-Host "$(ts)   Scoop이 없습니다. 자동 설치 중..."
+        # Set-ExecutionPolicy may throw if overridden by group policy (effective policy may
+        # already be Bypass which is fine). Catch and ignore — installation proceeds regardless.
+        try {
+            Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        } catch {
+            Write-Host "$(ts)   Set-ExecutionPolicy 경고 (무시 가능): $_"
+        }
+        iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+        Write-Host "$(ts)   Scoop 설치 완료."
+    } else {
+        Write-Host "$(ts)   Scoop이 이미 설치되어 있습니다."
+    }
+}
+
 $shims = "$env:USERPROFILE\scoop\shims"
-if ($env:PATH -notlike "*$shims*") {
-    $env:PATH = "$shims;" + $env:PATH
+if ($env:PATH -notlike "*$shims*") { $env:PATH = "$shims;" + $env:PATH }
+
+# ── Step 2: Git ──────────────────────────────────────────────────────────────
+Run-Step "Git 설치 확인" {
+    if (!(Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "$(ts)   Git을 설치합니다..."
+        scoop install git 2>&1 | ForEach-Object { Write-Host "$(ts)   $_" }
+    } else {
+        Write-Host "$(ts)   Git이 이미 설치되어 있습니다."
+    }
 }
 
-# Install git required for bucket operations if missing
-if (!(Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "🚀 [INFO] Scoop 버킷 추가를 위해 Git을 설치합니다..."
-    scoop install git | Out-Default
+# ── Step 3: Buckets ──────────────────────────────────────────────────────────
+Run-Step "Scoop 버킷 추가 (main / versions / extras)" {
+    foreach ($b in @("main","versions","extras")) {
+        $out = scoop bucket add $b 2>&1
+        Write-Host "$(ts)   버킷 '$b': $out"
+    }
 }
 
-# Add main buckets if not present
-scoop bucket add main
-scoop bucket add versions
-scoop bucket add extra
-
-if ($NeedsReboot) {
-    Write-Host "🚀 [INFO] Scoop 및 필수 버킷(extra 등)이 설치되었습니다. 완벽한 구동을 위해 5초 후 컴퓨터를 재시작합니다..."
-    Start-Sleep -Seconds 5
-    Restart-Computer -Force
-    exit
+# ── Step 4~6: Install packages individually so partial failures are visible ──
+foreach ($pkg in @("go","aria2","redis","minio","nssm")) {
+    Run-Step "$pkg 설치" {
+        $installed = scoop list 2>&1 | Select-String -Pattern "^\s*$pkg\s+"
+        if ($installed) {
+            Write-Host "$(ts)   $pkg 이미 설치되어 있습니다."
+        } else {
+            Write-Host "$(ts)   $pkg 설치 중..."
+            scoop install $pkg 2>&1 | ForEach-Object { Write-Host "$(ts)   $_" }
+        }
+    }
 }
 
-# Install packages
-Write-Host "🚀 [INFO] PostgreSQL, Redis, MinIO 설치 확인 중 (Scoop)..."
-scoop install postgresql redis minio | Out-Default
-
-# Initialize PostgreSQL if needed
-$pgData = "$env:USERPROFILE\scoop\apps\postgresql\current\data"
-if (!(Test-Path "$pgData\PG_VERSION")) {
-    Write-Host "🚀 [INFO] PostgreSQL 데이터베이스 초기화 중..."
-    initdb -D $pgData -U postgres
+# ── Step 7: PostgreSQL 공식 설치 (EnterpriseDB) ──────────────────────────
+Run-Step "PostgreSQL 공식 윈도우 설치 프로그램 실행" {
+    $pgVersion = "15"
+    $pgInstallDir = "$env:ProgramFiles\PostgreSQL\$pgVersion"
+    $pgBin = "$pgInstallDir\bin"
+    $installerUrl = "https://get.enterprisedb.com/postgresql/postgresql-15.6-1-windows-x64.exe"
+    $installerFile = "$env:TEMP\postgresql-installer.exe"
+    
+    if (!(Test-Path "$pgBin\psql.exe")) {
+        Write-Host "$(ts)   PostgreSQL 공식 설치 파일 다운로드 중 (약 340MB, 최대 1~3분 소요)..."
+        # 다운로드 일관성(항상 동일한 exe 파일 보장)을 위해 aria2 대신 기본 WebRequest 사용
+        Invoke-WebRequest -Uri $installerUrl -OutFile $installerFile
+        
+        Write-Host "$(ts)   ⚠️ [중요] 데이터베이스 설치 권한을 위해 화면 하단 방패아이콘(UAC)을 눌러 '예'를 선택해주세요."
+        Write-Host "$(ts)   PostgreSQL 무인 설치(Unattended) 진행 중... (완료될 때까지 창이 뜨지 않습니다)"
+        
+        $installArgs = "--mode unattended --superpassword postgres --serverport 5432 --servicename postgresql-x64-$pgVersion"
+        $proc = Start-Process -FilePath $installerFile -ArgumentList $installArgs -Verb RunAs -Wait -PassThru
+        
+        if ($proc.ExitCode -eq 0) {
+            Write-Host "$(ts)   PostgreSQL 설치 및 공식 서비스 등록 완료."
+        } else {
+            Write-Host "$(ts)   PostgreSQL 설치 중 오류 발생 (또는 권한 거부됨). ExitCode: $($proc.ExitCode)"
+        }
+    } else {
+        Write-Host "$(ts)   PostgreSQL이 이미 공식 경로($pgInstallDir)에 설치되어 있습니다."
+    }
+    
+    # 설치된 psql 경로를 현재 환경 변수에 추가 (이후 DB 초기화 단계용)
+    if ($env:PATH -notlike "*$pgBin*") { $env:PATH = "$pgBin;" + $env:PATH }
 }
 
-# Start PostgreSQL
-Write-Host "🚀 [INFO] PostgreSQL 구동 상태 확인 중..."
-if (!(Get-Process postgres -ErrorAction SilentlyContinue)) {
-    Write-Host "🚀 [INFO] PostgreSQL 백그라운드 실행 중..."
-    pg_ctl -D $pgData -l "$pgData\..\logfile" start -w
-} else {
-    Write-Host "🚀 [INFO] PostgreSQL이 이미 실행 중입니다."
+# ── Step 8: 백그라운드 인프라 (Redis, MinIO) 실행 ──────────────────────────
+Run-Step "백그라운드 자동 구동 파워쉘 우회 실행" {
+    $minioData = "{0}\minio_data" -f $env:USERPROFILE
+    if (!(Test-Path $minioData)) { New-Item -ItemType Directory -Force -Path $minioData | Out-Null }
+    
+    $redisExe = "{0}\scoop\apps\redis\current\redis-server.exe" -f $env:USERPROFILE
+    $minioExe = "{0}\scoop\apps\minio\current\minio.exe" -f $env:USERPROFILE
+    
+    Write-Host "$(ts)   파워쉘 백그라운드 프로세스로 Redis 및 MinIO 즉시 분리 실행 중..."
+    
+    # 혹시 작동 중일 수 있는 기존 프로세스 안전 종료
+    Try { Stop-Process -Name "redis-server" -Force -ErrorAction SilentlyContinue } Catch {}
+    
+    # 네이티브 파워쉘 분리(Detached) 프로세스로 실행 (VBS 차단 환경 우회)
+    if (Test-Path $redisExe) {
+        Start-Process -FilePath $redisExe -WindowStyle Hidden
+    }
+    if (Test-Path $minioExe) {
+        Start-Process -FilePath $minioExe -ArgumentList "server ""$minioData""" -WindowStyle Hidden
+    }
+    
+    # 혹시 남아있을 기존 서비스/예약작업 정리 (권한 없으면 조용히 무시)
+    Try {
+        sc.exe delete "Edu_PostgreSQL" 2>$null
+        sc.exe delete "Edu_Redis" 2>$null
+        sc.exe delete "Edu_MinIO" 2>$null
+        Get-ScheduledTask -TaskName "Edu_PostgreSQL_AutoStart", "Edu_Redis_AutoStart", "Edu_MinIO_AutoStart" -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+    } Catch {}
 }
 
-# Setup DB user and database
-Write-Host "🚀 [INFO] edulinker 데이터베이스 및 권한 설정 중..."
-psql -U postgres -tc "SELECT 1 FROM pg_roles WHERE rolname='edulinker'" | Select-String -Quiet "1" | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    psql -U postgres -c "CREATE USER edulinker WITH PASSWORD 'edulinker';"
-}
-psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='edulinker'" | Select-String -Quiet "1" | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    psql -U postgres -c "CREATE DATABASE edulinker OWNER edulinker;"
+# ── Step 9: DB 사용자 / 데이터베이스 ────────────────────────────────────────
+Run-Step "edulinker DB 사용자 및 데이터베이스 생성" {
+    Write-Host "$(ts)   PostgreSQL 접속 대기 중..."
+    $env:PGPASSWORD = "postgres"
+    $retry = 0
+    while ($retry -lt 15) {
+        $check = psql -U postgres -tAc "SELECT 1" 2>&1
+        if ($LASTEXITCODE -eq 0 -or "$check" -match "1") { break }
+        Start-Sleep -Seconds 2
+        $retry++
+    }
+
+    $userExists = psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='edulinker'" 2>&1
+    if ("$userExists" -match "1") {
+        Write-Host "$(ts)   edulinker 사용자가 이미 존재합니다."
+    } else {
+        Write-Host "$(ts)   edulinker 사용자 생성 중..."
+        psql -U postgres -c "CREATE USER edulinker WITH PASSWORD 'edulinker';" 2>&1 | ForEach-Object { Write-Host "$(ts)   $_" }
+    }
+    $dbExists = psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='edulinker'" 2>&1
+    if ("$dbExists" -match "1") {
+        Write-Host "$(ts)   edulinker 데이터베이스가 이미 존재합니다."
+    } else {
+        Write-Host "$(ts)   edulinker 데이터베이스 생성 중..."
+        psql -U postgres -c "CREATE DATABASE edulinker OWNER edulinker;" 2>&1 | ForEach-Object { Write-Host "$(ts)   $_" }
+    }
 }
 
-# Start Redis
-Write-Host "🚀 [INFO] Redis 백그라운드 실행 중..."
-if (!(Get-Process redis-server -ErrorAction SilentlyContinue)) {
-    Start-Process redis-server -WindowStyle Hidden
-}
-
-# Start MinIO
-Write-Host "🚀 [INFO] MinIO 구동 상태 확인 중..."
-$minioExe = "$shims\minio.exe"
-if (!(Get-Command minio -ErrorAction SilentlyContinue) -and !(Test-Path $minioExe)) {
-    Write-Host "🚀 [INFO] MinIO 직접 다운로드 병행 중 (Scoop 실패 대비)..."
-    Invoke-WebRequest -Uri "https://dl.min.io/server/minio/release/windows-amd64/minio.exe" -OutFile $minioExe
-}
-
-$minioData = "$env:USERPROFILE\minio_data"
-if (!(Test-Path $minioData)) { New-Item -ItemType Directory -Force -Path $minioData | Out-Null }
-if (!(Get-Process minio -ErrorAction SilentlyContinue)) {
-    Write-Host "🚀 [INFO] MinIO 백그라운드 실행 중..."
-    Start-Process "$minioExe" -ArgumentList "server", $minioData -WindowStyle Hidden
-} else {
-    Write-Host "🚀 [INFO] MinIO가 이미 실행 중입니다."
-}
-
-Write-Host "🚀 [INFO] 모든 인프라(Scoop 환경) 설정 및 실행 완료!"
+$total = [math]::Round($globalSW.Elapsed.TotalSeconds, 1)
+Write-Host "$(ts) 🎉 모든 인프라 설정 완료! (총 소요 시간: ${total}s)"
 `
 	tmpFile := filepath.Join(os.TempDir(), "setup_edulinker_infra.ps1")
 	scriptBytes := append([]byte{0xEF, 0xBB, 0xBF}, []byte(script)...)

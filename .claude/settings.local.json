@@ -60,7 +60,13 @@
       "Bash(python3:*)",
       "Bash(find E:/works/project/edulinker -type f -name *.tsx)",
       "Bash(find /d/works/edulinker_v2 -name *test* -o -name *spec* -o -name jest.config.* -o -name vitest.config.* -o -name pytest.ini)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(iscc setup.iss)",
+      "Bash(echo \"---EXIT $?\")",
+      "Read(//tmp/**)",
+      "Bash(powershell.exe -NoProfile -NonInteractive -Command \"cd 'D:\\\\works\\\\edulinker_v2\\\\server-dashboard'; go build . 2>&1; exit 0\")",
+      "Bash(tee /dev/stderr)",
+      "Bash(go version:*)"
     ]
   }
 }

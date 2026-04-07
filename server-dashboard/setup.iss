@@ -36,6 +36,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "build\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "build\bin\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.map"
 Source: "..\backend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "tmp_build\*,uploads\*,api-server.exe,migrate.exe"
+Source: "install_deps.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -43,4 +44,5 @@ Name: "{group}\{#MyAppName} 제거"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_deps.ps1"""; StatusMsg: "필수 프로그램(PostgreSQL, Redis, Minio)을 설치하는 중입니다... (콘솔 창이 나타날 수 있습니다)"; Flags: waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
