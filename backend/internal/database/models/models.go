@@ -64,8 +64,9 @@ type User struct {
 	Position     string    `json:"position,omitempty" gorm:"type:varchar(50)"`
 	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`
 	PasswordHash string    `json:"-" gorm:"type:varchar(255)"`
-	PIN          string    `json:"-" gorm:"type:varchar(20)"`                            // For student login
+	PIN          string    `json:"-" gorm:"type:varchar(255)"`                           // For student login
 	ParentPhone  string    `json:"parent_phone,omitempty" gorm:"type:varchar(20);index"` // For parent auto-linking
+	ParentPhone2 string    `json:"parent_phone2,omitempty" gorm:"type:varchar(20)"`      // Secondary parent phone
 	IsActive     bool      `json:"is_active" gorm:"default:true"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`

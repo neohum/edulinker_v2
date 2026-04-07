@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { apiFetch } from '../api'
 import type { UserInfo } from '../App'
+import templateXlsxUrl from '../assets/student_template.xlsx?url'
 
 interface Student {
   id: string
@@ -10,6 +11,8 @@ interface Student {
   class_num: number
   number: number
   gender: string
+  parent_phone?: string
+  parent_phone2?: string
   is_active: boolean
 }
 
@@ -23,7 +26,7 @@ interface ImportResult {
 interface ParentStatus {
   student_id: string
   has_parent: boolean
-  parent?: { name: string; phone: string }
+  parents?: Array<{ name: string; phone: string }>
 }
 
 interface StudentMgmtPageProps {
@@ -52,7 +55,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   // Edit student modal state
   const [editStudent, setEditStudent] = useState<Student | null>(null)
-  const [editForm, setEditForm] = useState({ number: '', name: '', gender: '' })
+  const [editForm, setEditForm] = useState({ number: '', name: '', gender: '', parent_phone: '', parent_phone2: '' })
   const [editError, setEditError] = useState('')
   const [editing, setEditing] = useState(false)
 
@@ -81,8 +84,8 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
 
   const downloadTemplate = async () => {
     try {
-      const res = await apiFetch('/api/core/users/student-template')
-      if (!res.ok) { toast.error('서버에서 양식을 생성할 수 없습니다.'); return }
+      const res = await fetch(templateXlsxUrl)
+      if (!res.ok) { toast.error('앱 내장 양식을 불러올 수 없습니다.'); return }
       const blob = await res.blob()
 
       // Convert to base64 and save via Wails native dialog
@@ -305,43 +308,23 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
     })
   }
 
-  const handleResetPIN = async (student: Student) => {
-    toast(`'${student.name}' 학생의 접속 비밀번호(PIN)를 1234로 초기화할까요?`, {
-      action: {
-        label: '초기화',
-        onClick: async () => {
-          try {
-            const res = await apiFetch(`/api/core/users/${student.id}/reset-pin`, { method: 'POST' })
-            if (res.ok) {
-              toast.success(`${student.name} 학생의 PIN이 1234로 초기화되었습니다.`)
-            } else {
-              const data = await res.json()
-              toast.error(data.error || '초기화 실패')
-            }
-          } catch (e) {
-            toast.error('서버 연락 실패')
-          }
-        }
-      },
-      duration: 8000,
-    })
-  }
+
 
   const openEditModal = (student: Student) => {
     setEditStudent(student)
-    setEditForm({ number: String(student.number), name: student.name, gender: student.gender || '' })
+    setEditForm({ number: String(student.number), name: student.name, gender: student.gender || '', parent_phone: student.parent_phone || '', parent_phone2: student.parent_phone2 || '' })
     setEditError('')
   }
 
   const handleEditStudent = async () => {
     if (!editStudent) return
     setEditError('')
-    const { number, name, gender } = editForm
+    const { number, name, gender, parent_phone, parent_phone2 } = editForm
     if (!number || !name.trim()) { setEditError('번호와 이름을 입력해주세요.'); return }
     setEditing(true)
     try {
       const res = await apiFetch(`/api/core/users/${editStudent.id}`, {
-        method: 'PUT', body: JSON.stringify({ name: name.trim(), number: parseInt(number), gender })
+        method: 'PUT', body: JSON.stringify({ name: name.trim(), number: parseInt(number), gender, parent_phone: parent_phone.trim(), parent_phone2: parent_phone2.trim() })
       })
       if (res.ok) { toast.success('학생 정보가 수정되었습니다.'); setEditStudent(null); fetchStudents() }
       else { const data = await res.json(); setEditError(data.error || '수정에 실패했습니다.') }
@@ -493,7 +476,6 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                   {parentEnabled && (
                     <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>학부모 연동</th>
                   )}
-                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 700, ...{ color: 'var(--text-muted)' }, fontSize: 12, borderBottom: '1px solid var(--border)' }}>계정 관리</th>
                 </tr>
               </thead>
               <tbody>
@@ -518,34 +500,46 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                       )}
                     </td>
                     {parentEnabled && (() => {
-                      const ps = parentStatusMap[s.id]
-                      return ps?.has_parent ? (
-                        <td style={{ padding: '10px 14px' }}>
-                          <div title={ps.parent ? `${ps.parent.name} (${ps.parent.phone})` : ''}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#dcfce7', color: '#16a34a', fontWeight: 700, fontSize: 12 }}>
-                              <i className="fi fi-rr-check" style={{ fontSize: 10 }} /> 연동완료
+                      const ps = parentStatusMap[s.id];
+                      const linkedPhones = new Set((ps?.parents || []).map(p => p.phone.replace(/-/g, '')));
+                      
+                      const p1 = s.parent_phone;
+                      const p2 = s.parent_phone2;
+                      
+                      const isLinked1 = p1 && linkedPhones.has(p1.replace(/-/g, ''));
+                      const isLinked2 = p2 && linkedPhones.has(p2.replace(/-/g, ''));
+
+                      if (!p1 && !p2) {
+                        return (
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 600, fontSize: 12 }}>
+                              전화번호 없음
                             </span>
-                            {ps.parent && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{ps.parent.name}</div>}
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td style={{ padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                            {p1 && (
+                              <div title={p1} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: isLinked1 ? '#dcfce7' : '#fef3c7', color: isLinked1 ? '#16a34a' : '#d97706', fontWeight: 700, fontSize: 11 }}>
+                                  <i className={isLinked1 ? "fi fi-rr-check" : "fi fi-rr-time-fast"} style={{ fontSize: 10 }} /> 학부모1 {isLinked1 ? '연동됨' : '대기중'}
+                                </span>
+                              </div>
+                            )}
+                            {p2 && (
+                              <div title={p2} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: isLinked2 ? '#dcfce7' : '#fef3c7', color: isLinked2 ? '#16a34a' : '#d97706', fontWeight: 700, fontSize: 11 }}>
+                                  <i className={isLinked2 ? "fi fi-rr-check" : "fi fi-rr-time-fast"} style={{ fontSize: 10 }} /> 학부모2 {isLinked2 ? '연동됨' : '대기중'}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </td>
-                      ) : (
-                        <td style={{ padding: '10px 14px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 600, fontSize: 12 }}>
-                            미연동
-                          </span>
-                        </td>
-                      )
+                      );
                     })()}
-                    <td style={{ padding: '10px 14px' }}>
-                      <button
-                        onClick={() => handleResetPIN(s)}
-                        disabled={isOfflineMode}
-                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: isOfflineMode ? '#e2e8f0' : 'white', color: isOfflineMode ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 600, cursor: isOfflineMode ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                        title="비밀번호를 1234로 초기화합니다"
-                      >
-                        <i className="fi fi-rr-key" style={{ fontSize: 10 }} /> PIN 초기화
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -567,17 +561,17 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>학년</label>
                   <input type="number" value={addForm.grade} onChange={e => setAddForm(f => ({ ...f, grade: e.target.value }))} disabled={!isAdmin}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid black', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>반</label>
                   <input type="number" value={addForm.classNum} onChange={e => setAddForm(f => ({ ...f, classNum: e.target.value }))} disabled={!isAdmin}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid black', fontSize: 14, boxSizing: 'border-box', background: !isAdmin ? '#e2e8f0' : 'white' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>번호</label>
                   <input type="number" value={addForm.number} onChange={e => setAddForm(f => ({ ...f, number: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid black', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
@@ -586,12 +580,12 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                   <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddStudent() }}
                     placeholder="학생 이름"
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid black', fontSize: 14, boxSizing: 'border-box' }} autoFocus />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>성별</label>
                   <select value={addForm.gender} onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid black', fontSize: 14, boxSizing: 'border-box', background: 'white' }}>
                     <option value="">알 수 없음/미지정</option>
                     <option value="남">남</option>
                     <option value="여">여</option>
@@ -637,7 +631,7 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>이름</label>
                   <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
@@ -652,6 +646,22 @@ export default function StudentMgmtPage({ user }: StudentMgmtPageProps) {
                     <option value="남">남</option>
                     <option value="여">여</option>
                   </select>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학부모 연락처 1</label>
+                  <input value={editForm.parent_phone} onChange={e => setEditForm(f => ({ ...f, parent_phone: e.target.value }))}
+                    placeholder="010-0000-0000"
+                    onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>학부모 연락처 2</label>
+                  <input value={editForm.parent_phone2} onChange={e => setEditForm(f => ({ ...f, parent_phone2: e.target.value }))}
+                    placeholder="010-0000-0000"
+                    onKeyDown={e => { if (e.key === 'Enter') handleEditStudent() }}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

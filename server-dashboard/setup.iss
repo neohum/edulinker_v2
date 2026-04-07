@@ -44,5 +44,5 @@ Name: "{group}\{#MyAppName} 제거"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_deps.ps1"""; StatusMsg: "필수 프로그램(PostgreSQL, Redis, Minio)을 설치하는 중입니다... (콘솔 창이 나타날 수 있습니다)"; Flags: waituntilterminated
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_deps.ps1"""; StatusMsg: "백엔드 구동 환경(Go, Redis, Minio 등)을 자동 설치 및 셋업하는 중입니다... (콘솔 창이 나타날 수 있습니다)"; Flags: waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

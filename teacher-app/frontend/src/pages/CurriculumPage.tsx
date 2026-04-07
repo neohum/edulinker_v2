@@ -17,6 +17,7 @@ interface EvalRecord {
   subject: string
   evaluation_type: string
   score: number
+  grade: string
   feedback: string
   created_at: string
 }
@@ -25,7 +26,32 @@ interface CurriculumPageProps {
   user?: UserInfo
 }
 
-const SUBJECTS = ['국어', '영어', '수학', '과학', '사회', '역사', '도덕', '미술', '음악', '체육', '기술·가정', '정보', '기타']
+const getDynamicSubjects = (schoolName?: string, grade?: number): string[] => {
+  const isElementary = schoolName?.includes('초등');
+  const isMiddle = schoolName?.includes('중학');
+  const isHigh = schoolName?.includes('고등');
+
+  if (isElementary) {
+    if (grade === 1 || grade === 2) {
+      return ['국어', '수학', '바른 생활', '슬기로운 생활', '즐거운 생활', '안전한 생활', '창의적 체험활동', '기타'];
+    }
+    if (grade === 3 || grade === 4) {
+      return ['국어', '영어', '수학', '사회', '과학', '도덕', '음악', '미술', '체육', '창의적 체험활동', '기타'];
+    }
+    return ['국어', '영어', '수학', '사회', '과학', '도덕', '실과', '음악', '미술', '체육', '창의적 체험활동', '기타'];
+  }
+  
+  if (isMiddle) {
+    return ['국어', '도덕', '사회', '역사', '수학', '과학', '기가', '체육', '음악', '미술', '영어', '정보', '한문', '기타'];
+  }
+
+  if (isHigh) {
+    return ['국어', '수학', '영어', '한국사', '사회탐구', '과학탐구', '체육', '예술', '기술·가정', '제2외국어/한문', '교양', '기타'];
+  }
+
+  // Fallback default
+  return ['국어', '영어', '수학', '과학', '사회', '역사', '도덕', '미술', '음악', '체육', '기술·가정', '정보', '기타'];
+}
 
 export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const [students, setStudents] = useState<Student[]>([])
@@ -36,7 +62,7 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
-    subject: '국어', title: '', score: '', memo: ''
+    subject: '국어', title: '', score: '', grade: '', memo: ''
   })
 
   useEffect(() => { fetchStudents() }, [])
@@ -73,10 +99,10 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
     if (!form.title.trim() || !form.score) { toast.error('평가명과 점수를 입력해주세요.'); return }
     setSubmitting(true)
     try {
-      await (window as any).go.main.App.SaveCurriculumEvaluation(selectedStudent.id, form.subject, form.title.trim(), Number(form.score), form.memo);
+      await (window as any).go.main.App.SaveCurriculumEvaluation(selectedStudent.id, form.subject, form.title.trim(), form.grade, Number(form.score), form.memo);
       toast.success('수행평가 기록이 저장되었습니다.')
       setShowForm(false)
-      setForm({ subject: '국어', title: '', score: '', memo: '' })
+      setForm({ subject: '국어', title: '', score: '', grade: '', memo: '' })
       fetchEvalRecords(selectedStudent.id)
     } catch { toast.error('저장에 실패했습니다.') } finally { setSubmitting(false) }
   }
@@ -153,7 +179,7 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                     <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>교과목</label>
                     <select value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
                       style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
-                      {SUBJECTS.map(s => <option key={s}>{s}</option>)}
+                      {getDynamicSubjects(user?.school, user?.grade).map((s: string) => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -162,6 +188,16 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                       <input type="number" value={form.score} onChange={e => setForm(f => ({ ...f, score: e.target.value }))} placeholder="점수"
                         style={{ width: '100%', padding: '9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }} />
                     </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6, color: 'var(--text-muted)' }}>성취도 (상/중/하)</label>
+                    <select value={form.grade} onChange={e => setForm(f => ({ ...f, grade: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}>
+                      <option value="">선택안함</option>
+                      <option value="상">상</option>
+                      <option value="중">중</option>
+                      <option value="하">하</option>
+                    </select>
                   </div>
                 </div>
                 <div>
@@ -196,7 +232,7 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)' }}>
-                      {['날짜', '교과', '평가명', '점수', '메모', ''].map(h => (
+                      {['날짜', '교과', '평가명', '점수', '성취도', '메모', ''].map(h => (
                         <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>{h}</th>
                       ))}
                     </tr>
@@ -211,7 +247,18 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
                         <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.evaluation_type}</td>
                         <td style={{ padding: '12px 16px' }}>
                           <span style={{ fontWeight: 800, fontSize: 16, color: r.score >= 80 ? '#22c55e' : r.score >= 50 ? '#f59e0b' : '#ef4444' }}>{r.score}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> / 100</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 2 }}>점</span>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {r.grade === '상' ? (
+                            <span style={{ fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: '#dcfce7', color: '#16a34a', fontSize: 13 }}>상</span>
+                          ) : r.grade === '중' ? (
+                            <span style={{ fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: '#fef3c7', color: '#d97706', fontSize: 13 }}>중</span>
+                          ) : r.grade === '하' ? (
+                            <span style={{ fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: '#fee2e2', color: '#dc2626', fontSize: 13 }}>하</span>
+                          ) : (
+                            <span style={{ fontSize: 13, color: '#9ca3af', fontWeight: 600 }}>-</span>
+                          )}
                         </td>
                         <td style={{ padding: '12px 16px', color: 'var(--text-muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.feedback}</td>
                         <td style={{ padding: '12px 16px' }}>

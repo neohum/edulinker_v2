@@ -120,6 +120,7 @@ func (a *App) initSecureDB() error {
 			subject TEXT NOT NULL,
 			evaluation_type TEXT NOT NULL,
 			score INTEGER NOT NULL,
+			grade TEXT NOT NULL DEFAULT '',
 			feedback TEXT NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -172,6 +173,9 @@ func (a *App) initSecureDB() error {
 	if err != nil {
 		return err
 	}
+
+	// Schema migration for existing DBs
+	db.Exec("ALTER TABLE local_curriculum ADD COLUMN grade TEXT NOT NULL DEFAULT ''")
 
 	a.secureDB = db
 	return nil

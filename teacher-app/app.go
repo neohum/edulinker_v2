@@ -208,6 +208,14 @@ func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownRe
 		if !pdfRes.Success {
 			return ConvertToMarkdownResult{Error: pdfRes.Error}
 		}
+		
+		// PDF 변환 성공 후 Kordoc을 우선으로 텍스트 추출 (한글 추출률 향상)
+		resKordoc := a.ConvertWithKordoc(filename+".pdf", pdfRes.Data)
+		if resKordoc.Success {
+			return ConvertToMarkdownResult{Success: true, Text: resKordoc.Text}
+		}
+
+		// Kordoc 실패 시 기본 PDF 추출 라이브러리로 폴백
 		res := a.ConvertPdfToText(pdfRes.Data)
 		if !res.Success {
 			return ConvertToMarkdownResult{Error: res.Error}

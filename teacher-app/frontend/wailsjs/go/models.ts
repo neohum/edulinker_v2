@@ -186,6 +186,7 @@ export namespace main {
 	    subject: string;
 	    evaluation_type: string;
 	    score: number;
+	    grade: string;
 	    feedback: string;
 	    created_at: string;
 	
@@ -200,6 +201,7 @@ export namespace main {
 	        this.subject = source["subject"];
 	        this.evaluation_type = source["evaluation_type"];
 	        this.score = source["score"];
+	        this.grade = source["grade"];
 	        this.feedback = source["feedback"];
 	        this.created_at = source["created_at"];
 	    }

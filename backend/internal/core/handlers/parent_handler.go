@@ -49,8 +49,9 @@ func (h *ParentHandler) AutoLinkStudents(c *fiber.Ctx) error {
 	}
 
 	// Find students with matching ParentPhone in the same school (or all schools if needed)
+	// (Includes both ParentPhone and ParentPhone2 regardless of gender)
 	var students []models.User
-	h.db.Where("role = ? AND parent_phone = ? AND is_active = ?", models.RoleStudent, parent.Phone, true).Find(&students)
+	h.db.Where("role = ? AND (parent_phone = ? OR parent_phone2 = ?) AND is_active = ?", models.RoleStudent, parent.Phone, parent.Phone, true).Find(&students)
 
 	if len(students) == 0 {
 		return c.JSON(fiber.Map{
@@ -138,37 +139,33 @@ func (h *ParentHandler) GetStudentParentStatus(c *fiber.Ctx) error {
 		Where("student_id IN ? AND status = ?", studentIDs, "approved").
 		Find(&links)
 
-	// Map studentID → parent info
+	// Map studentID → array of parent info
 	type ParentInfo struct {
 		Name  string `json:"name"`
 		Phone string `json:"phone"`
 	}
-	parentMap := map[uuid.UUID]ParentInfo{}
+	parentMap := map[uuid.UUID][]ParentInfo{}
 	for _, l := range links {
-		parentMap[l.StudentID] = ParentInfo{Name: l.Parent.Name, Phone: l.Parent.Phone}
+		parentMap[l.StudentID] = append(parentMap[l.StudentID], ParentInfo{Name: l.Parent.Name, Phone: l.Parent.Phone})
 	}
 
 	// Build result
 	type StudentParentStatus struct {
-		StudentID string      `json:"student_id"`
-		Name      string      `json:"name"`
-		Number    int         `json:"number"`
-		HasParent bool        `json:"has_parent"`
-		Parent    *ParentInfo `json:"parent,omitempty"`
+		StudentID string       `json:"student_id"`
+		Name      string       `json:"name"`
+		Number    int          `json:"number"`
+		HasParent bool         `json:"has_parent"`
+		Parents   []ParentInfo `json:"parents,omitempty"`
 	}
 	result := make([]StudentParentStatus, len(students))
 	for i, s := range students {
-		p, found := parentMap[s.ID]
-		var pPtr *ParentInfo
-		if found {
-			pPtr = &p
-		}
+		plist := parentMap[s.ID]
 		result[i] = StudentParentStatus{
 			StudentID: s.ID.String(),
 			Name:      s.Name,
 			Number:    s.Number,
-			HasParent: found,
-			Parent:    pPtr,
+			HasParent: len(plist) > 0,
+			Parents:   plist,
 		}
 	}
 	return c.JSON(result)

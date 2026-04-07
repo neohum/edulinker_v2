@@ -1,5 +1,7 @@
 export const API_BASE = 'http://localhost:5200'
 
+let isServerOnline = true;
+
 /**
  * Gets the JWT token from Wails Go backend (per-instance) or localStorage (browser dev).
  * Wails token takes priority to prevent cross-instance token sharing via localStorage.
@@ -45,16 +47,19 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
       headers,
     });
 
-    // If request went through but it's a 502/503/504, we can optionally treat as offline
-    // For now, let's treat network errors (which throw) as offline.
-    // Optionally: if (!response.ok && response.status >= 502) window.dispatchEvent(new Event('server-offline'));
-
-    // Dispatch server-online on successful connection
-    window.dispatchEvent(new Event('server-online'));
+    // Dispatch server-online ONLY if the server was previously offline
+    if (!isServerOnline) {
+      isServerOnline = true;
+      window.dispatchEvent(new Event('server-online'));
+    }
     return response;
   } catch (error) {
-    // TypeError: Failed to fetch (or similar network error)
-    window.dispatchEvent(new Event('server-offline'));
+    // Dispatch server-offline ONLY if the server was previously online
+    if (isServerOnline) {
+      isServerOnline = false;
+      window.dispatchEvent(new Event('server-offline'));
+    }
     throw error;
   }
 }
+

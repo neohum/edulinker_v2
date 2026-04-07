@@ -126,7 +126,7 @@ export function SaveAttendanceRemarks(arg1:Array<string>,arg2:string):Promise<vo
 
 export function SaveCounselingRecord(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
-export function SaveCurriculumEvaluation(arg1:string,arg2:string,arg3:string,arg4:number,arg5:string):Promise<void>;
+export function SaveCurriculumEvaluation(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:string):Promise<void>;
 
 export function SaveFileBytes(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 

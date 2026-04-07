@@ -716,38 +716,6 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                 )}
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 10 }}>제목</label>
-                <input
-                  value={formTitle}
-                  onChange={e => setFormTitle(e.target.value)}
-                  placeholder="공문 제목을 명확하게 입력하세요"
-                  style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none' }}
-                  autoFocus
-                />
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <label style={{ fontSize: 14, fontWeight: 600, color: '#475569' }}>상세 내용 (Markdown 지원)</label>
-                  <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 4 }}>
-                    <button type="button" onClick={() => setShowPreview(false)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: !showPreview ? 'white' : 'transparent', color: !showPreview ? '#0f172a' : '#64748b', boxShadow: !showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>편집</button>
-                    <button type="button" onClick={() => setShowPreview(true)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: showPreview ? 'white' : 'transparent', color: showPreview ? '#0f172a' : '#64748b', boxShadow: showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>미리보기</button>
-                  </div>
-                </div>
-                {!showPreview ? (
-                  <textarea
-                    rows={8}
-                    value={formContent}
-                    onChange={e => setFormContent(e.target.value)}
-                    placeholder="파일을 첨부하면 내용이 자동으로 요약/추출되어 채워집니다. 마크다운(Markdown) 문법을 지원합니다."
-                    style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, lineHeight: 1.6, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }}
-                  />
-                ) : (
-                  <div style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', overflowY: 'auto', minHeight: 180, maxHeight: 400, fontSize: 14, color: '#334155', lineHeight: 1.6, boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.02)', boxSizing: 'border-box' }}>
-                    {formContent ? <ReactMarkdown>{formContent}</ReactMarkdown> : <span style={{ color: '#94a3b8' }}>작성된 내용이 없습니다.</span>}
-                  </div>
-                )}
-              </div>
-              <div>
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 12 }}>
                   <span>첨부파일 (선택)</span>
                 </label>
@@ -790,6 +758,38 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
                     />
                   </label>
                 </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#475569', marginBottom: 10 }}>제목</label>
+                <input
+                  value={formTitle}
+                  onChange={e => setFormTitle(e.target.value)}
+                  placeholder="공문 제목을 명확하게 입력하세요"
+                  style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none' }}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600, color: '#475569' }}>상세 내용 (Markdown 지원)</label>
+                  <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 4 }}>
+                    <button type="button" onClick={() => setShowPreview(false)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: !showPreview ? 'white' : 'transparent', color: !showPreview ? '#0f172a' : '#64748b', boxShadow: !showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>편집</button>
+                    <button type="button" onClick={() => setShowPreview(true)} style={{ padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer', background: showPreview ? 'white' : 'transparent', color: showPreview ? '#0f172a' : '#64748b', boxShadow: showPreview ? '0 1px 2px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>미리보기</button>
+                  </div>
+                </div>
+                {!showPreview ? (
+                  <textarea
+                    rows={8}
+                    value={formContent}
+                    onChange={e => setFormContent(e.target.value)}
+                    placeholder="파일을 첨부하면 내용이 자동으로 요약/추출되어 채워집니다. 마크다운(Markdown) 문법을 지원합니다."
+                    style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #cbd5e1', fontSize: 15, lineHeight: 1.6, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }}
+                  />
+                ) : (
+                  <div style={{ width: '100%', padding: '16px', borderRadius: 12, border: '1px solid #e2e8f0', background: 'white', overflowY: 'auto', minHeight: 180, maxHeight: 400, fontSize: 14, color: '#334155', lineHeight: 1.6, boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.02)', boxSizing: 'border-box' }}>
+                    {formContent ? <ReactMarkdown>{formContent}</ReactMarkdown> : <span style={{ color: '#94a3b8' }}>작성된 내용이 없습니다.</span>}
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 24 }}>
                 <button type="button" disabled={isUploading} onClick={() => { setShowModal(false); setFormTitle(''); setFormContent(''); setFormType('simple'); setFormFiles([]); parsedMarkdownRef.current = {}; setFormTargets(['TEACHER']); setShowPreview(false); }} style={{ padding: '12px 24px', fontSize: 15, borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: 600, cursor: 'pointer', opacity: isUploading ? 0.5 : 1 }}>취소</button>

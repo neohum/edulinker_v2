@@ -250,8 +250,8 @@ export function SaveCounselingRecord(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveCounselingRecord'](arg1, arg2, arg3, arg4);
 }
 
-export function SaveCurriculumEvaluation(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['SaveCurriculumEvaluation'](arg1, arg2, arg3, arg4, arg5);
+export function SaveCurriculumEvaluation(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['SaveCurriculumEvaluation'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function SaveFileBytes(arg1, arg2) {

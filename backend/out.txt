@@ -1,0 +1,58 @@
+=== Headers ===
+Col 0: '학년' (cleaned: '학년')
+Col 1: '반' (cleaned: '반')
+Col 2: '번호' (cleaned: '번호')
+Col 3: '성명' (cleaned: '성명')
+Col 4: '성별' (cleaned: '성별')
+Col 5: '학부모 전화번호1' (cleaned: '학부모전화번호1')
+Col 6: '학부모 전화번호2' (cleaned: '학부모전화번호2')
+
+=== Rows ===
+Row 2 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '1'
+  Col 3: '김지후'
+  Col 4: '남성'
+  Col 5: '010-2048-6129'
+  Col 6: '010-2048-4562'
+Row 3 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '2'
+  Col 3: '김태유'
+  Col 4: '남성'
+  Col 5: '010-2048-6130'
+  Col 6: '010-2048-4563'
+Row 4 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '3'
+  Col 3: '류하준'
+  Col 4: '남성'
+  Col 5: '010-2048-6131'
+  Col 6: '010-2048-4564'
+Row 5 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '4'
+  Col 3: '문수호'
+  Col 4: '남성'
+  Col 5: '010-2048-6132'
+  Col 6: '010-2048-4565'
+Row 6 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '5'
+  Col 3: '박정인'
+  Col 4: '남성'
+  Col 5: '010-2048-6133'
+  Col 6: '010-2048-4566'
+Row 7 length: 7
+  Col 0: '1'
+  Col 1: '2'
+  Col 2: '6'
+  Col 3: '소하준'
+  Col 4: '남성'
+  Col 5: '010-2048-6134'
+  Col 6: '010-2048-4567'

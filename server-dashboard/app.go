@@ -317,6 +317,12 @@ func (a *App) buildAndStart() {
 	exePath := filepath.Join(a.backendDir, "api-server.exe")
 
 	// 환경 변수 PATH 갱신이 반영되지 않은 경우(예: Go 설치 직후)를 대비해 go 경로 동적 탐색
+	// Force scoop shims into the current process PATH so LookPath can find 'go' if installed via scoop
+	scoopShims := filepath.Join(os.Getenv("USERPROFILE"), "scoop", "shims")
+	if !strings.Contains(os.Getenv("PATH"), scoopShims) {
+		os.Setenv("PATH", scoopShims+";"+os.Getenv("PATH"))
+	}
+
 	goExe := "go"
 	if path, err := exec.LookPath("go"); err == nil {
 		goExe = path
@@ -556,6 +562,13 @@ Run-Step "Scoop 설치 확인" {
 
 $shims = "$env:USERPROFILE\scoop\shims"
 if ($env:PATH -notlike "*$shims*") { $env:PATH = "$shims;" + $env:PATH }
+
+# 영구적으로 사용자 PATH 환경 변수에 scoop shims 추가
+$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($userPath -notlike "*$shims*") {
+    [Environment]::SetEnvironmentVariable("PATH", "$shims;" + $userPath, "User")
+    Write-Host "$(ts)   사용자 환경 변수에 Scoop shims PATH가 등록되었습니다."
+}
 
 # ── Step 2: Git ──────────────────────────────────────────────────────────────
 Run-Step "Git 설치 확인" {
@@ -905,7 +918,7 @@ func (a *App) HardDeleteDBUser(id string) error {
 		// Use savepoint to safely catch and ignore "table does not exist" or specific FK errors that don't apply
 		tx.Exec("SAVEPOINT delete_sp")
 		if _, err := tx.Exec(q.sql, id); err != nil {
-			if strings.Contains(err.Error(), "does not exist") {
+			if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "릴레이션") || strings.Contains(err.Error(), "42P01") {
 				tx.Exec("ROLLBACK TO SAVEPOINT delete_sp")
 			} else {
 				tx.Rollback()

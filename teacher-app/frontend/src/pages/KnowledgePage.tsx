@@ -672,7 +672,7 @@ export default function KnowledgePage() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, fontWeight: 500 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, fontWeight: 500 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   본문 내용
@@ -680,35 +680,63 @@ export default function KnowledgePage() {
                 </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 400, marginTop: 4 }}>이 내용이 AI 검색에 활용됩니다.</div>
               </div>
-              <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: 4, borderRadius: 8, border: '1px solid var(--border-color)' }}>
-                <button
-                  type="button"
-                  onClick={() => setPreviewMode(false)}
-                  style={{
-                    padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
-                    background: !previewMode ? 'var(--bg-primary)' : 'transparent',
-                    color: !previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
-                    boxShadow: !previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    fontWeight: !previewMode ? 600 : 400
-                  }}
-                >
-                  작성 모드
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewMode(true)}
-                  style={{
-                    padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
-                    background: previewMode ? 'var(--bg-primary)' : 'transparent',
-                    color: previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
-                    boxShadow: previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    fontWeight: previewMode ? 600 : 400
-                  }}
-                >
-                  미리보기
-                </button>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: 4, borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode(false)}
+                    style={{
+                      padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
+                      background: !previewMode ? 'var(--bg-primary)' : 'transparent',
+                      color: !previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                      boxShadow: !previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      fontWeight: !previewMode ? 600 : 400
+                    }}
+                  >
+                    작성 모드
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode(true)}
+                    style={{
+                      padding: '4px 12px', fontSize: 13, borderRadius: 6, border: 'none', cursor: 'pointer',
+                      background: previewMode ? 'var(--bg-primary)' : 'transparent',
+                      color: previewMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                      boxShadow: previewMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      fontWeight: previewMode ? 600 : 400
+                    }}
+                  >
+                    미리보기
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTitle('')
+                      setContent('')
+                      setFilename('')
+                      setSelectedFile(null)
+                      setActiveTab('list')
+                    }}
+                    className="btn-secondary"
+                    style={{ padding: '6px 16px', fontSize: 14 }}
+                    disabled={loading || isConverting}
+                  >
+                    취소
+                  </button>
+                  <button 
+                    onClick={handleSave} 
+                    className="btn-primary" 
+                    style={{ padding: '6px 16px', fontSize: 14 }}
+                    disabled={loading || isConverting}
+                  >
+                    {loading ? '저장 중...' : '지식베이스에 등록'}
+                  </button>
+                </div>
               </div>
-            </label>
+            </div>
 
             {previewMode ? (
               <div
@@ -733,25 +761,7 @@ export default function KnowledgePage() {
             )}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setTitle('')
-                setContent('')
-                setFilename('')
-                setSelectedFile(null)
-                setActiveTab('list')
-              }}
-              className="btn-secondary"
-              disabled={loading || isConverting}
-            >
-              취소
-            </button>
-            <button onClick={handleSave} className="btn-primary" disabled={loading || isConverting}>
-              {loading ? '저장 중...' : '지식베이스에 등록'}
-            </button>
-          </div>
+
         </div>
       )}
 

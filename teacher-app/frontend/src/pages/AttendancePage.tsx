@@ -276,12 +276,16 @@ export default function AttendancePage({ user }: AttendancePageProps) {
   const getBadgeStyle = (type: string) => {
     switch (type) {
       case '병결':
-      case '질병결석': return { bg: '#fee2e2', color: '#b91c1c', icon: 'fi-rr-stethoscope' };
+      case '질병결석':
+      case '질병♡': return { bg: '#fee2e2', color: '#b91c1c', icon: 'fi-rr-stethoscope' };
       case '교외체험학습': return { bg: '#e0e7ff', color: '#4338ca', icon: 'fi-rr-car' };
       case '기타결석':
-      case '기타': return { bg: '#fef3c7', color: '#a16207', icon: 'fi-rr-document' };
-      case '인정결석': return { bg: '#dcfce7', color: '#15803d', icon: 'fi-rr-graduation-cap' };
-      case '미인정결석': return { bg: '#fce7f3', color: '#be123c', icon: 'fi-rr-cross' };
+      case '기타':
+      case '기타▲': return { bg: '#fef3c7', color: '#a16207', icon: 'fi-rr-document' };
+      case '인정결석':
+      case '출석인정△': return { bg: '#dcfce7', color: '#15803d', icon: 'fi-rr-graduation-cap' };
+      case '미인정결석':
+      case '미인정♥': return { bg: '#fce7f3', color: '#be123c', icon: 'fi-rr-cross' };
       default: return { bg: '#f1f5f9', color: '#475569', icon: 'fi-rr-calendar-check' };
     }
   };
@@ -328,19 +332,24 @@ export default function AttendancePage({ user }: AttendancePageProps) {
         ><i className="fi fi-rr-pointer" /> 일반</button>
         
         <button
-          onClick={() => setStampMode('질병결석')}
-          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '질병결석' ? '#fee2e2' : 'white', color: stampMode === '질병결석' ? '#b91c1c' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
-        ><i className="fi fi-rr-stethoscope" /> 병결</button>
+          onClick={() => setStampMode('질병♡')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '질병♡' ? '#fee2e2' : 'white', color: stampMode === '질병♡' ? '#b91c1c' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-stethoscope" /> 질병♡</button>
         
         <button
-          onClick={() => setStampMode('교외체험학습')}
-          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '교외체험학습' ? '#e0e7ff' : 'white', color: stampMode === '교외체험학습' ? '#4338ca' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
-        ><i className="fi fi-rr-car" /> 체험학습</button>
+          onClick={() => setStampMode('미인정♥')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '미인정♥' ? '#fce7f3' : 'white', color: stampMode === '미인정♥' ? '#be123c' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-cross" /> 미인정♥</button>
         
         <button
-          onClick={() => setStampMode('기타결석')}
-          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '기타결석' ? '#fef3c7' : 'white', color: stampMode === '기타결석' ? '#a16207' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
-        ><i className="fi fi-rr-document" /> 기타결석</button>
+          onClick={() => setStampMode('기타▲')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '기타▲' ? '#fef3c7' : 'white', color: stampMode === '기타▲' ? '#a16207' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-document" /> 기타▲</button>
+        
+        <button
+          onClick={() => setStampMode('출석인정△')}
+          style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 8, background: stampMode === '출석인정△' ? '#dcfce7' : 'white', color: stampMode === '출석인정△' ? '#15803d' : '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.1s' }}
+        ><i className="fi fi-rr-graduation-cap" /> 출석인정△</button>
         
         <button
           onClick={() => setStampMode('초기화')}
@@ -457,7 +466,7 @@ export default function AttendancePage({ user }: AttendancePageProps) {
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {['질병결석', '교외체험학습', '인정결석', '미인정결석', '기타결석'].map(type => (
+              {['질병♡', '미인정♥', '기타▲', '출석인정△'].map(type => (
                 <button
                   key={type}
                   onClick={() => handleSaveAttendance(type)}

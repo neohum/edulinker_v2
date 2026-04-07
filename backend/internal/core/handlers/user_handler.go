@@ -50,6 +50,7 @@ type UpdateUserRequest struct {
 	Number      *int    `json:"number,omitempty"`
 	PIN         *string `json:"pin,omitempty"`
 	ParentPhone *string `json:"parent_phone,omitempty"`
+	ParentPhone2 *string `json:"parent_phone2,omitempty"`
 }
 
 type UserListResponse struct {
@@ -290,6 +291,9 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	if req.ParentPhone != nil {
 		user.ParentPhone = *req.ParentPhone
 	}
+	if req.ParentPhone2 != nil {
+		user.ParentPhone2 = *req.ParentPhone2
+	}
 
 	h.db.Save(&user)
 	h.db.Preload("School").First(&user, "id = ?", user.ID)
@@ -453,21 +457,22 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 
 	// Detect column indices from header row
 	header := rows[0]
-	gradeCol, classCol, numCol, nameCol, genderCol, parentPhoneCol := -1, -1, -1, -1, -1, -1
+	gradeCol, classCol, numCol, nameCol, genderCol, parentPhoneCol, parentPhone2Col := -1, -1, -1, -1, -1, -1, -1
 	for i, cell := range header {
-		cell = strings.TrimSpace(cell)
-		switch {
-		case strings.Contains(cell, "학년"):
+		cell = strings.ReplaceAll(strings.TrimSpace(cell), " ", "") // remove all spaces for easier matching
+		if strings.Contains(cell, "학년") {
 			gradeCol = i
-		case strings.Contains(cell, "반"):
+		} else if strings.Contains(cell, "반") {
 			classCol = i
-		case strings.Contains(cell, "이름") || strings.Contains(cell, "성명"):
+		} else if strings.Contains(cell, "이름") || strings.Contains(cell, "성명") {
 			nameCol = i
-		case strings.Contains(cell, "성별") || strings.Contains(cell, "gender"):
+		} else if strings.Contains(cell, "성별") {
 			genderCol = i
-		case strings.Contains(cell, "학부모") || strings.Contains(cell, "전화") || strings.Contains(cell, "연락"):
+		} else if strings.Contains(cell, "학부모전화번호2") || strings.Contains(cell, "연락처2") || strings.Contains(cell, "학부모연락처2") || strings.Contains(cell, "전화번호2") {
+			parentPhone2Col = i
+		} else if strings.Contains(cell, "학부모전화번호1") || strings.Contains(cell, "학부모전화번호") || strings.Contains(cell, "전화번호1") || strings.Contains(cell, "전화번호") || strings.Contains(cell, "학부모연락처") || strings.Contains(cell, "연락처1") || strings.Contains(cell, "연락처") {
 			parentPhoneCol = i
-		case strings.Contains(cell, "번호") || strings.Contains(cell, "번"):
+		} else if strings.Contains(cell, "번호") || strings.Contains(cell, "번") {
 			numCol = i
 		}
 	}
@@ -477,6 +482,12 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			"error": "엑셀 헤더에 '학년', '반', '번호', '이름' 열이 필요합니다.",
 		})
 	}
+
+	applogger.Log.Info().
+		Int("grade", gradeCol).Int("class", classCol).Int("name", nameCol).
+		Int("num", numCol).Int("gender", genderCol).
+		Int("parent1", parentPhoneCol).Int("parent2", parentPhone2Col).
+		Msg("Excel Columns Detected")
 
 	result := ImportStudentResult{Total: len(rows) - 1}
 
@@ -492,12 +503,16 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 		gradeStr := strings.TrimSpace(row[gradeCol])
 		classStr := strings.TrimSpace(row[classCol])
 		numStr := strings.TrimSpace(row[numCol])
+		
 		gender := ""
+		gRaw := ""
 		if genderCol >= 0 && genderCol < len(row) {
 			g := strings.TrimSpace(row[genderCol])
-			if g == "남" || g == "남자" || g == "M" || g == "m" {
+			gRaw = g
+
+			if g == "남" || g == "남자" || g == "남성" || g == "M" || g == "m" {
 				gender = "남"
-			} else if g == "여" || g == "여자" || g == "F" || g == "f" {
+			} else if g == "여" || g == "여자" || g == "여성" || g == "F" || g == "f" {
 				gender = "여"
 			}
 		}
@@ -530,15 +545,33 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 			parentPhone = strings.TrimSpace(row[parentPhoneCol])
 		}
 
-		// Always default PIN to 1234 for new/imported students
+		parentPhone2 := ""
+		if parentPhone2Col >= 0 && parentPhone2Col < len(row) {
+			parentPhone2 = strings.TrimSpace(row[parentPhone2Col])
+		}
+
 		pin := "1234"
+		
+		applogger.Log.Info().
+			Int("row", rowNum).
+			Str("name", name).
+			Str("gRaw", gRaw).
+			Str("gender", gender).
+			Msg("Processing row")
 
 		// Check if student already exists (same school + grade + class + number)
 		var existing models.User
 		if h.db.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ? AND number = ?",
 			schoolID, models.RoleStudent, grade, classNum, number).First(&existing).Error == nil {
-			// Update name/gender/phone/pin if changed
 			updated := false
+			reactivated := false
+
+			if !existing.IsActive {
+				existing.IsActive = true
+				updated = true
+				reactivated = true
+			}
+
 			if existing.Name != name {
 				existing.Name = name
 				updated = true
@@ -551,30 +584,41 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 				existing.ParentPhone = parentPhone
 				updated = true
 			}
+			if parentPhone2 != "" && existing.ParentPhone2 != parentPhone2 {
+				existing.ParentPhone2 = parentPhone2
+				updated = true
+			}
 			if pin != "" && bcrypt.CompareHashAndPassword([]byte(existing.PIN), []byte(pin)) != nil {
 				if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
 					existing.PIN = string(pinHash)
 					updated = true
 				}
 			}
+
 			if updated {
 				h.db.Save(&existing)
 			}
-			result.Skipped++
+
+			if reactivated {
+				result.Created++
+			} else {
+				result.Skipped++
+			}
 			continue
 		}
 
 		// Create student
 		student := models.User{
-			SchoolID:    schoolID,
-			Name:        name,
-			Role:        models.RoleStudent,
-			Grade:       grade,
-			Class:       classNum,
-			Number:      number,
-			Gender:      gender,
-			ParentPhone: parentPhone,
-			IsActive:    true,
+			SchoolID:     schoolID,
+			Name:         name,
+			Role:         models.RoleStudent,
+			Grade:        grade,
+			Class:        classNum,
+			Number:       number,
+			Gender:       gender,
+			ParentPhone:  parentPhone,
+			ParentPhone2: parentPhone2,
+			IsActive:     true,
 		}
 		if pinHash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost); err == nil {
 			student.PIN = string(pinHash)
@@ -696,7 +740,7 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	f.SetSheetName("Sheet1", sheet)
 
 	// Header row with style
-	headers := []string{"학년", "반", "번호", "이름", "성별", "학부모 전화번호"}
+	headers := []string{"학년", "반", "번호", "성명", "성별", "학부모 전화번호1", "학부모 전화번호2"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, h)
@@ -704,8 +748,8 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 
 	// Sample rows
 	samples := [][]interface{}{
-		{3, 2, 1, "홍길동", "남", "010-1234-5678"},
-		{3, 2, 2, "김영희", "여", "010-9876-5432"},
+		{3, 2, 1, "홍길동", "남", "010-1234-5678", "010-0000-0000"},
+		{3, 2, 2, "김영희", "여", "010-9876-5432", ""},
 	}
 	for r, row := range samples {
 		for col, val := range row {
@@ -717,7 +761,7 @@ func (h *UserHandler) DownloadStudentTemplate(c *fiber.Ctx) error {
 	// Column widths
 	f.SetColWidth(sheet, "A", "C", 8)
 	f.SetColWidth(sheet, "D", "E", 10)
-	f.SetColWidth(sheet, "F", "F", 15)
+	f.SetColWidth(sheet, "F", "G", 18)
 
 	// Add note row
 	f.SetCellValue(sheet, "A5", "※ 성별 입력: 남 또는 여")

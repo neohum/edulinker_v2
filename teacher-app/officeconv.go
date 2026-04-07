@@ -53,48 +53,58 @@ func (a *App) convertOfficeDoc(inputName string, inputBase64 string, appType str
 
 	var psCmd string
 	if appType == "excel" {
-		psCmd = fmt.Sprintf(`
+		psCmd = `
+			param([string]$inPath, [string]$outPath)
+			$ErrorActionPreference = "Stop"
 			[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 			$excel = New-Object -ComObject Excel.Application
 			$excel.Visible = $false
 			$excel.DisplayAlerts = $false
 			try {
-				$wb = $excel.Workbooks.Open('%s')
-				$wb.ExportAsFixedFormat(0, '%s')
+				$wb = $excel.Workbooks.Open($inPath)
+				$wb.ExportAsFixedFormat(0, $outPath)
 				$wb.Close($false)
+			} catch {
+				Write-Error $_.Exception.Message
+				exit 1
 			} finally {
 				if ($excel) {
 					$excel.Quit()
 					[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
 				}
 			}
-		`, inputPath, outputPath)
+		`
 	} else {
-		psCmd = fmt.Sprintf(`
+		psCmd = `
+			param([string]$inPath, [string]$outPath)
+			$ErrorActionPreference = "Stop"
 			[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 			$ppt = New-Object -ComObject PowerPoint.Application
 			try {
-				$pres = $ppt.Presentations.Open('%s', $true, $false, $false)
-				$pres.ExportAsFixedFormat('%s', 2) # 2 is ppFixedFormatTypePDF
+				$pres = $ppt.Presentations.Open($inPath, $true, $false, $false)
+				$pres.SaveAs($outPath, 32) # ppSaveAsPDF = 32
 				$pres.Close()
+			} catch {
+				Write-Error $_.Exception.Message
+				exit 1
 			} finally {
 				if ($ppt) {
 					$ppt.Quit()
 					[System.Runtime.Interopservices.Marshal]::ReleaseComObject($ppt) | Out-Null
 				}
 			}
-		`, inputPath, outputPath)
+		`
 	}
 
 	psScriptPath := filepath.Join(tmpDir, "convert.ps1")
 	bom := []byte{0xEF, 0xBB, 0xBF}
 	os.WriteFile(psScriptPath, append(bom, []byte(psCmd)...), 0644)
 
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", psScriptPath)
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", psScriptPath, "-inPath", inputPath, "-outPath", outputPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("[App] Office conversion error: %v\nOutput: %s", err, string(out))
-		return OfficeConvertResult{Error: "변환 중 오류가 발생했습니다. (MS Office 설치 확인 필요)"}
+		return OfficeConvertResult{Error: fmt.Sprintf("변환 중 오류가 발생했습니다. (MS Office 확인 필요: %s)", strings.TrimSpace(string(out)))}
 	}
 
 	// Read result

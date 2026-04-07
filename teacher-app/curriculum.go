@@ -12,6 +12,7 @@ type EvalRecord struct {
 	Subject        string `json:"subject"`
 	EvaluationType string `json:"evaluation_type"`
 	Score          int    `json:"score"`
+	Grade          string `json:"grade"`
 	Feedback       string `json:"feedback"`
 	CreatedAt      string `json:"created_at"`
 }
@@ -21,7 +22,7 @@ func (a *App) GetCurriculumEvaluations() []EvalRecord {
 		return []EvalRecord{}
 	}
 
-	rows, err := a.secureDB.Query("SELECT id, student_id, subject, evaluation_type, score, feedback, created_at FROM local_curriculum ORDER BY created_at DESC")
+	rows, err := a.secureDB.Query("SELECT id, student_id, subject, evaluation_type, score, grade, feedback, created_at FROM local_curriculum ORDER BY created_at DESC")
 	if err != nil {
 		return []EvalRecord{}
 	}
@@ -30,8 +31,11 @@ func (a *App) GetCurriculumEvaluations() []EvalRecord {
 	var evaluations []EvalRecord
 	for rows.Next() {
 		var r EvalRecord
-		if err := rows.Scan(&r.ID, &r.StudentID, &r.Subject, &r.EvaluationType, &r.Score, &r.Feedback, &r.CreatedAt); err == nil {
+		if err := rows.Scan(&r.ID, &r.StudentID, &r.Subject, &r.EvaluationType, &r.Score, &r.Grade, &r.Feedback, &r.CreatedAt); err == nil {
 			r.EvaluationType = Decrypt(r.EvaluationType)
+			if r.Grade != "" {
+				r.Grade = Decrypt(r.Grade)
+			}
 			r.Feedback = Decrypt(r.Feedback)
 			evaluations = append(evaluations, r)
 		}
@@ -39,19 +43,23 @@ func (a *App) GetCurriculumEvaluations() []EvalRecord {
 	return evaluations
 }
 
-func (a *App) SaveCurriculumEvaluation(studentID, subject, evaluationType string, score int, feedback string) error {
+func (a *App) SaveCurriculumEvaluation(studentID, subject, evaluationType, grade string, score int, feedback string) error {
 	if a.secureDB == nil {
 		return fmt.Errorf("local db not initialized")
 	}
 	id := uuid.New().String()
 
 	encEvalType := Encrypt(evaluationType)
+	encGrade := ""
+	if grade != "" {
+		encGrade = Encrypt(grade)
+	}
 	encFeedback := Encrypt(feedback)
 
 	_, err := a.secureDB.Exec(`
-		INSERT INTO local_curriculum (id, student_id, subject, evaluation_type, score, feedback)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, studentID, subject, encEvalType, score, encFeedback)
+		INSERT INTO local_curriculum (id, student_id, subject, evaluation_type, score, grade, feedback)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, studentID, subject, encEvalType, score, encGrade, encFeedback)
 	return err
 }
 
