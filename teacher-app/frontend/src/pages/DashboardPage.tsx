@@ -557,6 +557,19 @@ function KnowledgeSearchWidget({ isExpanded = false, onNavigate }: { isExpanded?
     try {
       const wailsApp = (window as any).go?.main?.App;
 
+      // 1. 쿼리 정규화 (띄어쓰기 등이 없는 경우 AI로 교정)
+      if (wailsApp?.RefineSearchQuery) {
+        try {
+          const refined = await wailsApp.RefineSearchQuery(userQuery);
+          if (refined && refined !== userQuery) {
+            finalQuery = refined;
+            console.log("Refined Search Query:", finalQuery);
+          }
+        } catch (e) {
+          console.error("Query refinement failed:", e);
+        }
+      }
+
       if (wailsApp?.SearchKnowledge) {
         const raw = await wailsApp.SearchKnowledge(finalQuery, 10);
         if (Array.isArray(raw)) {

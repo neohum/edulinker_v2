@@ -412,19 +412,22 @@ export default function LinkerPage() {
                       <input type="checkbox" checked={addShareTeachers} onChange={e => setAddShareTeachers(e.target.checked)} />
                       교사에게 공유
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
+                    {/* 우리반 학생에 공유 - 추후 복원 시 주석 해제 */}
+                    {/* <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
                       <input type="checkbox" checked={addShareClass} onChange={e => setAddShareClass(e.target.checked)} />
                       우리반 학생에 공유
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
+                    </label> */}
+                    {/* 선택 사용자에게 공유 - 추후 복원 시 주석 해제 */}
+                    {/* <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
                       <input type="checkbox" checked={showStudentSelect} onChange={e => {
                         setShowStudentSelect(e.target.checked);
                         if (!e.target.checked) setAddTargetStudents([]);
                       }} />
                       선택 사용자에게 공유
-                    </label>
+                    </label> */}
 
-                    {showStudentSelect && (
+                    {/* 선택 사용자 트리 - 추후 복원 시 주석 해제 */}
+                    {/* {showStudentSelect && (
                       <div style={{ marginTop: 8, padding: 12, border: '1px solid var(--border)', borderRadius: 8, maxHeight: 240, overflowY: 'auto', background: '#f8fafc' }}>
                         {userTree.length === 0 ? (
                           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>사용자 정보가 없습니다.</div>
@@ -441,18 +444,19 @@ export default function LinkerPage() {
                           ))
                         )}
                       </div>
-                    )}
+                    )} */}
                   </div>
                 </div>
 
-                {(addShareClass || showStudentSelect) && (
+                {/* 학생용 URL 입력 - 우리반/선택 사용자 공유 복원 시 주석 해제 */}
+                {/* {(addShareClass || showStudentSelect) && (
                   <div style={{ padding: 14, background: '#f0f9ff', borderRadius: 10, border: '1px solid #bae6fd' }}>
                     <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#0369a1' }}>학생용 URL (선택)</label>
                     <input value={addStudentUrl} onChange={e => setAddStudentUrl(e.target.value)} placeholder="비워두면 교사용 URL과 동일하게 공유됩니다"
                       style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #bae6fd', boxSizing: 'border-box', fontSize: 14, background: 'white' }} />
                     <div style={{ fontSize: 11, color: '#0369a1', marginTop: 6 }}>학생에게 다른 URL을 보여주려면 입력하세요 (예: 학생 전용 뷰어 링크)</div>
                   </div>
-                )}
+                )} */}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                   <button onClick={() => { setShowAddModal(false); setAddTitle(''); setAddUrl(''); setAddStudentUrl(''); setAddShareTeachers(false); setAddShareClass(false); setAddTargetStudents([]); setShowStudentSelect(false); }}

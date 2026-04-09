@@ -23,9 +23,11 @@ export function SendocRecipientModal({
   const toggleExpand = (key: string) => setExpandedNodes(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
 
   // Build tree: role → group → class → users
+  // 수신자 선택: 현재 교사 롤만 표시
+  // 추후 학생/학부모 등 다른 롤 추가 시 아래 주석을 해제하세요.
   const teachers = allUsers.filter(u => u.role === 'teacher' || u.role === 'admin')
-  const students = allUsers.filter(u => u.role === 'student')
-  const parents = allUsers.filter(u => u.role === 'parent')
+  // const students = allUsers.filter(u => u.role === 'student')
+  // const parents = allUsers.filter(u => u.role === 'parent')
 
   // Group teachers by department
   const teachersByDept: Record<string, any[]> = {}
@@ -36,19 +38,20 @@ export function SendocRecipientModal({
   })
 
   // Group students/parents by grade → class
-  const groupByGradeClass = (users: any[]) => {
-    const byGrade: Record<number, Record<number, any[]>> = {}
-    users.forEach(u => {
-      const g = u.grade || 0
-      const c = u.class_num || 0
-      if (!byGrade[g]) byGrade[g] = {}
-      if (!byGrade[g][c]) byGrade[g][c] = []
-      byGrade[g][c].push(u)
-    })
-    return byGrade
-  }
-  const studentTree = groupByGradeClass(students)
-  const parentTree = groupByGradeClass(parents)
+  // 추후 학생/학부모 섹션 복원 시 아래 주석을 해제하세요.
+  // const groupByGradeClass = (users: any[]) => {
+  //   const byGrade: Record<number, Record<number, any[]>> = {}
+  //   users.forEach(u => {
+  //     const g = u.grade || 0
+  //     const c = u.class_num || 0
+  //     if (!byGrade[g]) byGrade[g] = {}
+  //     if (!byGrade[g][c]) byGrade[g][c] = []
+  //     byGrade[g][c].push(u)
+  //   })
+  //   return byGrade
+  // }
+  // const studentTree = groupByGradeClass(students)
+  // const parentTree = groupByGradeClass(parents)
 
   // Helpers
   const getUsersInGroup = (users: any[]) => users.map(u => u.id)
@@ -86,8 +89,8 @@ export function SendocRecipientModal({
   )
 
   const allTeacherIds = teachers.map(u => u.id)
-  const allStudentIds = students.map(u => u.id)
-  const allParentIds = parents.map(u => u.id)
+  // const allStudentIds = students.map(u => u.id)
+  // const allParentIds = parents.map(u => u.id)
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -111,8 +114,8 @@ export function SendocRecipientModal({
             })}
           </>)}
 
-          {/* 학생 */}
-          {students.length > 0 && (<>
+          {/* 학생 - 추후 학생 롤 추가 시 아래 주석을 해제하세요. */}
+          {/* {students.length > 0 && (<>
             {renderGroupHeader('student', '학생', allStudentIds, 'fi-rr-graduation-cap', 0)}
             {expandKey('student') && Object.entries(studentTree).sort(([a], [b]) => Number(a) - Number(b)).map(([grade, classes]) => {
               const gradeKey = `student-${grade}`
@@ -129,10 +132,10 @@ export function SendocRecipientModal({
                 })}
               </div>)
             })}
-          </>)}
+          </>)} */}
 
-          {/* 학부모 */}
-          {parents.length > 0 && (<>
+          {/* 학부모 - 추후 학부모 롤 추가 시 아래 주석을 해제하세요. */}
+          {/* {parents.length > 0 && (<>
             {renderGroupHeader('parent', '학부모', allParentIds, 'fi-rr-users-alt', 0)}
             {expandKey('parent') && Object.entries(parentTree).sort(([a], [b]) => Number(a) - Number(b)).map(([grade, classes]) => {
               const gradeKey = `parent-${grade}`
@@ -149,13 +152,14 @@ export function SendocRecipientModal({
                 })}
               </div>)
             })}
-          </>)}
+          </>)} */}
 
           {allUsers.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>사용자 목록이 없습니다.</div>}
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setSelectedUsers(allUsers.map((u: any) => u.id))} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>전체선택</button>
+          {/* 전체선택: 현재 교사(allTeacherIds)만 선택. 추후 확장 시 allUsers.map(u => u.id) 로 변경 */}
+          <button onClick={() => setSelectedUsers(allTeacherIds)} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>전체선택</button>
           <button onClick={() => setSelectedUsers([])} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>선택해제</button>
           <button onClick={() => setShowRecipientModal(false)} className="btn-secondary" style={{ padding: '10px 20px' }} disabled={isSending}>취소</button>
           <button onClick={() => handleSend(false)} disabled={isSending} className="btn-primary" style={{ padding: '10px 24px', display: 'flex', alignItems: 'center', gap: 8, opacity: isSending ? 0.7 : 1 }}>

@@ -158,6 +158,10 @@ func main() {
 	pluginMgr.Register(adminPlugin)
 	pluginMgr.Register(knowledgePlugin)
 
+	// Initialize AdminHeartbeat (학교 → admin-web 단방향 상태 보고)
+	adminHeartbeat := syncagent.NewAdminHeartbeat(db)
+	adminHeartbeat.Start()
+
 	// Initialize SyncAgent (Bridge to Cloud)
 	syncURL := os.Getenv("SYNC_SERVER_URL")
 	if syncURL == "" {

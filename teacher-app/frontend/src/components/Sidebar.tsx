@@ -54,7 +54,7 @@ const pluginGroupE: NavItem[] = [
 ]
 
 const pluginGroupG: NavItem[] = [
-  { id: 'aianalysis', label: 'AI 문서 생성', icon: 'fi fi-rr-magic-wand', priceType: 'partial' },
+  { id: 'aianalysis', label: 'AI 문서 생성', icon: 'fi fi-rr-magic-wand' /*, priceType: 'partial' */ },
 ]
 
 const pluginGroupH: NavItem[] = [

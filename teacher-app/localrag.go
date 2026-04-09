@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
@@ -278,7 +279,7 @@ func splitMarkdownChunks(content, docTitle string, maxLen, overlap int) []chunkR
 					displayText:    chunkBody,
 					headingContext: sec.heading,
 					index:          idx,
-				})
+					})
 				idx++
 				// rune 기준으로 overlap 슬라이싱 (바이트 슬라이싱 금지)
 				if bufRunes > overlap {
@@ -499,15 +500,26 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 	ftsQuery := strings.ReplaceAll(query, "\"", "")
 	ftsQuery = strings.ReplaceAll(ftsQuery, "'", "")
 	terms := strings.Fields(ftsQuery)
+
 	var matchExpr string
-	for i, t := range terms {
-		if len(t) < 2 {
-			continue
+	if len(terms) == 1 && utf8.RuneCountInString(terms[0]) > 2 {
+		// 단일어이고 3자 이상인 경우: 전체 일치 + 2글자 단위 부분 일치 (N-gram 효과)
+		t := terms[0]
+		matchExpr = "\"" + t + "\"*"
+		runes := []rune(t)
+		for i := 0; i <= len(runes)-2; i++ {
+			matchExpr += " OR \"" + string(runes[i:i+2]) + "\"*"
 		}
-		if i > 0 {
-			matchExpr += " OR "
+	} else {
+		for _, t := range terms {
+			if len(t) < 2 {
+				continue
+			}
+			if matchExpr != "" {
+				matchExpr += " OR "
+			}
+			matchExpr += "\"" + t + "\"*"
 		}
-		matchExpr += "\"" + t + "\"*"
 	}
 
 	if matchExpr != "" {
@@ -636,4 +648,87 @@ func (a *App) GetIndexedDocIDs() ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// RefineSearchQuery: 띄어쓰기가 없는 한국어 쿼리를 AI를 통해 적절히 교정 (Wails 바인딩)
+func (a *App) RefineSearchQuery(query string) string {
+	// 이미 띄어쓰기가 있거나 너무 짧으면 그대로 반환
+	if strings.Contains(strings.TrimSpace(query), " ") || utf8.RuneCountInString(query) < 2 {
+		return query
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 쿼리 정규화를 위한 프롬프트 (최대한 짧고 빠르게 응답하도록 유도)
+	prompt := fmt.Sprintf("당신은 한국어 검색 전문가입니다. 다음 띄어쓰기가 없는 문장을 검색에 적합하도록 띄어쓰기를 추가하여 교정해 주세요. 부연설명 없이 오직 교정된 결과만 한 줄로 출력하세요.\n\n입력: %s\n출력:", query)
+
+	// 사용자의 로컬 모델 목록 확인 (우선순위: gemma3, exaone, gemma, llama)
+	model := "gemma3:4b" // 기본값
+	respModels, err := http.Get("http://localhost:11434/api/tags")
+	if err == nil {
+		defer respModels.Body.Close()
+		var mList struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		}
+		if err := json.NewDecoder(respModels.Body).Decode(&mList); err == nil {
+			found := false
+			for _, m := range mList.Models {
+				if strings.Contains(m.Name, "gemma3") {
+					model = m.Name
+					found = true
+					break
+				}
+			}
+			if !found {
+				for _, m := range mList.Models {
+					if strings.Contains(m.Name, "exaone") || strings.Contains(m.Name, "gemma") {
+						model = m.Name
+						found = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":  model,
+		"prompt": prompt,
+		"stream": false,
+		"options": map[string]interface{}{
+			"temperature": 0.0, // 일관된 결과를 위해 0
+			"num_predict": 50,  // 짧은 응답
+		},
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:11434/api/generate", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return query
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return query
+	}
+	defer resp.Body.Close()
+
+	var res struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return query
+	}
+
+	refined := strings.TrimSpace(res.Response)
+	// 따옴표 등이 섞여 나올 경우 제거
+	refined = strings.Trim(refined, "\"'` ")
+	if refined == "" {
+		return query
+	}
+	return refined
 }

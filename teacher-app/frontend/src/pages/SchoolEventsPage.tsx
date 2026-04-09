@@ -27,7 +27,9 @@ export default function SchoolEventsPage({ onVoteChange }: { onVoteChange?: () =
   const [showModal, setShowModal] = useState(false)
   const [votingTitle, setVotingTitle] = useState('')
   const [votingContent, setVotingContent] = useState('')
-  const [votingTarget, setVotingTarget] = useState<string[]>(['ALL'])
+  // 투표/설문 대상: 교사로 한정. 추후 확장 시 ['ALL'] 로 변경
+  // const [votingTarget, setVotingTarget] = useState<string[]>(['ALL'])
+  const [votingTarget, setVotingTarget] = useState<string[]>(['TEACHER'])
   const [votingOptions, setVotingOptions] = useState<string[]>(['', ''])
   const [showOtherTip, setShowOtherTip] = useState(false)
   
@@ -205,7 +207,7 @@ export default function SchoolEventsPage({ onVoteChange }: { onVoteChange?: () =
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 600 }}>진행 중인 학교·학급 투표/설문</h3>
+        <h3 style={{ fontSize: 18, fontWeight: 600 }}>진행 중인 투표/설문</h3>
         <button onClick={() => setShowModal(true)} style={{
           background: '#3b82f6', color: 'white', padding: '8px 16px',
           borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600,
@@ -355,11 +357,15 @@ export default function SchoolEventsPage({ onVoteChange }: { onVoteChange?: () =
                   <i className="fi fi-rr-magic-wand" /> 자주 쓰는 템플릿으로 빠른 완성
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => { setVotingTitle('2026학년도 1학기 학급 반장선거'); setVotingContent('이번 선거는 전자투표로 진행됩니다. 신중하게 우리 반을 이끌어갈 대표를 선출해 주세요.'); setVotingTarget(['STUDENT']); setVotingOptions(['김철수', '이영희', '박지민']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학급 반장선거</button>
-                  <button onClick={() => { setVotingTitle('2026학년도 전교 학생회 임원 선거'); setVotingContent('전교 학생회장 및 부회장을 선출하는 투표입니다. 주어진 표에 맞게 정확히 행사해 주시기 바랍니다.'); setVotingTarget(['STUDENT']); setVotingOptions(['기호 1번 OOO', '기호 2번 OOO', '기호 3번 OOO']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>전교 학생회 선거</button>
+                  {/* 학급 반장선거 - 추후 복원 시 주석 해제 */}
+                  {/* <button onClick={() => { setVotingTitle('2026학년도 1학기 학급 반장선거'); setVotingContent('이번 선거는 전자투표로 진행됩니다. 신중하게 우리 반을 이끌어갈 대표를 선출해 주세요.'); setVotingTarget(['STUDENT']); setVotingOptions(['김철수', '이영희', '박지민']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학급 반장선거</button> */}
+                  {/* 전교 학생회 선거 - 추후 복원 시 주석 해제 */}
+                  {/* <button onClick={() => { setVotingTitle('2026학년도 전교 학생회 임원 선거'); setVotingContent('전교 학생회장 및 부회장을 선출하는 투표입니다. 주어진 표에 맞게 정확히 행사해 주시기 바랍니다.'); setVotingTarget(['STUDENT']); setVotingOptions(['기호 1번 OOO', '기호 2번 OOO', '기호 3번 OOO']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>전교 학생회 선거</button> */}
                   <button onClick={() => { setVotingTitle('교직원 회의 안건(연수) 의견 수렴'); setVotingContent('선생님들의 원활한 연수 진행을 위해 사전 의견을 수렴하고자 합니다. 자유롭게 선택해 주십시오.'); setVotingTarget(['TEACHER']); setVotingOptions(['1안 동의', '2안 동의', '기타 의견']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>교사 설문</button>
-                  <button onClick={() => { setVotingTitle('창의적 체험활동 장소 선호도 조사'); setVotingContent('다음 달 진행될 창체(소풍) 장소에 대한 학생들의 의견을 알아보고자 합니다.'); setVotingTarget(['STUDENT']); setVotingOptions(['에버랜드', '롯데월드', '직업체험관', '기타']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학생 설문</button>
-                  <button onClick={() => { setVotingTitle('2026학년도 학부모 총회 참석 여부 조사'); setVotingContent('학부모 총회 관련 일정 안내 및 참석 여부 조사 통신문입니다. 기한 내에 꼭 응답해 주시기 바랍니다.'); setVotingTarget(['PARENT']); setVotingOptions(['참석', '불참', '위임장 제출']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학부모 설문</button>
+                  {/* 학생 설문 - 추후 복원 시 주석 해제 */}
+                  {/* <button onClick={() => { setVotingTitle('창의적 체험활동 장소 선호도 조사'); setVotingContent('다음 달 진행될 창체(소풍) 장소에 대한 학생들의 의견을 알아보고자 합니다.'); setVotingTarget(['STUDENT']); setVotingOptions(['에버랜드', '롯데월드', '직업체험관', '기타']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학생 설문</button> */}
+                  {/* 학부모 설문 - 추후 복원 시 주석 해제 */}
+                  {/* <button onClick={() => { setVotingTitle('2026학년도 학부모 총회 참석 여부 조사'); setVotingContent('학부모 총회 관련 일정 안내 및 참석 여부 조사 통신문입니다. 기한 내에 꼭 응답해 주시기 바랍니다.'); setVotingTarget(['PARENT']); setVotingOptions(['참석', '불참', '위임장 제출']); }} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13, borderRadius: 8, cursor: 'pointer', border: '1px solid #cbd5e1', background: 'white', fontWeight: 600, color: '#334155', transition: 'all 0.2s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--primary)'} onMouseOut={e=>e.currentTarget.style.borderColor='#cbd5e1'}>학부모 설문</button> */}
                 </div>
               </div>
 
@@ -400,20 +406,24 @@ export default function SchoolEventsPage({ onVoteChange }: { onVoteChange?: () =
                     </button>
                   </div>
                   <div style={{ padding: '12px', borderRadius: 10, background: 'white', border: '1px solid #cbd5e1', minHeight: 44, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {votingTarget.includes('ALL') ? (
+                    {/* 추후 전체(교직원·학생·학부모) 대상 복원 시 아래 주석 해제 */}
+                    {/* {votingTarget.includes('ALL') ? (
                        <span style={{ fontSize: 13, padding: '4px 10px', background: '#f1f5f9', color: '#475569', borderRadius: 16, border: '1px solid #e2e8f0', fontWeight: 600 }}>전체 (교직원·학생·학부모)</span>
-                    ) : votingTarget.map(t => {
+                    ) : */}
+                    {votingTarget.map(t => {
                       let text = t
-                      if (t === 'STUDENT') text = '학생 전체'
-                      else if (t.startsWith('STUDENT_')) { const p = t.split('_'); text = p.length === 2 ? `학생 ${p[1]}학년` : `학생 ${p[1]}학년 ${p[2]}반` }
-                      else if (t === 'TEACHER') text = '교직원 전체'
+                      // 추후 학생/학부모 대상 복원 시 아래 주석 해제
+                      // if (t === 'STUDENT') text = '학생 전체'
+                      // else if (t.startsWith('STUDENT_')) { const p = t.split('_'); text = p.length === 2 ? `학생 ${p[1]}학년` : `학생 ${p[1]}학년 ${p[2]}반` }
+                      // else if (t === 'PARENT') text = '학부모 전체'
+                      // else if (t.startsWith('PARENT_')) { const p = t.split('_'); text = p.length === 2 ? `학부모 ${p[1]}학년` : `학부모 ${p[1]}학년 ${p[2]}반` }
+                      if (t === 'TEACHER') text = '교직원 전체'
                       else if (t.startsWith('TEACHER_')) { text = `교직원 ${t.replace('TEACHER_','')}` }
-                      else if (t === 'PARENT') text = '학부모 전체'
-                      else if (t.startsWith('PARENT_')) { const p = t.split('_'); text = p.length === 2 ? `학부모 ${p[1]}학년` : `학부모 ${p[1]}학년 ${p[2]}반` }
                       else if (t.startsWith('USER_')) { const u = allUsers.find(x=>x.id===t.replace('USER_','')); text = u ? `${u.name}` : '개별 사용자' }
                       return <span key={t} style={{ fontSize: 13, padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5', borderRadius: 16, border: '1px solid #c7d2fe', fontWeight: 600 }}>{text} <i className="fi fi-rr-cross-small" style={{marginLeft: 4, cursor:'pointer'}} onClick={() => {
-                        const newTargets = votingTarget.filter(x => x !== t); 
-                        setVotingTarget(newTargets.length === 0 ? ['ALL'] : newTargets)
+                        const newTargets = votingTarget.filter(x => x !== t);
+                        // 추후 전체 대상 복원 시 ['ALL'] 로 변경
+                        setVotingTarget(newTargets.length === 0 ? ['TEACHER'] : newTargets)
                       }} /></span>
                     })}
                   </div>
@@ -559,11 +569,13 @@ export default function SchoolEventsPage({ onVoteChange }: { onVoteChange?: () =
         </div>
       )}
 
+      {/* 대상 교사로 한정: onlyTeachers={true}. 추후 전체 대상 허용 시 prop 제거 */}
       <TargetTreeModal
         isOpen={showTargetModal}
         onClose={() => setShowTargetModal(false)}
         allUsers={allUsers}
         currentTargets={votingTarget}
+        onlyTeachers={true}
         onApply={(newTargets) => {
           setVotingTarget(newTargets)
           setShowTargetModal(false)

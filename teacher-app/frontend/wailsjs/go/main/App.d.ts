@@ -128,6 +128,8 @@ export function PullModel(arg1:string):Promise<main.PullModelResult>;
 
 export function QuitHwp():Promise<void>;
 
+export function RefineSearchQuery(arg1:string):Promise<string>;
+
 export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number,arg11:number):Promise<main.LoginResult>;
 
 export function SaveAILog(arg1:string,arg2:string,arg3:string):Promise<void>;

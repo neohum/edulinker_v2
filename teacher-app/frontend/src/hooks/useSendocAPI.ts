@@ -43,7 +43,10 @@ export function useSendocAPI(isTeacher: boolean) {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/core/users?page_size=1000')
+      // 수신자 선택: 교사 롤만 표시 (role=teacher 필터 적용)
+      // 추후 다른 롤로 확장 시 아래 주석을 해제하고 role 파라미터를 제거하세요.
+      // const res = await apiFetch('/api/core/users?page_size=1000')
+      const res = await apiFetch('/api/core/users?page_size=1000&role=teacher')
       if (res.ok) {
         const data = await res.json()
         setAllUsers(data.users || [])
