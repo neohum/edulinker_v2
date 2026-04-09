@@ -183,6 +183,7 @@ export namespace main {
 	export class DraftListItem {
 	    id: string;
 	    title: string;
+	    fields_json: string;
 	    updated_at: string;
 	
 	    static createFrom(source: any = {}) {
@@ -193,6 +194,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.title = source["title"];
+	        this.fields_json = source["fields_json"];
 	        this.updated_at = source["updated_at"];
 	    }
 	}

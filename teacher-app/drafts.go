@@ -111,9 +111,10 @@ func (a *App) SaveLocalSendocDraft(id, title, fieldsJson, strokesJson, targetUse
 }
 
 type DraftListItem struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	UpdatedAt string `json:"updated_at"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	FieldsJSON string `json:"fields_json"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 func (a *App) GetLocalSendocDrafts() ([]DraftListItem, error) {
@@ -121,7 +122,7 @@ func (a *App) GetLocalSendocDrafts() ([]DraftListItem, error) {
 		return nil, fmt.Errorf("로컬 DB 미초기화")
 	}
 
-	rows, err := a.secureDB.Query("SELECT id, title, updated_at FROM local_sendoc_drafts_v2 ORDER BY updated_at DESC")
+	rows, err := a.secureDB.Query("SELECT id, title, fields_json, updated_at FROM local_sendoc_drafts_v2 ORDER BY updated_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func (a *App) GetLocalSendocDrafts() ([]DraftListItem, error) {
 	for rows.Next() {
 		var item DraftListItem
 		var updated time.Time
-		if err := rows.Scan(&item.ID, &item.Title, &updated); err == nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.FieldsJSON, &updated); err == nil {
 			item.UpdatedAt = updated.Format(time.RFC3339)
 			list = append(list, item)
 		}

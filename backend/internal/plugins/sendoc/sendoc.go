@@ -336,7 +336,7 @@ func (p *Plugin) listDocuments(c *fiber.Ctx) error {
 	}
 
 	var docs []models.Sendoc
-	if err := p.db.Omit("BackgroundURL", "Content").Preload("Author").Preload("Recipients").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
+	if err := p.db.Omit("BackgroundURL", "Content").Preload("Author").Preload("Recipients", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch documents"})
 	}
 
@@ -366,7 +366,7 @@ func (p *Plugin) getDocument(c *fiber.Ctx) error {
 	}
 
 	var doc models.Sendoc
-	if err := p.db.Preload("Author").Preload("Recipients").Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
+	if err := p.db.Preload("Author").Preload("Recipients", func(db *gorm.DB) *gorm.DB { return db.Unscoped() }).Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found"})
 	}
 
@@ -390,7 +390,7 @@ func (p *Plugin) getSignatures(c *fiber.Ctx) error {
 	docID := c.Params("id")
 
 	var recipients []models.SendocRecipient
-	if err := p.db.Preload("User").Where("sendoc_id = ?", docID).Find(&recipients).Error; err != nil {
+	if err := p.db.Unscoped().Preload("User").Where("sendoc_id = ?", docID).Find(&recipients).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get signature status"})
 	}
 

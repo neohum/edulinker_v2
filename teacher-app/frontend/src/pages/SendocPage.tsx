@@ -176,6 +176,10 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
   }, [isTeacher]);
 
+  useEffect(() => {
+    fetchLocalDrafts();
+  }, [fetchLocalDrafts]);
+
   const resumeDraft = async (d: any) => {
     const wailsApp = (window as any).go?.main?.App;
     if (!wailsApp?.GetLocalSendocDraft) return toast.error('로컬 기능을 지원하지 않습니다.');
@@ -908,7 +912,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
         if (res.ok) {
           if (!isDraft && wailsApp?.DeleteLocalSendocDraft && editingDraftId) {
-             wailsApp.DeleteLocalSendocDraft(editingDraftId).catch(() => {});
+             try { await wailsApp.DeleteLocalSendocDraft(editingDraftId); } catch {}
              setEditingDraftId(null);
              fetchLocalDrafts();
           }
@@ -988,13 +992,12 @@ export default function SendocPage({ user }: SendocPageProps) {
     });
   }
 
-  const handleDeleteDoc = async (id: string, forTeacher: boolean) => {
+  const handleDeleteDoc = async (id: string, forTeacher: boolean, isLocal: boolean = false) => {
     setConfirmDialog({
       message: '정말 이 문서를 삭제하시겠습니까?',
       onConfirm: async () => {
         try {
-          if (forTeacher && (window as any).go?.main?.App?.DeleteLocalSendocDraft && id.length > 10) {
-            // Usually local ID is UUID
+          if (isLocal && forTeacher && (window as any).go?.main?.App?.DeleteLocalSendocDraft) {
              await (window as any).go.main.App.DeleteLocalSendocDraft(id);
              toast.success('로컬 보관함에서 삭제되었습니다.');
              fetchLocalDrafts();
@@ -1403,19 +1406,33 @@ export default function SendocPage({ user }: SendocPageProps) {
                 ) : (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-                      {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((draftsPage - 1) * ITEMS_PER_PAGE, draftsPage * ITEMS_PER_PAGE).map(d => (
-                        <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #fce7f3', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                            <span style={{ fontSize: 11, padding: '3px 10px', background: '#fce7f3', color: '#db2777', borderRadius: 20 }}>내 PC 임시보관</span>
-                            <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
+                      {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((draftsPage - 1) * ITEMS_PER_PAGE, draftsPage * ITEMS_PER_PAGE).map(d => {
+                        let isMerged = false;
+                        try {
+                          const parsedFields = JSON.parse(d.fields_json || '[]');
+                          const metaField = parsedFields.find((f: any) => f.id === 'META_OPTIONS' || f.id === 'canvas_overlay_meta');
+                          if (metaField) {
+                            isMerged = JSON.parse(metaField.value || '{}').mergeSignatures === true;
+                          }
+                        } catch {}
+
+                        return (
+                          <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #fce7f3', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <span style={{ fontSize: 11, padding: '3px 10px', background: '#fce7f3', color: '#db2777', borderRadius: 20 }}>내 PC 임시보관</span>
+                                {isMerged && <span style={{ fontSize: 11, padding: '3px 10px', background: '#e0e7ff', color: '#4f46e5', borderRadius: 20 }}>한 페이지에 모두 받기</span>}
+                              </div>
+                              <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button onClick={() => resumeDraft(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0, color: '#db2777', borderColor: '#f9a8d4', background: '#fdf2f8' }}>이어서 작성하기</button>
+                              <button onClick={() => handleDeleteDoc(d.id, true, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
+                            </div>
                           </div>
-                          <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => resumeDraft(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0, color: '#db2777', borderColor: '#f9a8d4', background: '#fdf2f8' }}>이어서 작성하기</button>
-                            <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                     {/* Drafts Pagination */}
                     {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length > ITEMS_PER_PAGE && (
@@ -1465,7 +1482,7 @@ export default function SendocPage({ user }: SendocPageProps) {
                         ) : (
                           <button onClick={() => handleRecallDoc(d)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#f59e0b' }}>회수</button>
                         )}
-                        <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
+                        <button onClick={() => handleDeleteDoc(d.id, true, false)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
                       </div>
                     </div>
                   )})}
