@@ -314,6 +314,7 @@ func main() {
 	userRoutes.Get("/inactive", middleware.RoleMiddleware(models.RoleAdmin), userHandler.ListInactiveUsers)
 	userRoutes.Get("/:id", userHandler.GetUser)
 	userRoutes.Put("/:id", userHandler.UpdateUser)
+	userRoutes.Put("/:id/password", userHandler.ChangePassword)
 	userRoutes.Post("/:id/reset-pin", middleware.RoleMiddleware(models.RoleTeacher, models.RoleAdmin), userHandler.ResetPIN)
 	userRoutes.Post("/:id/change-pin", middleware.RoleMiddleware(models.RoleStudent, models.RoleTeacher, models.RoleAdmin), userHandler.ChangePIN)
 	userRoutes.Delete("/:id", middleware.RoleMiddleware(models.RoleAdmin), userHandler.DeleteUser)

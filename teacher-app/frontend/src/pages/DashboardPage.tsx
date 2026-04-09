@@ -43,11 +43,12 @@ interface RAGSearchResult {
 interface DashboardPageProps {
   user: UserInfo
   onLogout: () => void
+  onUpdateUser: (updates: Partial<UserInfo>) => void
 }
 
 type PageView = 'dashboard' | 'announcement' | 'todo' | 'student-alert' | 'attendance' | 'gatong' | 'sendoc' | 'studentmgmt' | 'counseling' | 'curriculum' | 'aianalysis' | 'schoolevents' | 'linker' | 'pcinfo' | 'hwp-converter' | 'xlsx-converter' | 'pptx-converter' | 'settings' | 'profile' | 'classmgmt' | 'resourcemgmt' | 'schooladmin' | 'knowledge' | 'behavior-opinion'
 
-function DashboardPage({ user, onLogout }: DashboardPageProps) {
+function DashboardPage({ user, onLogout, onUpdateUser }: DashboardPageProps) {
   const [currentPage, setCurrentPage] = useState<PageView>('dashboard')
   const [pendingDocCount, setPendingDocCount] = useState(0)
   const [activeVotingsCount, setActiveVotingsCount] = useState(0)
@@ -141,7 +142,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
       if (res.ok) {
         const data = await res.json()
         // Filter those not yet signed
-        const pending = data.filter((d: any) => !d.is_signed)
+        const pending = (data || []).filter((d: any) => !d.is_signed)
         setPendingDocCount(pending.length)
       }
     } catch (e) {
@@ -192,7 +193,7 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           )}
         </header>
 
-        <div className="main-body" style={currentPage === 'dashboard' ? { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}}>
+        <div className="main-body" style={(currentPage === 'dashboard' || currentPage === 'sendoc') ? { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}}>
           {currentPage === 'dashboard' && <DashboardView user={user} onNavigate={handleNavigate} />}
           {currentPage === 'gatong' && <GatongPage />}
           {currentPage === 'sendoc' && <SendocPage user={user} />}
@@ -215,8 +216,8 @@ function DashboardPage({ user, onLogout }: DashboardPageProps) {
           {currentPage === 'hwp-converter' && <HwpConverterPage />}
           {currentPage === 'xlsx-converter' && <XlsxConverterPage />}
           {currentPage === 'pptx-converter' && <PptxConverterPage />}
-          {currentPage === 'settings' && <SettingsPage />}
-          {currentPage === 'profile' && <ProfilePage user={user} />}
+          {currentPage === 'settings' && <SettingsPage user={user} onNavigate={(p: string) => setCurrentPage(p as PageView)} />}
+          {currentPage === 'profile' && <ProfilePage user={user} onUpdateUser={onUpdateUser} />}
 
           {currentPage === 'knowledge' && <KnowledgePage />}
 
@@ -1049,9 +1050,9 @@ function getPageTitle(page: string): string {
     dashboard: '통합 검색',
     announcement: '공문전달',
     todo: '투두리스트',
-    'student-alert': '학생 알림',
+    // 'student-alert': '학생 알림',
     attendance: '출결',
-    gatong: '가정통신문',
+    // gatong: '가정통신문',
     sendoc: '전자문서/서명',
     studentmgmt: '학생관리',
     curriculum: '주간학습·평가',
@@ -1064,7 +1065,7 @@ function getPageTitle(page: string): string {
     'pptx-converter': 'PPT to PDF 변환',
     settings: '설정',
     profile: '내 프로필',
-    classmgmt: '반편성 관리',
+    // classmgmt: '반편성 관리',
     resourcemgmt: '시설 예약',
     schooladmin: '행정 및 인사 관리',
     knowledge: '업무 규칙/정보',

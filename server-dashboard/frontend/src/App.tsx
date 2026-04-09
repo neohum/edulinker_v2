@@ -13,7 +13,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'status' | 'settings' | 'users' | 'documents' | 'announcements'>('status');
   const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn'>('all');
-  const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false });
+  const [dependencies, setDependencies] = useState({ postgres: false, redis: false, minio: false, go: false });
   const [isStartingInfra, setIsStartingInfra] = useState(false);
   const [bootSequenceActive, setBootSequenceActive] = useState(false);
   const [bootStep, setBootStep] = useState<number>(0);
@@ -49,7 +49,7 @@ function App() {
     setIsStartingInfra(true);
     let ready = false;
     let attempts = 0;
-    let currentDeps = { postgres: false, redis: false, minio: false };
+    let currentDeps = { postgres: false, redis: false, minio: false, go: false };
 
     while (!ready) {
       currentDeps = await CheckDependencies();
@@ -98,7 +98,7 @@ function App() {
 
         // 1. Initial Quick Check (5 seconds wait for existing services to boot)
         let ready = false;
-        let currentDeps = { postgres: false, redis: false, minio: false };
+        let currentDeps = { postgres: false, redis: false, minio: false, go: false };
 
         for (let i = 0; i < 5; i++) {
           currentDeps = await CheckDependencies();
@@ -490,6 +490,9 @@ function App() {
                   </span>
                   <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${dependencies.minio ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
                     🪣 MINIO: {dependencies.minio ? 'ON' : 'OFF'}
+                  </span>
+                  <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${dependencies.go ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                    🐹 GO: {dependencies.go ? 'ON' : 'OFF'}
                   </span>
                 </div>
                 {(!dependencies.postgres || !dependencies.redis || !dependencies.minio) && (

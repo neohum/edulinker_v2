@@ -180,6 +180,22 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
+	export class DraftListItem {
+	    id: string;
+	    title: string;
+	    updated_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DraftListItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.updated_at = source["updated_at"];
+	    }
+	}
 	export class EvalRecord {
 	    id: string;
 	    student_id: string;
@@ -371,6 +387,32 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class LocalDraftMeta {
+	    id: string;
+	    title: string;
+	    fields_json: string;
+	    strokes_json: string;
+	    target_users_json: string;
+	    original_file_name: string;
+	    updated_at: string;
+	    page_images_base64: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new LocalDraftMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.fields_json = source["fields_json"];
+	        this.strokes_json = source["strokes_json"];
+	        this.target_users_json = source["target_users_json"];
+	        this.original_file_name = source["original_file_name"];
+	        this.updated_at = source["updated_at"];
+	        this.page_images_base64 = source["page_images_base64"];
+	    }
 	}
 	export class LoginResult {
 	    success: boolean;

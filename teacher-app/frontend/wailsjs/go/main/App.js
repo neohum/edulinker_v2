@@ -82,6 +82,10 @@ export function DeleteDocumentIndex(arg1) {
   return window['go']['main']['App']['DeleteDocumentIndex'](arg1);
 }
 
+export function DeleteLocalSendocDraft(arg1) {
+  return window['go']['main']['App']['DeleteLocalSendocDraft'](arg1);
+}
+
 export function DeleteOpinionHistory(arg1) {
   return window['go']['main']['App']['DeleteOpinionHistory'](arg1);
 }
@@ -150,6 +154,14 @@ export function GetLocalModels() {
   return window['go']['main']['App']['GetLocalModels']();
 }
 
+export function GetLocalSendocDraft(arg1) {
+  return window['go']['main']['App']['GetLocalSendocDraft'](arg1);
+}
+
+export function GetLocalSendocDrafts() {
+  return window['go']['main']['App']['GetLocalSendocDrafts']();
+}
+
 export function GetMonthAttendanceRecords(arg1) {
   return window['go']['main']['App']['GetMonthAttendanceRecords'](arg1);
 }
@@ -200,6 +212,10 @@ export function IsLoggedIn() {
 
 export function LoadSendocDraft(arg1) {
   return window['go']['main']['App']['LoadSendocDraft'](arg1);
+}
+
+export function LoadTeacherAsset(arg1) {
+  return window['go']['main']['App']['LoadTeacherAsset'](arg1);
 }
 
 export function Login(arg1, arg2) {
@@ -258,6 +274,10 @@ export function SaveFileBytes(arg1, arg2) {
   return window['go']['main']['App']['SaveFileBytes'](arg1, arg2);
 }
 
+export function SaveLocalSendocDraft(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SaveLocalSendocDraft'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
 export function SaveOpinionHistory(arg1, arg2) {
   return window['go']['main']['App']['SaveOpinionHistory'](arg1, arg2);
 }
@@ -268,6 +288,10 @@ export function SaveOpinionRecord(arg1, arg2) {
 
 export function SaveSendocDraft(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveSendocDraft'](arg1, arg2, arg3);
+}
+
+export function SaveTeacherAsset(arg1, arg2) {
+  return window['go']['main']['App']['SaveTeacherAsset'](arg1, arg2);
 }
 
 export function SaveTodoItem(arg1, arg2, arg3, arg4) {

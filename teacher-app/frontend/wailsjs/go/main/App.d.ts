@@ -42,6 +42,8 @@ export function DeleteCurriculumEvaluation(arg1:string):Promise<void>;
 
 export function DeleteDocumentIndex(arg1:string):Promise<void>;
 
+export function DeleteLocalSendocDraft(arg1:string):Promise<void>;
+
 export function DeleteOpinionHistory(arg1:string):Promise<void>;
 
 export function DeleteSendocDraft(arg1:string):Promise<void>;
@@ -76,6 +78,10 @@ export function GetLocalLinkers():Promise<Array<main.Bookmark>>;
 
 export function GetLocalModels():Promise<Array<string>>;
 
+export function GetLocalSendocDraft(arg1:string):Promise<main.LocalDraftMeta>;
+
+export function GetLocalSendocDrafts():Promise<Array<main.DraftListItem>>;
+
 export function GetMonthAttendanceRecords(arg1:string):Promise<Array<main.AttendanceRecord>>;
 
 export function GetOpinionHistories(arg1:string):Promise<Array<main.OpinionRecord>>;
@@ -101,6 +107,8 @@ export function InstallOllama():Promise<main.OllamaStatus>;
 export function IsLoggedIn():Promise<boolean>;
 
 export function LoadSendocDraft(arg1:string):Promise<main.SendocDraftResult>;
+
+export function LoadTeacherAsset(arg1:string):Promise<string>;
 
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
@@ -130,11 +138,15 @@ export function SaveCurriculumEvaluation(arg1:string,arg2:string,arg3:string,arg
 
 export function SaveFileBytes(arg1:string,arg2:string):Promise<main.DownloadFileResult>;
 
+export function SaveLocalSendocDraft(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:Array<string>):Promise<string>;
+
 export function SaveOpinionHistory(arg1:string,arg2:string):Promise<void>;
 
 export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
 
 export function SaveSendocDraft(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SaveTeacherAsset(arg1:string,arg2:string):Promise<void>;
 
 export function SaveTodoItem(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 

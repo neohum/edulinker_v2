@@ -169,6 +169,26 @@ func (a *App) initSecureDB() error {
 			strokes_json TEXT NOT NULL DEFAULT '[]',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
+
+		-- V2 Drafts (Full Document, Local Img Links)
+		CREATE TABLE IF NOT EXISTS local_sendoc_drafts_v2 (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			fields_json TEXT NOT NULL DEFAULT '[]',
+			strokes_json TEXT NOT NULL DEFAULT '[]',
+			image_paths_json TEXT NOT NULL DEFAULT '[]',
+			target_users_json TEXT NOT NULL DEFAULT '[]',
+			original_file_name TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- Teacher Assets (Signature, Stamp)
+		CREATE TABLE IF NOT EXISTS local_teacher_assets (
+			id TEXT PRIMARY KEY,
+			asset_type TEXT NOT NULL,
+			vector_json TEXT NOT NULL,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	if err != nil {
 		return err
@@ -288,4 +308,34 @@ func (a *App) HasSendocDraft(docId string) bool {
 		return false
 	}
 	return count > 0
+}
+
+// --- Teacher Assets Storage ---
+
+// SaveTeacherAsset saves a signature or stamp vector in SQLite.
+func (a *App) SaveTeacherAsset(assetType, vectorJSON string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("로컬 DB가 초기화되지 않았습니다")
+	}
+	_, err := a.secureDB.Exec(`
+		INSERT INTO local_teacher_assets (id, asset_type, vector_json, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO UPDATE SET
+			vector_json = excluded.vector_json,
+			updated_at = CURRENT_TIMESTAMP
+	`, assetType, assetType, vectorJSON)
+	return err
+}
+
+// LoadTeacherAsset loads a signature or stamp from SQLite.
+func (a *App) LoadTeacherAsset(assetType string) string {
+	if a.secureDB == nil {
+		return ""
+	}
+	var vectorJSON string
+	err := a.secureDB.QueryRow("SELECT vector_json FROM local_teacher_assets WHERE id = ?", assetType).Scan(&vectorJSON)
+	if err != nil {
+		return ""
+	}
+	return vectorJSON
 }

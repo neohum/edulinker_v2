@@ -1,0 +1,4 @@
+D:\works\edulinker_v2\.git
+D:\works\edulinker_v2\admin-web\.git
+D:\works\edulinker_v2\sync-server\.git
+D:\works\edulinker_v2\web_service\.git

@@ -59,85 +59,60 @@ export function SendocDesignerCanvas({
   startFullDrawing, drawFull, stopFullDrawing,
   startDrawing, draw, stopDrawing, saveSignature
 }: SendocDesignerCanvasProps) {
+  const [floatingMenuPos, setFloatingMenuPos] = React.useState({ x: 0, y: 0 })
+
+
 
   return (
     <>
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: '#e2e8f0', position: 'relative' }}>
-        {/* Sidebar for Designer */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#e2e8f0', position: 'relative' }}>
+        {/* Top Horizontal Toolbar */}
         {viewMode === 'designer' && (
-          <div style={{ width: 280, background: 'white', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: 16 }}>
-            <div style={{ padding: 16, borderBottom: '1px solid #f1f5f9' }}>
-              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8, fontWeight: 600 }}>도구 박스 요소</div>
-              <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>추가할 요소를 클릭한 후, 우측 캔버스에서 드래그하여 위치와 크기를 조절하세요.</p>
-            </div>
-            <div style={{ padding: 16 }}>
-              {/* Page Thumbnails (if multi-page) */}
-              {pageImages.length > 1 && (
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, color: '#64748b', marginBottom: 8, fontWeight: 600 }}>페이지 네비게이션</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
-                    {pageImages.map((pg, idx) => {
-                      const isCurrent = currentPageIdx === idx
-                      return (
-                        <div key={idx} onClick={() => {
-                          setCurrentPageIdx(idx)
-                          if (scrollContainerRef.current) {
-                            const targetScroll = (idx / pageImages.length) * scrollContainerRef.current.scrollHeight
-                            scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' })
-                          }
-                          if (viewMode === 'designer' && backgroundUrl && backgroundUrl.startsWith('blob:')) {
-                            const binaryStr = atob(pg)
-                            const bytes = new Uint8Array(binaryStr.length)
-                            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-                            // setLocalBackgroundImage - ignored for now as pageImages renders it entirely
-                          }
-                        }}
-                          style={{ cursor: 'pointer', border: isCurrent ? '2px solid #6366f1' : '2px solid #e2e8f0', borderRadius: 6, overflow: 'hidden', opacity: isCurrent ? 1 : 0.7 }}>
-                          <img src={`data:image/png;base64,${pg}`} alt={`${idx + 1}페이지`} style={{ width: '100%', display: 'block' }} />
-                          <div style={{ textAlign: 'center', fontSize: 10, padding: '2px 0', background: isCurrent ? '#e0e7ff' : '#f8fafc', color: isCurrent ? '#4f46e5' : '#94a3b8', fontWeight: 600 }}>
-                            {idx + 1}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div style={{ height: 1, background: '#f1f5f9', marginTop: 12 }} />
+          <div style={{ display: 'flex', alignItems: 'center', background: 'white', borderBottom: '1px solid #e2e8f0', padding: '8px 24px', gap: 12, zIndex: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginRight: 8 }}>도구:</span>
+            
+            <button onClick={() => setIsDrawingMode(false)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, border: `2px solid ${!isDrawingMode ? '#3b82f6' : 'transparent'}`, background: !isDrawingMode ? '#eff6ff' : '#f8fafc', cursor: 'pointer', color: !isDrawingMode ? '#3b82f6' : '#64748b', transition: 'all 0.2s' }}>
+              <i className="fi fi-rr-mouse" /> <span style={{ fontSize: 13, fontWeight: !isDrawingMode ? 700 : 500 }}>마우스</span>
+            </button>
+            <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+            
+            <button onClick={() => { setIsDrawingMode(false); addField('text') }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', color: '#475569' }}>
+              <i className="fi fi-rr-text-input" style={{ color: '#3b82f6' }} /> <span style={{ fontSize: 13 }}>텍스트 영역 추가</span>
+            </button>
+            <button onClick={() => { setIsDrawingMode(false); addField('signature') }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', color: '#475569' }}>
+              <i className="fi fi-rr-edit" style={{ color: '#ef4444' }} /> <span style={{ fontSize: 13 }}>서명 영역 추가</span>
+            </button>
+
+            <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+
+            <button
+              onClick={() => setIsDrawingMode(!isDrawingMode)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, border: `2px solid ${isDrawingMode ? '#4f46e5' : 'transparent'}`, background: isDrawingMode ? '#e0e7ff' : '#f8fafc', cursor: 'pointer', color: isDrawingMode ? '#4f46e5' : '#64748b', transition: 'all 0.2s' }}
+            >
+              <i className="fi fi-rr-pencil" /> <span style={{ fontSize: 13, fontWeight: isDrawingMode ? 700 : 500 }}>전체 영역 그리기</span>
+            </button>
+
+            {isDrawingMode && (
+              <>
+                <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+                
+                <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 4, borderRadius: 100 }}>
+                  <button title="펜" onClick={() => setIsEraser(false)} style={{ padding: '6px 12px', borderRadius: 100, border: 'none', background: !isEraser ? 'white' : 'transparent', cursor: 'pointer', fontSize: 15, fontWeight: !isEraser ? 700 : 500, color: !isEraser ? '#4f46e5' : '#64748b', boxShadow: !isEraser ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}><i className="fi fi-rr-pencil" /></button>
+                  <button title="지우개" onClick={() => setIsEraser(true)} style={{ padding: '6px 12px', borderRadius: 100, border: 'none', background: isEraser ? 'white' : 'transparent', cursor: 'pointer', fontSize: 15, fontWeight: isEraser ? 700 : 500, color: isEraser ? '#4f46e5' : '#64748b', boxShadow: isEraser ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}><i className="fi fi-rr-eraser" /></button>
                 </div>
-              )}
-            </div>
-            <div style={{ display: 'grid', gap: 8, padding: '0 16px' }}>
-              <button onClick={() => { setIsDrawingMode(false); addField('text') }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #eee', background: 'white', cursor: 'pointer' }}>
-                <i className="fi fi-rr-text-input" style={{ color: '#3b82f6' }} /> <span style={{ fontSize: 14 }}>텍스트 추가</span>
-              </button>
-              <button onClick={() => { setIsDrawingMode(false); addField('signature') }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #eee', background: 'white', cursor: 'pointer' }}>
-                <i className="fi fi-rr-edit" style={{ color: '#ef4444' }} /> <span style={{ fontSize: 14 }}>서명 영역 추가</span>
-              </button>
-              {(isSigner || viewMode === 'designer') && (
-                <>
-                  <div style={{ height: 1, background: '#f1f5f9', margin: '8px 0' }} />
-                  <button
-                    onClick={() => setIsDrawingMode(!isDrawingMode)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', borderRadius: 10, border: `2px solid ${isDrawingMode ? '#4f46e5' : 'transparent'}`, background: isDrawingMode ? '#e0e7ff' : '#f8fafc', outline: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                  >
-                    <i className="fi fi-rr-pencil" style={{ color: isDrawingMode ? '#4f46e5' : '#64748b' }} />
-                    <span style={{ fontSize: 14, fontWeight: isDrawingMode ? 700 : 500, color: isDrawingMode ? '#4f46e5' : '#475569' }}>전체 영역 그리기</span>
-                  </button>
-                  {isDrawingMode && (
-                    <div style={{ marginTop: 4, padding: '12px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                        <button onClick={() => setIsEraser(false)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${!isEraser ? '#4f46e5' : '#cbd5e1'}`, background: !isEraser ? '#e0e7ff' : 'white', cursor: 'pointer', fontSize: 13, fontWeight: !isEraser ? 700 : 500, color: !isEraser ? '#4f46e5' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-pencil" /> 펜</button>
-                        <button onClick={() => setIsEraser(true)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: `1px solid ${isEraser ? '#4f46e5' : '#cbd5e1'}`, background: isEraser ? '#e0e7ff' : 'white', cursor: 'pointer', fontSize: 13, fontWeight: isEraser ? 700 : 500, color: isEraser ? '#4f46e5' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-eraser" /> 지우개</button>
-                      </div>
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}><span>펜/지우개 굵기</span> <strong>{penSize}px</strong></div>
-                        <input type="range" min="1" max="30" value={penSize} onChange={(e) => setPenSize(Number(e.target.value))} style={{ width: '100%', cursor: 'pointer', accentColor: '#4f46e5' }} />
-                      </div>
-                      <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { setStrokes([]); } }} style={{ width: '100%', padding: '8px 0', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><i className="fi fi-rr-trash" /> 캔버스 초기화</button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+                  <input title="굵기" type="number" min="1" max="50" value={penSize} onChange={(e) => setPenSize(Number(e.target.value))} style={{ width: 44, padding: '4px', textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', outline: 'none' }} />
+                  <div style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0', borderRadius: '50%', background: '#f8fafc' }}>
+                    <div style={{ width: Math.min(30, penSize), height: Math.min(30, penSize), borderRadius: '50%', background: isEraser ? '#eff6ff' : '#475569', border: isEraser ? '1px dashed #94a3b8' : 'none' }} />
+                  </div>
+                </div>
+
+                <div style={{ flex: 1 }} />
+
+                <button title="초기화" onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { setStrokes([]); } }} style={{ padding: '6px 12px', borderRadius: 100, border: 'none', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontSize: 15, display: 'flex', alignItems: 'center', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#fecaca'} onMouseLeave={e => e.currentTarget.style.background = '#fef2f2'}><i className="fi fi-rr-trash" /></button>
+              </>
+            )}
           </div>
         )}
 
@@ -157,12 +132,16 @@ export function SendocDesignerCanvas({
           <div style={{ position: 'relative', width: 800 * zoom, height: 1131 * Math.max(1, pageImages.length) * zoom }}>
             <div id={isSigner && activeDoc?.is_signed ? "sendoc-print-area" : ""} ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: 800, height: 1131 * Math.max(1, pageImages.length), transform: `scale(${zoom})`, transformOrigin: 'top left', background: 'white', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
               {pageImages.length > 0 ? (
-                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
                   {pageImages.map((pg, i) => (
-                    <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                    <div key={i} style={{ width: '100%', height: `${100 / pageImages.length}%`, position: 'relative', background: 'white' }}>
+                       <img src={pg.startsWith('blob:') || pg.startsWith('http') || pg.startsWith('/') ? pg : `data:image/webp;base64,${pg}`} style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                    </div>
                   ))}
                   {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
-                    <div key={'div' + i} style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
+                    <div key={'div' + i} style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: -40, width: 'calc(100% + 80px)', height: 32, marginTop: -16, background: '#e2e8f0', borderTop: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', zIndex: 2, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
+                      <span style={{background: '#cbd5e1', padding: '2px 10px', borderRadius: 12, fontSize: 11, color: '#475569', fontWeight: 700, letterSpacing: 1}}>PAGE {i + 2}</span>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -179,11 +158,11 @@ export function SendocDesignerCanvas({
               <canvas
                 ref={fullCanvasRef}
                 width={1600} height={2262 * Math.max(1, pageImages.length)}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 20, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default', touchAction: 'none' }}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 40, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default', touchAction: 'none' }}
                 onPointerDown={startFullDrawing} onPointerMove={drawFull} onPointerUp={stopFullDrawing} onPointerOut={stopFullDrawing} onPointerCancel={stopFullDrawing}
               />
 
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: isDrawingMode ? 'none' : 'auto' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 30, pointerEvents: isDrawingMode ? 'none' : 'auto' }}>
                 {fields.map(f => (
                   <div key={f.id} onMouseDown={(e) => handleFieldDrag(f.id, e)} style={{
                     position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: f.width, height: f.height,

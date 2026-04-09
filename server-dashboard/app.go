@@ -485,14 +485,19 @@ type DependencyStatus struct {
 	Postgres bool `json:"postgres"`
 	Redis    bool `json:"redis"`
 	Minio    bool `json:"minio"`
+	Go       bool `json:"go"`
 }
 
 // CheckDependencies dials ports to check if infrastructure is active
 func (a *App) CheckDependencies() DependencyStatus {
+	_, err := exec.LookPath("go")
+	hasGo := err == nil
+
 	return DependencyStatus{
 		Postgres: checkPort("5432"),
 		Redis:    checkPort("6379"),
 		Minio:    checkPort("9000"),
+		Go:       hasGo,
 	}
 }
 

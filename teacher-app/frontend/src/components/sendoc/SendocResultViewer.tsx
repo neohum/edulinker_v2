@@ -44,7 +44,7 @@ export function SendocResultViewer({ resultViewerData, setResultViewerData, page
                   {pageImages.length > 0 ? (
                     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                       {pageImages.map((pg, i) => (
-                        <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                        <img key={i} src={`data:image/png;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
                       ))}
                       {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
                         <div key={'div' + i} className="no-print" style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
@@ -88,7 +88,7 @@ export function SendocResultViewer({ resultViewerData, setResultViewerData, page
                 {pageImages.length > 0 ? (
                   <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     {pageImages.map((pg, i) => (
-                      <img key={i} src={`data:image/webp;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                      <img key={i} src={`data:image/png;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
                     ))}
                     {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
                       <div key={'div' + i} className="no-print" style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
@@ -98,7 +98,7 @@ export function SendocResultViewer({ resultViewerData, setResultViewerData, page
                   <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
                 )}
                 {resultViewerData.fields.map((f: any) => (
-                  <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
+                  <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 30 }}>
                     {f.type === 'text' ? (
                       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
                     ) : (

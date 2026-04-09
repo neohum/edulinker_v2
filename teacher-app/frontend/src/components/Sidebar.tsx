@@ -27,9 +27,9 @@ const coreItems: NavItem[] = [
 const pluginGroupA: NavItem[] = [
   { id: 'announcement', label: '공문전달', icon: 'fi fi-rr-document' },
   { id: 'todo', label: '투두리스트', icon: 'fi fi-rr-checkbox' },
-  { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
+  // { id: 'student-alert', label: '학생 알림', icon: 'fi fi-rr-bell' },
   { id: 'attendance', label: '출결', icon: 'fi fi-rr-alarm-clock' },
-  { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open', priceType: 'paid' },
+  // { id: 'gatong', label: '가정통신문', icon: 'fi fi-rr-envelope-open', priceType: 'paid' },
   { id: 'knowledge', label: '업무 규칙/정보', icon: 'fi fi-rr-book-bookmark' },
 ]
 
@@ -45,7 +45,7 @@ const pluginGroupC: NavItem[] = [
 const pluginGroupD: NavItem[] = [
   { id: 'studentmgmt', label: '학생관리', icon: 'fi fi-rr-graduation-cap' },
   { id: 'counseling', label: '상담/생활기록', icon: 'fi fi-rr-comments' },
-  { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users' },
+  // { id: 'classmgmt', label: '반편성 관리', icon: 'fi fi-rr-users' },
   { id: 'behavior-opinion', label: '행동특성 및 종합의견', icon: 'fi fi-rr-document-signed' },
 ]
 
@@ -67,9 +67,7 @@ const pluginGroupI: NavItem[] = [
   { id: 'resourcemgmt', label: '시설 예약', icon: 'fi fi-rr-building' },
 ]
 
-const systemItems: NavItem[] = [
-  { id: 'settings', label: '설정', icon: 'fi fi-rr-settings' },
-]
+const systemItems: NavItem[] = []
 
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -312,7 +310,6 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
                   {renderFilteredGroup('groupG', 'E · AI 문서 생성', pluginGroupG)}
                   {renderFilteredGroup('groupH', 'F · 학교행사·투표/설문', pluginGroupH)}
                   {renderFilteredGroup('groupI', 'G · 인프라·도구', pluginGroupI)}
-                  {renderFilteredGroup('system', '시스템', systemItems)}
                 </>
               );
             })()}
@@ -324,20 +321,25 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
       {/* User Footer */}
       <div className="sidebar-footer">
         <div className={`sidebar-user ${isCollapsed ? 'collapsed' : ''}`} onClick={() => isCollapsed ? setIsCollapsed(false) : onNavigate('profile')} title={isCollapsed ? "프로필 보기" : undefined}>
-          <div className="sidebar-user-avatar">
-            {user.name.charAt(0)}
+          <div className="sidebar-user-avatar" style={user.profileImage ? { backgroundImage: `url(${user.profileImage})`, backgroundSize: 'cover', backgroundPosition: 'center', color: 'transparent' } : {}}>
+            {!user.profileImage && user.name.charAt(0)}
           </div>
           {!isCollapsed && (
             <>
-              <div className="sidebar-user-info">
-                <div className="sidebar-user-name">{user.name}</div>
-                <div className="sidebar-user-role">
+              <div className="sidebar-user-info" style={{ flex: 1, minWidth: 0 }}>
+                <div className="sidebar-user-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
+                <div className="sidebar-user-role" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user.school} {user.department ? `· ${user.department}` : ''} · {roleLabel[user.role] || user.role}
                 </div>
               </div>
-              <button className="sidebar-logout-btn" onClick={(e) => { e.stopPropagation(); onLogout(); }} title="로그아웃" aria-label="로그아웃">
-                <i className="fi fi-rr-sign-out-alt" />
-              </button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button className="sidebar-logout-btn" onClick={(e) => { e.stopPropagation(); onNavigate('settings'); }} title="설정" aria-label="설정" style={{ padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="fi fi-rr-settings" />
+                </button>
+                <button className="sidebar-logout-btn" onClick={(e) => { e.stopPropagation(); onLogout(); }} title="로그아웃" aria-label="로그아웃" style={{ padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="fi fi-rr-sign-out-alt" />
+                </button>
+              </div>
             </>
           )}
         </div>

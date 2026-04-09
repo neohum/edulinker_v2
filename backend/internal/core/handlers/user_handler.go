@@ -48,9 +48,10 @@ type UpdateUserRequest struct {
 	Position    *string `json:"position,omitempty"`
 	Gender      *string `json:"gender,omitempty"`
 	Number      *int    `json:"number,omitempty"`
-	PIN         *string `json:"pin,omitempty"`
-	ParentPhone *string `json:"parent_phone,omitempty"`
+	PIN          *string `json:"pin,omitempty"`
+	ParentPhone  *string `json:"parent_phone,omitempty"`
 	ParentPhone2 *string `json:"parent_phone2,omitempty"`
+	ProfileImage *string `json:"profile_image,omitempty"`
 }
 
 type UserListResponse struct {
@@ -293,6 +294,9 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	}
 	if req.ParentPhone2 != nil {
 		user.ParentPhone2 = *req.ParentPhone2
+	}
+	if req.ProfileImage != nil {
+		user.ProfileImage = *req.ProfileImage
 	}
 
 	h.db.Save(&user)
@@ -731,6 +735,63 @@ func (h *UserHandler) ChangePIN(c *fiber.Ctx) error {
 	h.db.Save(&user)
 
 	return c.JSON(fiber.Map{"message": "PIN changed successfully"})
+}
+
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// ChangePassword allows a teacher or admin to change their password
+func (h *UserHandler) ChangePassword(c *fiber.Ctx) error {
+	userID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user ID"})
+	}
+
+	var req ChangePasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if len(req.NewPassword) < 8 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "새 비밀번호는 8자 이상이어야 합니다"})
+	}
+
+	currentUserID, _ := c.Locals("userID").(uuid.UUID)
+	currentRole, _ := c.Locals("role").(models.Role)
+	schoolID, _ := c.Locals("schoolID").(uuid.UUID)
+
+	var user models.User
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	if user.SchoolID != schoolID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "permission denied"})
+	}
+
+	if currentUserID != userID && currentRole != models.RoleAdmin {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "permission denied"})
+	}
+
+	if currentUserID == userID && req.OldPassword != "" {
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "기존 비밀번호가 틀렸습니다"})
+		}
+	} else if currentUserID == userID && req.OldPassword == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "기존 비밀번호를 입력해주세요"})
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
+	user.PasswordHash = string(passwordHash)
+	h.db.Save(&user)
+
+	return c.JSON(fiber.Map{"message": "비밀번호가 성공적으로 변경되었습니다"})
 }
 
 // DownloadStudentTemplate generates and returns a sample student import Excel template.

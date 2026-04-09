@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { getToken, apiFetch } from '../api'
 import type { UserInfo } from '../App'
@@ -7,6 +7,7 @@ import { useDocumentUpload } from '../hooks/useDocumentUpload'
 import { SendocDesignerCanvas } from '../components/sendoc/SendocDesignerCanvas'
 import { SendocRecipientModal } from '../components/sendoc/SendocRecipientModal'
 import { SendocResultViewer } from '../components/sendoc/SendocResultViewer'
+import { TeacherAssetRegisterModal } from '../components/sendoc/TeacherAssetRegisterModal'
 import type { DocField, Stroke, Sendoc, PendingDoc, RecipientStatus, Point } from '../types/sendoc'
 
 interface SendocPageProps {
@@ -22,6 +23,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const [sentPage, setSentPage] = useState(1)
   const [receivedPage, setReceivedPage] = useState(1)
   const [draftsPage, setDraftsPage] = useState(1)
+  const [localDrafts, setLocalDrafts] = useState<any[]>([])
   const ITEMS_PER_PAGE = 8
 
   // View Modes: list -> selector -> designer -> signer/viewer
@@ -43,6 +45,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Status/Recipient states
+  const [activeAssetModal, setActiveAssetModal] = useState<'signature' | 'stamp' | null>(null)
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [recipients, setRecipients] = useState<RecipientStatus[]>([])
   const [loadingStatus, setLoadingStatus] = useState(false)
@@ -55,6 +58,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   // Signature states
   const [activeSignField, setActiveSignField] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -114,13 +118,42 @@ export default function SendocPage({ user }: SendocPageProps) {
     }
   }
 
+  useEffect(() => {
+    if (viewMode === 'designer') {
+      setHasUnsavedChanges(true)
+    }
+  }, [fields, strokes, title, backgroundUrl, serverBgUrl])
+
   // Auto-Save / Draft Logic
   const handleSaveDraft = async (isAuto = false) => {
     if (!activeDoc || viewMode !== 'signer') return
     try {
       const wailsApp = (window as any).go?.main?.App
-      if (isTeacher && wailsApp?.SaveSendocDraft) {
-        await wailsApp.SaveSendocDraft(activeDoc.id, JSON.stringify(fields), JSON.stringify(strokes))
+      if (isTeacher && wailsApp?.SaveLocalSendocDraft) {
+        
+        let b64Arr: string[] = [];
+        const bgUrlForBlob = serverBgUrl || backgroundUrl || '';
+        if (bgUrlForBlob.startsWith('[')) {
+          try {
+            const arr = JSON.parse(bgUrlForBlob);
+            b64Arr = arr.map((s: string) => s.replace(/^data:image\/[^;]+;base64,/, ''));
+          } catch {}
+        } else if (bgUrlForBlob.startsWith('data:image')) {
+          b64Arr = [bgUrlForBlob.replace(/^data:image\/[^;]+;base64,/, '')];
+        }
+
+        const fileName = activeDoc?.original_file_name || '(제목 없음)';
+        const newId = await wailsApp.SaveLocalSendocDraft(
+            activeDoc.id || '',
+            activeDoc.title || title,
+            JSON.stringify(fields),
+            JSON.stringify(strokes),
+            JSON.stringify(selectedUsers),
+            fileName,
+            b64Arr
+        );
+        activeDoc.id = newId;
+
       } else {
         localStorage.setItem(`sendoc_draft_${activeDoc.id}`, JSON.stringify({ fields, strokes }))
       }
@@ -134,6 +167,64 @@ export default function SendocPage({ user }: SendocPageProps) {
       if (!isAuto) toast.success(`임시 저장이 완료되었습니다. (선 ${strokes.length}개)`)
     } catch {
       toast.error('임시 저장에 실패했습니다.')
+    }
+  }
+
+  const fetchLocalDrafts = useCallback(async () => {
+    if (!isTeacher) return;
+    const wailsApp = (window as any).go?.main?.App;
+    if (wailsApp?.GetLocalSendocDrafts) {
+       try {
+          const arr = await wailsApp.GetLocalSendocDrafts();
+          setLocalDrafts((arr || []).map((d: any) => ({ ...d, status: 'draft', id: d.id, title: d.title, created_at: d.updated_at })));
+       } catch {}
+    }
+  }, [isTeacher]);
+
+  const resumeDraft = async (d: any) => {
+    const wailsApp = (window as any).go?.main?.App;
+    if (!wailsApp?.GetLocalSendocDraft) return toast.error('로컬 기능을 지원하지 않습니다.');
+    
+    try {
+      const meta = await wailsApp.GetLocalSendocDraft(d.id);
+      setTitle(meta.title || '(제목 없음)');
+      setEditingDraftId(meta.id);
+      
+      try {
+        setFields(JSON.parse(meta.fields_json || '[]'));
+        setStrokes(JSON.parse(meta.strokes_json || '[]'));
+        setSelectedUsers(JSON.parse(meta.target_users_json || '[]'));
+      } catch {}
+
+      if (meta.page_images_base64 && meta.page_images_base64.length > 0) {
+        const base64s = meta.page_images_base64;
+        
+        const base64ToBlob = (base64Data: string, contentType: string = 'image/webp') => {
+          const sliceSize = 1024;
+          const byteCharacters = atob(base64Data);
+          const byteArrays = [];
+          for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) { byteNumbers[i] = slice.charCodeAt(i); }
+            byteArrays.push(new Uint8Array(byteNumbers));
+          }
+          return new Blob(byteArrays, { type: contentType });
+        };
+        const blobs = base64s.map((b: string) => URL.createObjectURL(base64ToBlob(b, 'image/webp')));
+        const serverJsonBg = base64s.map((b: string) => `data:image/webp;base64,${b}`);
+
+        setPageImages(blobs);
+        setBackgroundUrl(blobs[0]);
+        setServerBgUrl(JSON.stringify(serverJsonBg));
+      } else {
+        setPageImages([]);
+      }
+      
+      setActiveDoc(d);
+      setViewMode('designer');
+    } catch(e) {
+      toast.error('로컬 임시저장 문서를 불러올 수 없습니다.');
     }
   }
 
@@ -247,41 +338,6 @@ export default function SendocPage({ user }: SendocPageProps) {
   }, [strokes, viewMode, pageImages.length, strokeRedrawTrigger])
 
 
-  const resumeDraft = async (d: Sendoc) => {
-    try {
-      const res = await apiFetch(`/api/plugins/sendoc/${d.id}`)
-      if (!res.ok) throw new Error()
-      const doc = await res.json()
-
-      setEditingDraftId(doc.id)
-      setTitle(doc.title)
-      setFields(JSON.parse(doc.fields_json || '[]'))
-
-      if (doc.recipients) {
-        setSelectedUsers(doc.recipients.map((r: any) => r.user_id))
-      }
-
-      if (doc.background_url && doc.background_url.startsWith('[')) {
-        try {
-          const arr = JSON.parse(doc.background_url);
-          if (Array.isArray(arr) && arr.length > 0) {
-            setPageImages(arr.map((src: string) => src.replace(/^data:image\/[^;]+;base64,/, '')));
-          }
-        } catch { }
-        setServerBgUrl(doc.background_url);
-        setBackgroundUrl(null);
-      } else {
-        setPageImages([]);
-        setBackgroundUrl(doc.background_url);
-        setServerBgUrl(doc.background_url);
-      }
-      setStrokes([])
-      fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10)
-      setViewMode('designer')
-    } catch {
-      toast.error('임시저장 문서를 불러오지 못했습니다.')
-    }
-  }
 
   // Hydrate draft cache for teacher list view (sync badge check)
   useEffect(() => {
@@ -328,9 +384,12 @@ export default function SendocPage({ user }: SendocPageProps) {
       spawnX = (unscaledPixelX / containerRef.current.offsetWidth) * 100;
       spawnY = (unscaledPixelY / containerRef.current.offsetHeight) * 100;
 
-      const offset = (fields.length % 5) * 2;
-      spawnX = Math.max(0, Math.min(90, spawnX - offset));
-      spawnY = Math.max(0, Math.min(95, spawnY - offset));
+      const offsetPixels = (fields.length % 5) * 20;
+      const xOffsetPercent = (offsetPixels / containerRef.current.offsetWidth) * 100;
+      const yOffsetPercent = (offsetPixels / containerRef.current.offsetHeight) * 100;
+
+      spawnX = Math.max(0, Math.min(90, spawnX + xOffsetPercent));
+      spawnY = Math.max(0, Math.min(95, spawnY + yOffsetPercent));
     }
 
     const newField: DocField = {
@@ -707,44 +766,100 @@ export default function SendocPage({ user }: SendocPageProps) {
           } as any);
         }
 
+        const wailsApp = (window as any).go?.main?.App;
+
+        if (isDraft && isTeacher && wailsApp?.SaveLocalSendocDraft) {
+           let b64Arr: string[] = [];
+           const bgUrlForBlob = serverBgUrl || backgroundUrl || '';
+           if (bgUrlForBlob.startsWith('[')) {
+              try {
+                const arr = JSON.parse(bgUrlForBlob);
+                b64Arr = arr.map((s: string) => s.replace(/^data:image\/[^;]+;base64,/, ''));
+              } catch {}
+           } else if (bgUrlForBlob.startsWith('data:image')) {
+              b64Arr = [bgUrlForBlob.replace(/^data:image\/[^;]+;base64,/, '')];
+           }
+           
+           try {
+              const fileName = activeDoc?.original_file_name || '(제목 없음)';
+              const newId = await wailsApp.SaveLocalSendocDraft(editingDraftId || '', title, JSON.stringify(finalFields), JSON.stringify(strokes), JSON.stringify(selectedUsers), fileName, b64Arr);
+              setEditingDraftId(newId);
+              setStrokeRedrawTrigger(n => n + 1)
+              toast.success('로컬 보관함에 안전하게 임시저장되었습니다.');
+              setIsSending(false);
+              fetchLocalDrafts();
+              if (shouldExit) {
+                 setStrokes([]); setEditingDraftId(null); fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10); setViewMode('list');
+              }
+              return;
+           } catch(err: any) {
+              setIsSending(false);
+              return toast.error('로컬 임시저장 실패: ' + err.message);
+           }
+        }
+
+        let bgUrlForPayload = serverBgUrl || backgroundUrl || '';
+        
+        // Upload base64 strings to server as files to minimize JSON payload size
+        if (bgUrlForPayload.startsWith('[') && bgUrlForPayload.includes('data:image')) {
+          try {
+            const arr = JSON.parse(bgUrlForPayload);
+            if (Array.isArray(arr) && arr.length > 0 && arr[0].startsWith('data:image')) {
+              toast.info(`페이지 이미지 서버 업로드 중... (총 ${arr.length}장)`);
+              const uploadedUrls: string[] = [];
+              for (let i = 0; i < arr.length; i++) {
+                const res = await fetch(arr[i]);
+                const blob = await res.blob();
+                const formData = new FormData();
+                formData.append('file', blob, `sendoc_page_${i+1}.webp`);
+                formData.append('plugin_id', 'sendoc');
+                
+                const uploadRes = await fetch('/api/core/files/upload', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${getToken()}` },
+                  body: formData
+                });
+                if (!uploadRes.ok) throw new Error(`페이지 ${i+1} 업로드 실패`);
+                const record = await uploadRes.json();
+                uploadedUrls.push(`/api/core/files/${record.id}/download`);
+              }
+              bgUrlForPayload = JSON.stringify(uploadedUrls);
+              setServerBgUrl(bgUrlForPayload);
+            }
+          } catch (err: any) {
+            setIsSending(false);
+            return toast.error('이미지 업로드 오류: ' + (err.message || '알 수 없는 오류'));
+          }
+        }
+
         const payload = {
           title,
           content: 'Doc',
-          background_url: serverBgUrl || backgroundUrl || '',
+          background_url: bgUrlForPayload,
           fields_json: JSON.stringify(finalFields),
           requires_signature: finalFields.some(f => f.type === 'signature' && !f.id.includes('canvas_overlay')),
           target_user_ids: selectedUsers,
-          is_draft: isDraft
+          is_draft: isDraft // Normally always false now if using local drafts
         }
 
         let res;
-        if (editingDraftId) {
-          res = await apiFetch(`/api/plugins/sendoc/${editingDraftId}`, {
-            method: 'PUT',
-            body: JSON.stringify(payload)
-          })
-        } else {
-          res = await apiFetch('/api/plugins/sendoc', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-          })
-        }
+        res = await apiFetch('/api/plugins/sendoc', {
+           method: 'POST',
+           body: JSON.stringify(payload)
+        })
 
         if (res.ok) {
-          const resDoc = await res.json()
-          if (isDraft) {
-            setEditingDraftId(resDoc.id)
-            toast.success(`'${title}' 임시저장이 완료되었습니다!`)
-            if (viewMode === 'designer' && !shouldExit) fetchDocs()
-            if (shouldExit) {
-              setStrokes([]); setEditingDraftId(null); fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10); setViewMode('list');
-            }
-          } else {
-            toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
-            setEditingDraftId(null)
-            fetchDocs()
-            fetchPendingDocs()
+          if (!isDraft && wailsApp?.DeleteLocalSendocDraft && editingDraftId) {
+             wailsApp.DeleteLocalSendocDraft(editingDraftId).catch(() => {});
+             setEditingDraftId(null);
+             fetchLocalDrafts();
           }
+
+          const resDoc = await res.json()
+          toast.success(`'${title}' 문서 발송이 완료되었습니다!`)
+          setEditingDraftId(null)
+          fetchDocs()
+          fetchPendingDocs()
           window.dispatchEvent(new Event('sendoc_updated'))
         } else {
           const errorData = await res.json().catch(() => ({}))
@@ -820,6 +935,14 @@ export default function SendocPage({ user }: SendocPageProps) {
       message: '정말 이 문서를 삭제하시겠습니까?',
       onConfirm: async () => {
         try {
+          if (forTeacher && (window as any).go?.main?.App?.DeleteLocalSendocDraft && id.length > 10) {
+            // Usually local ID is UUID
+             await (window as any).go.main.App.DeleteLocalSendocDraft(id);
+             toast.success('로컬 보관함에서 삭제되었습니다.');
+             fetchLocalDrafts();
+             return;
+          }
+
           const endpoint = forTeacher ? `/api/plugins/sendoc/${id}` : `/api/plugins/sendoc/sign/${id}`
           const res = await apiFetch(endpoint, { method: 'DELETE' })
           if (res.ok) {
@@ -904,7 +1027,7 @@ export default function SendocPage({ user }: SendocPageProps) {
 
   if (viewMode === 'selector') {
     return (
-      <div style={{ padding: 40, maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ padding: 40, maxWidth: 800, margin: '0 auto', flex: 1, overflowY: 'auto', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
           <button onClick={() => setViewMode('list')} className="btn-secondary" style={{ padding: '8px 12px' }}><i className="fi fi-rr-arrow-left" /></button>
           <h3 style={{ fontSize: 22, fontWeight: 700 }}>새 문서 작성 - 파일 선택</h3>
@@ -966,11 +1089,11 @@ export default function SendocPage({ user }: SendocPageProps) {
   if (viewMode === 'designer' || viewMode === 'signer' || viewMode === 'viewer') {
     const isSigner = viewMode === 'signer'; const isViewer = viewMode === 'viewer'
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f1f5f9' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', background: '#f1f5f9' }}>
         <div style={{ padding: '12px 24px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <button onClick={() => {
-              if (!isSigner && !isViewer) {
+              if (!isSigner && !isViewer && hasUnsavedChanges) {
                 setShowBackConfirm(true);
               } else {
                 setStrokes([]); setEditingDraftId(null); fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10); setViewMode('list');
@@ -994,6 +1117,34 @@ export default function SendocPage({ user }: SendocPageProps) {
             {isSigner && <button onClick={handleSubmitSignature} className="btn-primary" style={{ padding: '8px 24px' }} disabled={activeDoc?.is_signed}>{activeDoc?.is_signed ? '제출 완료됨' : '작성 완료 및 제출'}</button>}
           </div>
         </div>
+
+        {isSigner && !activeDoc?.is_signed && (
+          <div style={{ padding: '8px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600, marginRight: 'auto' }}>입력 도구</span>
+            <button onClick={() => { setIsDrawingMode(false); addField('text'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: 13 }}>
+              <i className="fi fi-rr-text-input" style={{ color: '#3b82f6' }} /> 텍스트 입력
+            </button>
+            <button onClick={() => { setIsDrawingMode(false); addField('signature'); }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', fontSize: 13 }}>
+              <i className="fi fi-rr-edit" style={{ color: '#ef4444' }} /> 서명 추가
+            </button>
+            <div style={{ width: 1, height: 24, background: '#cbd5e1', margin: '0 4px' }} />
+            <button
+              onClick={() => setIsDrawingMode(!isDrawingMode)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8, border: `1px solid ${isDrawingMode ? '#4f46e5' : '#cbd5e1'}`, background: isDrawingMode ? '#e0e7ff' : 'white', outline: 'none', cursor: 'pointer', transition: 'all 0.2s', fontSize: 13, fontWeight: isDrawingMode ? 700 : 500, color: isDrawingMode ? '#4f46e5' : '#475569' }}
+            >
+              <i className="fi fi-rr-pencil" style={{ color: isDrawingMode ? '#4f46e5' : '#64748b' }} /> 그리기 입력
+            </button>
+            {isDrawingMode && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'white', padding: '4px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+                <button onClick={() => setIsEraser(false)} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: !isEraser ? '#e0e7ff' : 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: !isEraser ? 700 : 500, color: !isEraser ? '#4f46e5' : '#64748b' }}>펜</button>
+                <button onClick={() => setIsEraser(true)} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: isEraser ? '#e0e7ff' : 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: isEraser ? 700 : 500, color: isEraser ? '#4f46e5' : '#64748b' }}>지우개</button>
+                <div style={{ width: 1, height: 16, background: '#e2e8f0', margin: '0 4px' }} />
+                <input type="range" min="1" max="30" value={penSize} onChange={(e) => setPenSize(Number(e.target.value))} style={{ width: 60, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                <button onClick={() => { if (window.confirm('그린 내용을 모두 초기화 하시겠습니까?')) { setStrokes([]); } }} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#fef2f2', color: '#ef4444', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 4 }}>초기화</button>
+              </div>
+            )}
+          </div>
+        )}
 
         <SendocDesignerCanvas
           viewMode={viewMode} isTeacher={isTeacher} isSigner={isSigner} isViewer={isViewer} activeDoc={activeDoc} resultViewerData={resultViewerData}
@@ -1056,7 +1207,7 @@ export default function SendocPage({ user }: SendocPageProps) {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div><h3 style={{ fontSize: 22, fontWeight: 700 }}>전자문서 및 서명</h3><p style={{ color: '#64748b', fontSize: 14 }}>문서를 발송하고 수집하세요.</p></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -1064,6 +1215,8 @@ export default function SendocPage({ user }: SendocPageProps) {
             <i className="fi fi-rr-search" style={{ position: 'absolute', left: 14, top: 12, color: '#94a3b8', fontSize: 15 }} />
             <input type="text" placeholder="모든 문서 제목 통합 검색..." value={searchQuery} onChange={e => { setSearchQuery(e.target.value); setSentPage(1); setReceivedPage(1); setDraftsPage(1); }} style={{ width: '100%', padding: '10px 16px 10px 40px', borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 14, outline: 'none', background: '#f8fafc' }} />
           </div>
+          {isTeacher && <button onClick={() => setActiveAssetModal('signature')} className="btn-secondary" style={{ padding: '12px 24px' }}>서명 등록</button>}
+          {isTeacher && <button onClick={() => setActiveAssetModal('stamp')} className="btn-secondary" style={{ padding: '12px 24px' }}>도장 등록</button>}
           {isTeacher && <button onClick={() => { setViewMode('selector'); setSelectedFile(null); setFields([]); setBackgroundUrl(null); setServerBgUrl(null); setEditingDraftId(null); }} className="btn-primary" style={{ padding: '12px 24px' }}>새 문서 작성</button>}
         </div>
       </div>
@@ -1084,31 +1237,31 @@ export default function SendocPage({ user }: SendocPageProps) {
                     <i className="fi fi-rr-edit" style={{ color: '#d97706' }} /> 발송 전 문서
                   </h4>
                 </div>
-                {docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8', fontSize: 14, background: 'rgba(255,255,255,0.5)', borderRadius: 16, border: '1px dashed #e2e8f0' }}>임시저장된 문서가 없습니다.</div>
+                {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8', fontSize: 14, background: 'rgba(255,255,255,0.5)', borderRadius: 16, border: '1px dashed #e2e8f0' }}>로컬에 임시저장된 문서가 없습니다.</div>
                 ) : (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-                      {docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((draftsPage - 1) * ITEMS_PER_PAGE, draftsPage * ITEMS_PER_PAGE).map(d => (
-                        <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #fde68a', display: 'flex', flexDirection: 'column' }}>
+                      {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).slice((draftsPage - 1) * ITEMS_PER_PAGE, draftsPage * ITEMS_PER_PAGE).map(d => (
+                        <div key={d.id} style={{ padding: 20, background: 'white', borderRadius: 16, border: '1px solid #fce7f3', display: 'flex', flexDirection: 'column' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                            <span style={{ fontSize: 11, padding: '3px 10px', background: '#fef3c7', color: '#d97706', borderRadius: 20 }}>임시저장</span>
+                            <span style={{ fontSize: 11, padding: '3px 10px', background: '#fce7f3', color: '#db2777', borderRadius: 20 }}>내 PC 임시보관</span>
                             <span style={{ fontSize: 11, color: '#94a3b8' }}>{new Date(d.created_at).toLocaleDateString()}</span>
                           </div>
                           <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{d.title}</h4>
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => resumeDraft(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0, color: '#d97706', borderColor: '#fbbf24', background: '#fffbeb' }}>이어서 작성하기</button>
+                            <button onClick={() => resumeDraft(d)} className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: '8px 0', margin: 0, color: '#db2777', borderColor: '#f9a8d4', background: '#fdf2f8' }}>이어서 작성하기</button>
                             <button onClick={() => handleDeleteDoc(d.id, true)} className="btn-secondary" style={{ fontSize: 12, padding: '8px 12px', margin: 0, color: '#ef4444' }}>삭제</button>
                           </div>
                         </div>
                       ))}
                     </div>
                     {/* Drafts Pagination */}
-                    {docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).length > ITEMS_PER_PAGE && (
+                    {localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length > ITEMS_PER_PAGE && (
                       <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 8 }}>
                         <button onClick={() => setDraftsPage(p => Math.max(1, p - 1))} disabled={draftsPage === 1} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>이전</button>
-                        <span style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center' }}>{draftsPage} / {Math.ceil(docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE)}</span>
-                        <button onClick={() => setDraftsPage(p => Math.min(Math.ceil(docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE), p + 1))} disabled={draftsPage === Math.ceil(docs.filter(d => d.status === 'draft' && d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>다음</button>
+                        <span style={{ fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center' }}>{draftsPage} / {Math.ceil(localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE)}</span>
+                        <button onClick={() => setDraftsPage(p => Math.min(Math.ceil(localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE), p + 1))} disabled={draftsPage === Math.ceil(localDrafts.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length / ITEMS_PER_PAGE)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>다음</button>
                       </div>
                     )}
                   </>
@@ -1255,6 +1408,13 @@ export default function SendocPage({ user }: SendocPageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {activeAssetModal && (
+        <TeacherAssetRegisterModal
+          assetType={activeAssetModal}
+          onClose={() => setActiveAssetModal(null)}
+        />
       )}
     </div>
   )

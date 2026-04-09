@@ -63,6 +63,7 @@ type User struct {
 	TaskName     string    `json:"task_name,omitempty" gorm:"type:varchar(50)"`
 	Position     string    `json:"position,omitempty" gorm:"type:varchar(50)"`
 	ClassPhone   string    `json:"class_phone,omitempty" gorm:"type:varchar(20)"`
+	ProfileImage string    `json:"profile_image,omitempty" gorm:"type:text"`
 	PasswordHash string    `json:"-" gorm:"type:varchar(255)"`
 	PIN          string    `json:"-" gorm:"type:varchar(255)"`                           // For student login
 	ParentPhone  string    `json:"parent_phone,omitempty" gorm:"type:varchar(20);index"` // For parent auto-linking

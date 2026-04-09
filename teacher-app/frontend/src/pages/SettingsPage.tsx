@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { getToken } from '../api'
+import type { UserInfo } from '../App'
 
 interface OllamaStatus {
   installed: boolean
@@ -42,7 +43,12 @@ const RECOMMENDED_MODELS = [
   { name: 'gemma3:12b', desc: 'Google Gemma 3 (12B) — 더 정확한 분석, GPU 권장', size: '~8 GB' },
 ]
 
-export default function SettingsPage() {
+interface SettingsPageProps {
+  user?: UserInfo
+  onNavigate?: (page: string) => void
+}
+
+export default function SettingsPage({ user, onNavigate }: SettingsPageProps) {
   // Ollama states
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -320,6 +326,39 @@ export default function SettingsPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* === User Info & Password Change === */}
+      {user && (
+        <div>
+          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>
+            <i className="fi fi-rr-user" style={{ marginRight: 8 }} />사용자 정보 및 비밀번호 변경
+          </h3>
+          <div style={{ background: 'white', padding: 32, borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+              <div style={{ width: 80, height: 80, borderRadius: 40, background: 'linear-gradient(135deg, var(--accent-blue), #6366f1)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, flexShrink: 0, boxShadow: '0 4px 10px rgba(59, 130, 246, 0.3)' }}>
+                {user.name.charAt(0)}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{user.name} 선생님</div>
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+                  {user.school} {user.department && `· ${user.department}`}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button className="btn-secondary" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 140 }} onClick={() => onNavigate && onNavigate('profile')}>
+                  <i className="fi fi-rr-edit" /> 프로필 정보 변경
+                </button>
+                <button className="btn-secondary" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 140 }} onClick={() => onNavigate && onNavigate('profile')}>
+                  <i className="fi fi-rr-lock" /> 비밀번호 변경
+                </button>
+                <button className="btn-secondary" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 140 }} onClick={() => onNavigate && onNavigate('profile')}>
+                  <i className="fi fi-rr-picture" /> 프로필 사진 변경
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* === AI Performance Benchmark === */}
       <div>

@@ -104,6 +104,7 @@ export namespace main {
 	    postgres: boolean;
 	    redis: boolean;
 	    minio: boolean;
+	    go: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new DependencyStatus(source);
@@ -114,6 +115,7 @@ export namespace main {
 	        this.postgres = source["postgres"];
 	        this.redis = source["redis"];
 	        this.minio = source["minio"];
+	        this.go = source["go"];
 	    }
 	}
 	export class ServerStatus {

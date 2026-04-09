@@ -13,8 +13,18 @@ export const VectorSignatureCanvas = ({ strokesJSON, width, height }: VectorSign
     const canvas = canvasRef.current; if (!canvas) return;
     const ctx = canvas.getContext('2d'); if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.save()
+    ctx.scale(2, 2)
     try {
-      const strokes: Stroke[] = JSON.parse(strokesJSON)
+      let parsed = JSON.parse(strokesJSON)
+      let strokes: Stroke[] = []
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed[0])) {
+          strokes = parsed[0]
+        } else {
+          strokes = parsed
+        }
+      }
       strokes.forEach(stroke => {
         if (!stroke || !stroke.points || stroke.points.length === 0) return
 
@@ -45,6 +55,7 @@ export const VectorSignatureCanvas = ({ strokesJSON, width, height }: VectorSign
         }
       })
     } catch { }
+    ctx.restore()
   }, [strokesJSON, width, height])
 
   return <canvas ref={canvasRef} width={width * 2} height={height * 2} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />

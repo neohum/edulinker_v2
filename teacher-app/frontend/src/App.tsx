@@ -15,6 +15,7 @@ export interface UserInfo {
   classNum?: number
   taskName?: string
   classPhone?: string
+  profileImage?: string // Base64 or URL
   isOffline?: boolean
 }
 
@@ -63,11 +64,15 @@ function App() {
     setUser(null)
   }
 
+  const handleUpdateUser = (updates: Partial<UserInfo>) => {
+    setUser(prev => prev ? { ...prev, ...updates } : prev)
+  }
+
   if (!user) {
     return <><NetworkBanner /><Toaster richColors position="top-center" /><LoginPage onLogin={handleLogin} /></>
   }
 
-  return <><NetworkBanner /><Toaster richColors position="top-center" /><DashboardPage user={user} onLogout={handleLogout} /></>
+  return <><NetworkBanner /><Toaster richColors position="top-center" /><DashboardPage user={user} onLogout={handleLogout} onUpdateUser={handleUpdateUser} /></>
 }
 
 export default App

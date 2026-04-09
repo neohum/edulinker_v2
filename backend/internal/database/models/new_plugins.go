@@ -31,22 +31,25 @@ type ParentClassRequest struct {
 // --- Resource Management (특별실/자원 관리) ---
 
 type Facility struct {
-	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	SchoolID    uuid.UUID `gorm:"type:uuid;index" json:"school_id"`
-	Name        string    `gorm:"type:varchar(100);not null" json:"name"` // 컴퓨터실, 체육관 등
-	Location    string    `gorm:"type:varchar(255)" json:"location"`      // 본관 3층 등
-	Description string    `json:"description"`
-	IsActive    bool      `gorm:"default:true" json:"is_active"`
+	ID               uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	SchoolID         uuid.UUID `gorm:"type:uuid;index" json:"school_id"`
+	Name             string    `gorm:"type:varchar(100);not null" json:"name"` // 컴퓨터실, 체육관 등
+	Location         string    `gorm:"type:varchar(255)" json:"location"`      // 본관 3층 등
+	Description      string    `json:"description"`
+	BaseTimetable    string    `gorm:"type:jsonb" json:"base_timetable"`       // 주간 시간표 JSON string
+	IsActive         bool      `gorm:"default:true" json:"is_active"`
 }
 
 type FacilityReservation struct {
 	ID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	FacilityID uuid.UUID `gorm:"type:uuid;index" json:"facility_id"`
 	TeacherID  uuid.UUID `gorm:"type:uuid;index" json:"teacher_id"`
-	StartTime  time.Time `json:"start_time"`
-	EndTime    time.Time `json:"end_time"`
-	Purpose    string    `json:"purpose"` // 수업 내용 등
-	CreatedAt  time.Time `json:"created_at"`
+	Date       string    `gorm:"type:varchar(20)" json:"date"`    // e.g. "2026-04-08"
+	Period          int        `json:"period"`                          // 1, 2, 3..
+	Purpose         string     `json:"purpose"`                         // 수업 내용 등
+	Status          string     `gorm:"type:varchar(20);default:'confirmed'" json:"status"`
+	TargetTeacherID *uuid.UUID `gorm:"type:uuid;index;default:null" json:"target_teacher_id"` // 협조 요청을 받을 교사
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // --- School Administration (행정/인사) ---
