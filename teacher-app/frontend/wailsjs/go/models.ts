@@ -222,6 +222,22 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	    }
 	}
+	export class GetConvertedPageResult {
+	    success: boolean;
+	    base64: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GetConvertedPageResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.base64 = source["base64"];
+	        this.error = source["error"];
+	    }
+	}
 	export class HwpConvertResult {
 	    success: boolean;
 	    file_name: string;

@@ -14,6 +14,8 @@ export function CheckOfficeStatus():Promise<Record<string, boolean>>;
 
 export function CheckOllama():Promise<main.OllamaStatus>;
 
+export function ClearConvertedPages(arg1:string):Promise<void>;
+
 export function ConvertExcelToPdf(arg1:string,arg2:string):Promise<main.OfficeConvertResult>;
 
 export function ConvertHwp(arg1:string,arg2:string,arg3:string):Promise<main.HwpConvertResult>;
@@ -62,6 +64,8 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetAILogs():Promise<Array<main.AILog>>;
 
+export function GetConvertedPage(arg1:string,arg2:number):Promise<main.GetConvertedPageResult>;
+
 export function GetCounselingRecords(arg1:string):Promise<Array<main.CounselingRecord>>;
 
 export function GetCurriculumEvaluations():Promise<Array<main.EvalRecord>>;
@@ -108,7 +112,7 @@ export function IsLoggedIn():Promise<boolean>;
 
 export function LoadSendocDraft(arg1:string):Promise<main.SendocDraftResult>;
 
-export function LoadTeacherAsset(arg1:string):Promise<string>;
+export function LoadTeacherAsset(arg1:string,arg2:string):Promise<string>;
 
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
@@ -132,6 +136,8 @@ export function SaveAttendanceRecord(arg1:string,arg2:string,arg3:string):Promis
 
 export function SaveAttendanceRemarks(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function SaveConvertedPage(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function SaveCounselingRecord(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function SaveCurriculumEvaluation(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number,arg6:string):Promise<void>;
@@ -146,7 +152,7 @@ export function SaveOpinionRecord(arg1:string,arg2:string):Promise<void>;
 
 export function SaveSendocDraft(arg1:string,arg2:string,arg3:string):Promise<void>;
 
-export function SaveTeacherAsset(arg1:string,arg2:string):Promise<void>;
+export function SaveTeacherAsset(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SaveTodoItem(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 

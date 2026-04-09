@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type KnowledgeDocUser struct {
@@ -55,7 +56,12 @@ func getSafeExt(originalFilename string, fileUrl string) string {
 	return ext
 }
 
+var syncKnowledgeMutex sync.Mutex
+
 func (a *App) SyncKnowledge(docsJSON, apiBase string, token string) error {
+	syncKnowledgeMutex.Lock()
+	defer syncKnowledgeMutex.Unlock()
+
 	if a.secureDB == nil {
 		return fmt.Errorf("local db not init")
 	}

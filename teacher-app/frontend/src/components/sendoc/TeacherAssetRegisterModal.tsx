@@ -5,10 +5,11 @@ import { VectorSignatureCanvas } from './VectorSignatureCanvas'
 
 interface TeacherAssetRegisterModalProps {
   assetType: 'signature' | 'stamp'
+  userID: string
   onClose: () => void
 }
 
-export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRegisterModalProps) {
+export function TeacherAssetRegisterModal({ assetType, userID, onClose }: TeacherAssetRegisterModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDrawingRef = useRef(false)
   const currentStrokeRef = useRef<Stroke | null>(null)
@@ -29,9 +30,9 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     
     const drawStroke = (stroke: Stroke) => {
       if (!stroke || !stroke.points || stroke.points.length === 0) return
-      let effectivePen = stroke.size === 1 ? 1 : (stroke.size || 3) * 1.5
+      let effectivePen = stroke.size === 1 ? 0.5 : (stroke.size || 3) * 1.5
       let lw = effectivePen * 2
-      if (lw < 2) lw = 2
+      if (lw < 1) lw = 1
 
       ctx.lineWidth = lw
       ctx.lineCap = 'round'
@@ -66,7 +67,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
   useEffect(() => {
     const wailsApp = (window as any).go?.main?.App
     if (wailsApp?.LoadTeacherAsset) {
-      wailsApp.LoadTeacherAsset(assetType).then((data: string) => {
+      wailsApp.LoadTeacherAsset(assetType, userID).then((data: string) => {
         if (data && data.length > 0 && data !== '[]') {
           if (data.startsWith('["data:image')) {
             try {
@@ -160,7 +161,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    currentStrokeRef.current = { points: [{ x, y }], size: 3, isEraser: false }
+    currentStrokeRef.current = { points: [{ x, y }], size: 1, isEraser: false }
     isDrawingRef.current = true
     renderCanvas(canvasRef.current, canvasRef.current.getContext('2d')!, strokesRef.current, currentStrokeRef.current)
   }
@@ -218,7 +219,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     }
     
     try {
-      await wailsApp.SaveTeacherAsset(assetType, payload)
+      await wailsApp.SaveTeacherAsset(assetType, userID, payload)
       toast.success(`${assetType === 'signature' ? '서명' : '도장'}이 등록되었습니다.`)
       if (assetType === 'stamp') {
         setExistingStamps([...existingStamps, generateStamp(stampName.trim(), selectedFormat)].slice(-2))
@@ -241,7 +242,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     const payload = updated.length > 0 ? JSON.stringify(updated) : ''
 
     try {
-      await wailsApp.SaveTeacherAsset('stamp', payload)
+      await wailsApp.SaveTeacherAsset('stamp', userID, payload)
       toast.success('도장이 삭제되었습니다.')
       setExistingStamps(updated)
     } catch (e: any) {
@@ -258,7 +259,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     const payload = JSON.stringify(updated)
 
     try {
-      await wailsApp.SaveTeacherAsset('stamp', payload)
+      await wailsApp.SaveTeacherAsset('stamp', userID, payload)
       toast.success('대표 도장으로 설정되었습니다.')
       setExistingStamps(updated)
     } catch (e: any) {
@@ -275,7 +276,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     const payload = updated.length > 0 ? JSON.stringify(updated) : ''
     
     try {
-      await wailsApp.SaveTeacherAsset('signature', payload)
+      await wailsApp.SaveTeacherAsset('signature', userID, payload)
       toast.success('서명이 삭제되었습니다.')
       setExistingSignatures(updated)
     } catch (e: any) {
@@ -291,7 +292,7 @@ export function TeacherAssetRegisterModal({ assetType, onClose }: TeacherAssetRe
     const payload = JSON.stringify(updated)
 
     try {
-      await wailsApp.SaveTeacherAsset('signature', payload)
+      await wailsApp.SaveTeacherAsset('signature', userID, payload)
       toast.success('대표 서명으로 설정되었습니다.')
       setExistingSignatures(updated)
     } catch (e: any) {

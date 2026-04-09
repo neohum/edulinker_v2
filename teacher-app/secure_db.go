@@ -33,7 +33,7 @@ func (a *App) initSecureDB() error {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", dbPath+"?_journal=WAL&_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath+"?_journal=WAL&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
 	}
@@ -313,9 +313,13 @@ func (a *App) HasSendocDraft(docId string) bool {
 // --- Teacher Assets Storage ---
 
 // SaveTeacherAsset saves a signature or stamp vector in SQLite.
-func (a *App) SaveTeacherAsset(assetType, vectorJSON string) error {
+func (a *App) SaveTeacherAsset(assetType, userID, vectorJSON string) error {
 	if a.secureDB == nil {
 		return fmt.Errorf("로컬 DB가 초기화되지 않았습니다")
+	}
+	id := assetType
+	if userID != "" {
+		id = assetType + "_" + userID
 	}
 	_, err := a.secureDB.Exec(`
 		INSERT INTO local_teacher_assets (id, asset_type, vector_json, updated_at)
@@ -323,17 +327,21 @@ func (a *App) SaveTeacherAsset(assetType, vectorJSON string) error {
 		ON CONFLICT(id) DO UPDATE SET
 			vector_json = excluded.vector_json,
 			updated_at = CURRENT_TIMESTAMP
-	`, assetType, assetType, vectorJSON)
+	`, id, assetType, vectorJSON)
 	return err
 }
 
 // LoadTeacherAsset loads a signature or stamp from SQLite.
-func (a *App) LoadTeacherAsset(assetType string) string {
+func (a *App) LoadTeacherAsset(assetType, userID string) string {
 	if a.secureDB == nil {
 		return ""
 	}
+	id := assetType
+	if userID != "" {
+		id = assetType + "_" + userID
+	}
 	var vectorJSON string
-	err := a.secureDB.QueryRow("SELECT vector_json FROM local_teacher_assets WHERE id = ?", assetType).Scan(&vectorJSON)
+	err := a.secureDB.QueryRow("SELECT vector_json FROM local_teacher_assets WHERE id = ?", id).Scan(&vectorJSON)
 	if err != nil {
 		return ""
 	}

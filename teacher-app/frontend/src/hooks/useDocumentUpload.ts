@@ -149,40 +149,41 @@ export function useDocumentUpload({
       };
 
       const splitTallImageAndCreateBlobs = async (base64Array: string[]): Promise<{ blobs: string[], base64s: string[] }> => {
-        const finalBlobs: string[] = [];
-        const finalBase64s: string[] = [];
+        const finalBlobs: string[] = [];   // Will store data: URIs (stable, no blob lifecycle issues)
+        const finalBase64s: string[] = []; // Will store raw base64 strings for server upload
 
-        // Tries to load base64 as an image, guessing PNG or WebP.
-        // Returns a loaded HTMLImageElement or null on failure.
+        console.log('[Sendoc] splitTallImageAndCreateBlobs: input count =', base64Array.length, ', first 100 chars =', base64Array[0]?.substring(0, 100));
+
         const loadImage = (b64: string): Promise<HTMLImageElement | null> => {
-          const mimes = b64.startsWith('data:') ? [b64] : [
+          const srcs = b64.startsWith('data:') ? [b64] : [
             `data:image/png;base64,${b64}`,
             `data:image/webp;base64,${b64}`,
           ];
-
           const tryLoad = (src: string): Promise<HTMLImageElement | null> =>
             new Promise(resolve => {
               const img = new Image();
-              img.onload = () => resolve(img.width > 0 ? img : null);
+              img.onload = () => { console.log('[Sendoc] Loaded OK', img.width, 'x', img.height); resolve(img.width > 0 ? img : null); };
               img.onerror = () => resolve(null);
               img.src = src;
             });
-
-          return mimes.reduce<Promise<HTMLImageElement | null>>(
-            (prev, src) => prev.then(result => result ? result : tryLoad(src)),
+          return srcs.reduce<Promise<HTMLImageElement | null>>(
+            (prev, src) => prev.then(r => r ? r : tryLoad(src)),
             Promise.resolve(null)
           );
         };
 
         for (const b64 of base64Array) {
           const img = await loadImage(b64);
-          if (!img || !img.width || !img.height) {
-            console.warn('[splitTallImageAndCreateBlobs] Could not decode image, skipping.');
+          if (!img || !img.width) {
+            // Fallback: use data URI directly without canvas re-encode
+            const dataUri = b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`;
+            finalBase64s.push(b64);
+            finalBlobs.push(dataUri);
             continue;
           }
 
-          // Standard A4 aspect is ~1.414. Merged tall images have higher aspect ratio.
           const aspect = img.height / img.width;
+          console.log('[Sendoc] aspect:', aspect.toFixed(2));
           if (aspect > 1.9) {
             const numPages = Math.round(aspect / 1.414);
             const pageHeight = img.height / numPages;
@@ -195,10 +196,9 @@ export function useDocumentUpload({
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, i * pageHeight, img.width, pageHeight, 0, 0, canvas.width, pageHeight);
-                const webpData = canvas.toDataURL('image/webp', 0.85);
-                const rawB64 = webpData.split(',')[1];
-                finalBase64s.push(rawB64);
-                finalBlobs.push(URL.createObjectURL(base64ToBlob(rawB64, 'image/webp')));
+                const dataUri = canvas.toDataURL('image/webp', 0.85);
+                finalBase64s.push(dataUri.split(',')[1]);
+                finalBlobs.push(dataUri); // data: URI directly
               }
             }
           } else {
@@ -211,12 +211,12 @@ export function useDocumentUpload({
               ctx.fillRect(0, 0, canvas.width, canvas.height);
               ctx.drawImage(img, 0, 0);
             }
-            const webpData = canvas.toDataURL('image/webp', 0.85);
-            const rawB64 = webpData.split(',')[1];
-            finalBase64s.push(rawB64);
-            finalBlobs.push(URL.createObjectURL(base64ToBlob(rawB64, 'image/webp')));
+            const dataUri = canvas.toDataURL('image/webp', 0.85);
+            finalBase64s.push(dataUri.split(',')[1]);
+            finalBlobs.push(dataUri); // data: URI directly
           }
         }
+        console.log('[Sendoc] RESULT: data URIs =', finalBlobs.length);
         return { blobs: finalBlobs, base64s: finalBase64s };
       };
 
@@ -285,28 +285,58 @@ export function useDocumentUpload({
         }
       }
 
+      console.log('[Sendoc] pagesData length before split:', pagesData.length);
       setConvertProgress(`문서 페이지 분할 및 최적화 중...`);
       const processed = await splitTallImageAndCreateBlobs(pagesData);
-      pagesData = processed.base64s;
-      pageImagesBlobs = processed.blobs;
+      const pageDataUris = processed.blobs;   // data: URIs for each page
+      const pageBase64s = processed.base64s;  // raw base64 for server upload
 
-      if (pagesData.length > 0) {
-        serverBg = JSON.stringify(pagesData.map(pg => 'data:image/webp;base64,' + pg))
-        bgBlobUrl = pageImagesBlobs[0];
+      console.log('[Sendoc] After split: pages =', pageDataUris.length);
+
+      if (pageDataUris.length === 0) {
+        toast.error('페이지 이미지를 추출하지 못했습니다.')
+        return
       }
 
-      if (pageImagesBlobs.length > 0) {
-        setPageImages(pageImagesBlobs)
-        setCurrentPageIdx(0)
-      } else {
-        setPageImages([])
-      }
-      setBackgroundUrl(bgBlobUrl)
+      // Build serverBg JSON (data: URIs, used at send time)
+      serverBg = JSON.stringify(pageBase64s.map(pg =>
+        pg.startsWith('data:') ? pg : `data:image/webp;base64,${pg}`
+      ))
       setServerBgUrl(serverBg)
+
+      // Save each page to SQLite so the canvas can lazy-load only visible pages
+      const sessionId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const canUseSqlite = !!(wailsApp?.SaveConvertedPage && wailsApp?.GetConvertedPage)
+
+      if (canUseSqlite) {
+        setConvertProgress(`SQLite에 페이지 저장 중... (0/${pageDataUris.length})`)
+        // Clear any previous session first
+        if (wailsApp.ClearConvertedPages) {
+          try { await wailsApp.ClearConvertedPages('prev') } catch {}
+        }
+        for (let i = 0; i < pageDataUris.length; i++) {
+          setConvertProgress(`SQLite에 페이지 저장 중... (${i + 1}/${pageDataUris.length})`)
+          const rawB64 = pageBase64s[i].startsWith('data:')
+            ? pageBase64s[i].split(',')[1]
+            : pageBase64s[i]
+          await wailsApp.SaveConvertedPage(sessionId, i, rawB64)
+        }
+        // Put placeholder strings so canvas fetches on demand
+        setPageImages(pageDataUris.map((_, i) => `sqlite:${sessionId}:${i}`))
+        setCurrentPageIdx(0)
+        setBackgroundUrl(`sqlite:${sessionId}:0`)
+      } else {
+        // Fallback: store data URIs directly (no SQLite available)
+        setPageImages(pageDataUris)
+        setCurrentPageIdx(0)
+        setBackgroundUrl(pageDataUris[0])
+      }
+
       setStrokes([])
       fullCanvasRef.current?.getContext('2d')?.clearRect(0, 0, 1600, 2262 * 10)
       setViewMode('designer')
-      toast.success(`문서가 준비되었습니다.${pagesData.length > 1 ? ` (${pagesData.length}페이지)` : ''}`)
+      toast.success(`문서 준비 완료 (${pageDataUris.length}페이지)`)
+
     } catch (err: any) {
       toast.error(err.message || '처리 오류')
     } finally {

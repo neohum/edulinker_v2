@@ -336,8 +336,23 @@ func (p *Plugin) listDocuments(c *fiber.Ctx) error {
 	}
 
 	var docs []models.Sendoc
-	if err := p.db.Omit("BackgroundURL", "FieldsJSON", "Content").Preload("Author").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
+	if err := p.db.Omit("BackgroundURL", "Content").Preload("Author").Preload("Recipients").Where("school_id = ? AND author_id = ?", schoolID, userID).Order("created_at desc").Find(&docs).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch documents"})
+	}
+
+	for i := range docs {
+		if docs[i].Status == "sent" && len(docs[i].Recipients) > 0 {
+			allSigned := true
+			for _, r := range docs[i].Recipients {
+				if !r.IsSigned {
+					allSigned = false
+					break
+				}
+			}
+			if allSigned {
+				docs[i].Status = "completed"
+			}
+		}
 	}
 
 	return c.JSON(docs)
@@ -351,8 +366,21 @@ func (p *Plugin) getDocument(c *fiber.Ctx) error {
 	}
 
 	var doc models.Sendoc
-	if err := p.db.Preload("Author").Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
+	if err := p.db.Preload("Author").Preload("Recipients").Where("id = ? AND school_id = ?", docID, schoolID).First(&doc).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "document not found"})
+	}
+
+	if doc.Status == "sent" && len(doc.Recipients) > 0 {
+		allSigned := true
+		for _, r := range doc.Recipients {
+			if !r.IsSigned {
+				allSigned = false
+				break
+			}
+		}
+		if allSigned {
+			doc.Status = "completed"
+		}
 	}
 
 	return c.JSON(doc)

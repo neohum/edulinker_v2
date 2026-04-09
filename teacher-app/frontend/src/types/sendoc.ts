@@ -27,6 +27,7 @@ export interface DocField {
   value?: string
   signatureData?: string
   fontSize?: number
+  isAsset?: boolean
 }
 
 export interface RecipientStatus {

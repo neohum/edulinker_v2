@@ -2,6 +2,96 @@ import React from 'react'
 import type { DocField, RecipientStatus, Sendoc, PendingDoc, Stroke } from '../../types/sendoc'
 import { VectorSignatureCanvas } from './VectorSignatureCanvas'
 
+// Minimal page image — direct src, no blob conversion, with diagnostics
+const LazyPageImage = React.memo(({ src }: { src: string }) => {
+  const [imgSrc, setImgSrc] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!src) { console.warn('[LazyPage] empty src'); return }
+    console.log('[LazyPage] mount, src prefix:', src.substring(0, 40), 'len:', src.length)
+
+    if (src.startsWith('sqlite:')) {
+      const lastColon = src.lastIndexOf(':')
+      const sessionId = src.substring(7, lastColon)
+      const pageIdx = parseInt(src.substring(lastColon + 1), 10)
+      const wailsApp = (window as any).go?.main?.App
+      if (!wailsApp?.GetConvertedPage) { console.warn('[LazyPage] no GetConvertedPage'); return }
+      wailsApp.GetConvertedPage(sessionId, pageIdx)
+        .then((r: any) => {
+          const b64 = r?.Base64 || r?.base64
+          if ((r?.Success ?? r?.success) && b64) {
+            console.log('[LazyPage] sqlite OK page', pageIdx, 'b64 len:', b64.length)
+            setImgSrc(`data:image/webp;base64,${b64}`)
+          } else { console.warn('[LazyPage] sqlite FAIL page', pageIdx) }
+        })
+        .catch((e: any) => console.error('[LazyPage] sqlite err', e))
+      return
+    }
+
+    // Non-sqlite: data URI, blob URL, http, or raw base64
+    const resolved = src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('http') || src.startsWith('/')
+      ? src : `data:image/webp;base64,${src}`
+    console.log('[LazyPage] resolved prefix:', resolved.substring(0, 50))
+    setImgSrc(resolved)
+  }, [src])
+
+  if (!imgSrc) return <div style={{ width: '100%', height: '100%', background: '#f1f5f9' }} />
+
+  return (
+    <img
+      src={imgSrc}
+      style={{ display: 'block', width: '100%', height: '100%', pointerEvents: 'none' }}
+      alt=""
+      onLoad={() => console.log('[LazyPage] img LOADED ok')}
+      onError={() => console.error('[LazyPage] img ERROR, src prefix:', imgSrc.substring(0, 60))}
+    />
+  )
+})
+
+const LiveStrokeOverlay = React.memo(({ pageImagesLength }: { pageImagesLength: number }) => {
+  const [activeStroke, setActiveStroke] = React.useState<Stroke | null>(null)
+
+  React.useEffect(() => {
+    const handleStroke = (e: any) => setActiveStroke(e.detail ? { ...e.detail } : null)
+    const handleStop = () => setActiveStroke(null)
+    
+    window.addEventListener('live-stroke', handleStroke)
+    window.addEventListener('stop-live-stroke', handleStop)
+    return () => {
+      window.removeEventListener('live-stroke', handleStroke)
+      window.removeEventListener('stop-live-stroke', handleStop)
+    }
+  }, [])
+
+  if (!activeStroke || activeStroke.points.length < 2) return null
+
+  let effectivePen = activeStroke.size === 1 ? 1 : activeStroke.size * 1.5
+  let lw = effectivePen * 2
+  if (lw < 2) lw = 2
+  
+  const d = activeStroke.points.reduce((acc, p, i) => {
+    if (i === 0) return `M${p.x},${p.y}`
+    if (i === 1) return acc + `L${p.x},${p.y}`
+    const prev = activeStroke.points[i - 1]
+    const cx = (prev.x + p.x) / 2
+    const cy = (prev.y + p.y) / 2
+    return acc + `Q${prev.x},${prev.y},${cx},${cy}`
+  }, '')
+
+  const color = activeStroke.isEraser ? '#ffffff' : '#000000'
+
+  return (
+    <svg
+      viewBox={`0 0 1600 ${2262 * Math.max(1, pageImagesLength)}`}
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 40, pointerEvents: 'none' }}
+      preserveAspectRatio="none"
+    >
+      <path d={d} fill="none" stroke={color} strokeWidth={lw} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+})
+
+
 interface SendocDesignerCanvasProps {
   viewMode: string
   isTeacher: boolean
@@ -132,10 +222,10 @@ export function SendocDesignerCanvas({
           <div style={{ position: 'relative', width: 800 * zoom, height: 1131 * Math.max(1, pageImages.length) * zoom }}>
             <div id={isSigner && activeDoc?.is_signed ? "sendoc-print-area" : ""} ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: 800, height: 1131 * Math.max(1, pageImages.length), transform: `scale(${zoom})`, transformOrigin: 'top left', background: 'white', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
               {pageImages.length > 0 ? (
-                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
+                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'white' }}>
                   {pageImages.map((pg, i) => (
-                    <div key={i} style={{ width: '100%', height: `${100 / pageImages.length}%`, position: 'relative', background: 'white' }}>
-                       <img src={pg.startsWith('blob:') || pg.startsWith('http') || pg.startsWith('/') ? pg : `data:image/webp;base64,${pg}`} style={{ width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                    <div key={i} style={{ width: '100%', height: `${100 / pageImages.length}%`, position: 'relative', flexShrink: 0 }}>
+                      <LazyPageImage src={pg} />
                     </div>
                   ))}
                   {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
@@ -155,12 +245,46 @@ export function SendocDesignerCanvas({
                 )
               )}
 
+              {/* Hidden tiny canvas - keeps fullCanvasRef alive for drawing coordinate capture.
+                  The original 1600×83694 canvas used ~535MB GPU memory, exceeding Chromium's limit
+                  and causing ALL image textures to be evicted (the root cause of white pages). */}
               <canvas
                 ref={fullCanvasRef}
-                width={1600} height={2262 * Math.max(1, pageImages.length)}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 40, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default', touchAction: 'none' }}
+                width={1} height={1}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 40, pointerEvents: isDrawingMode ? 'auto' : 'none', cursor: isDrawingMode ? 'crosshair' : 'default', touchAction: 'none', opacity: 0 }}
                 onPointerDown={startFullDrawing} onPointerMove={drawFull} onPointerUp={stopFullDrawing} onPointerOut={stopFullDrawing} onPointerCancel={stopFullDrawing}
               />
+
+              {/* SVG stroke overlay - zero GPU memory, renders all strokes as vector paths */}
+              {strokes.length > 0 && (
+                <svg
+                  viewBox={`0 0 1600 ${2262 * Math.max(1, pageImages.length)}`}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 39, pointerEvents: 'none' }}
+                  preserveAspectRatio="none"
+                >
+                  {strokes.map((stroke, si) => {
+                    if (stroke.points.length < 2) return null
+                    let effectivePen = stroke.size === 1 ? 1 : stroke.size * 1.5
+                    let lw = effectivePen * 2
+                    if (lw < 2) lw = 2
+                    const d = stroke.points.reduce((acc, p, i) => {
+                      if (i === 0) return `M${p.x},${p.y}`
+                      if (i === 1) return acc + `L${p.x},${p.y}`
+                      const prev = stroke.points[i - 1]
+                      const cx = (prev.x + p.x) / 2
+                      const cy = (prev.y + p.y) / 2
+                      return acc + `Q${prev.x},${prev.y},${cx},${cy}`
+                    }, '')
+                    // For erasings in SVG over images, we can't easily mask the base image, but we can draw white lines
+                    // Since the background of pages is white, drawing white lines effectively "erases" the pen strokes and the white background.
+                    const color = stroke.isEraser ? '#ffffff' : '#000000'
+                    return <path key={si} d={d} fill="none" stroke={color} strokeWidth={lw} strokeLinecap="round" strokeLinejoin="round" />
+                  })}
+                </svg>
+              )}
+
+              {/* Real-time Live Stroke Overlay */}
+              <LiveStrokeOverlay pageImagesLength={pageImages.length} />
 
               <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 30, pointerEvents: isDrawingMode ? 'none' : 'auto' }}>
                 {fields.map(f => (
@@ -192,7 +316,7 @@ export function SendocDesignerCanvas({
                         )}
                       </div>
                     ) : (
-                      <div onClick={() => { if (!isViewer && !activeDoc?.is_signed && !f.id.includes('canvas_overlay')) setActiveSignField(f.id); }} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer && !f.id.includes('canvas_overlay') ? 'pointer' : 'default' }}>
+                      <div onClick={() => { const isLockedAsset = f.isAsset || f.label === '내 사인' || f.label === '내 도장'; if (!isViewer && !activeDoc?.is_signed && !f.id.includes('canvas_overlay') && !isLockedAsset) setActiveSignField(f.id); }} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !isViewer && !f.id.includes('canvas_overlay') && !(f.isAsset || f.label === '내 사인' || f.label === '내 도장') ? 'pointer' : 'default' }}>
                         {f.signatureData && f.signatureData.startsWith('[') ? (
                           <VectorSignatureCanvas strokesJSON={f.signatureData} width={typeof f.width === 'number' ? f.width : 800} height={typeof f.height === 'number' ? f.height : 1131} />
                         ) : f.signatureData ? (

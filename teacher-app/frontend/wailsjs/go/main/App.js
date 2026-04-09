@@ -26,6 +26,10 @@ export function CheckOllama() {
   return window['go']['main']['App']['CheckOllama']();
 }
 
+export function ClearConvertedPages(arg1) {
+  return window['go']['main']['App']['ClearConvertedPages'](arg1);
+}
+
 export function ConvertExcelToPdf(arg1, arg2) {
   return window['go']['main']['App']['ConvertExcelToPdf'](arg1, arg2);
 }
@@ -122,6 +126,10 @@ export function GetAILogs() {
   return window['go']['main']['App']['GetAILogs']();
 }
 
+export function GetConvertedPage(arg1, arg2) {
+  return window['go']['main']['App']['GetConvertedPage'](arg1, arg2);
+}
+
 export function GetCounselingRecords(arg1) {
   return window['go']['main']['App']['GetCounselingRecords'](arg1);
 }
@@ -214,8 +222,8 @@ export function LoadSendocDraft(arg1) {
   return window['go']['main']['App']['LoadSendocDraft'](arg1);
 }
 
-export function LoadTeacherAsset(arg1) {
-  return window['go']['main']['App']['LoadTeacherAsset'](arg1);
+export function LoadTeacherAsset(arg1, arg2) {
+  return window['go']['main']['App']['LoadTeacherAsset'](arg1, arg2);
 }
 
 export function Login(arg1, arg2) {
@@ -262,6 +270,10 @@ export function SaveAttendanceRemarks(arg1, arg2) {
   return window['go']['main']['App']['SaveAttendanceRemarks'](arg1, arg2);
 }
 
+export function SaveConvertedPage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveConvertedPage'](arg1, arg2, arg3);
+}
+
 export function SaveCounselingRecord(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveCounselingRecord'](arg1, arg2, arg3, arg4);
 }
@@ -290,8 +302,8 @@ export function SaveSendocDraft(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveSendocDraft'](arg1, arg2, arg3);
 }
 
-export function SaveTeacherAsset(arg1, arg2) {
-  return window['go']['main']['App']['SaveTeacherAsset'](arg1, arg2);
+export function SaveTeacherAsset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveTeacherAsset'](arg1, arg2, arg3);
 }
 
 export function SaveTodoItem(arg1, arg2, arg3, arg4) {

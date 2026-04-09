@@ -38,7 +38,53 @@ export function SendocResultViewer({ resultViewerData, setResultViewerData, page
             }
           `}</style>
           <div id="sendoc-viewer-container" style={{ display: 'flex', flexDirection: 'column', gap: 40, width: '100%', alignItems: 'center' }}>
-            {resultViewerData.bulkMode && resultViewerData.bulkRecipients ? (
+            {resultViewerData.bulkMode && resultViewerData.isMerged ? (
+              <div className="sendoc-print-page" style={{ position: 'relative', width: 800, height: 1131 * Math.max(1, pageImages.length), background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                  {pageImages.length > 0 ? (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      {pageImages.map((pg, i) => (
+                        <img key={i} src={`data:image/png;base64,${pg}`} style={{ width: '100%', height: `${100 / pageImages.length}%`, display: 'block', pointerEvents: 'none' }} alt={`문서 배경 ${i + 1}`} />
+                      ))}
+                      {pageImages.length > 1 && Array.from({ length: pageImages.length - 1 }).map((_, i) => (
+                        <div key={'div' + i} className="no-print" style={{ position: 'absolute', top: `${(i + 1) * (100 / pageImages.length)}%`, left: 0, width: '100%', height: 4, background: '#94a3b8', borderTop: '1px dashed #475569', borderBottom: '1px dashed #475569', zIndex: 15, pointerEvents: 'none' }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <img src={resultViewerData.bgUrl} style={{ width: '100%', display: 'block' }} alt="문서 배경" onError={(e) => { e.currentTarget.style.display = 'none'; toast.error('배경 이미지를 불러올 수 없습니다.'); }} />
+                  )}
+                  {resultViewerData.bulkRecipients.map((br: any, rIdx: number) => (
+                    <div key={'m' + rIdx} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 20 }}>
+                      {br.fields.map((f: any) => (
+                        <div key={f.id} style={{ position: 'absolute', left: `${f.x}%`, top: `${f.y}%`, width: `${f.width}px`, height: `${f.height}px`, zIndex: 10 }}>
+                          {f.id.includes('canvas_overlay') ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                              {f.signatureData && f.signatureData.startsWith('[') ? (
+                                <VectorSignatureCanvas strokesJSON={f.signatureData} width={typeof f.width === 'number' ? f.width : 800} height={typeof f.height === 'number' ? f.height : 1131} />
+                              ) : (
+                                f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                              )}
+                            </div>
+                          ) : f.type === 'text' ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: f.fontSize || 13, color: 'black' }}>{f.value || ''}</div>
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {f.signatureData && f.signatureData.startsWith('[') ? (
+                                <VectorSignatureCanvas strokesJSON={f.signatureData} width={f.width} height={f.height} />
+                              ) : (
+                                f.signatureData && <img src={f.signatureData} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="no-print" style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(59, 130, 246, 0.9)', color: 'white', padding: '4px 10px', borderRadius: 6, fontSize: 13, fontWeight: 700, zIndex: 30 }}>
+                    통합 결과 페이지 ({resultViewerData.bulkRecipients.length}명 병합됨)
+                    <style>{`@media print { .no-print { display: none !important; } }`}</style>
+                  </div>
+              </div>
+            ) : resultViewerData.bulkMode && resultViewerData.bulkRecipients ? (
               resultViewerData.bulkRecipients.map((br: any, idx: number) => (
                 <div key={idx} className="sendoc-print-page" style={{ position: 'relative', width: 800, height: 1131 * Math.max(1, pageImages.length), background: 'white', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
                   {pageImages.length > 0 ? (
