@@ -64,12 +64,12 @@ function Upload-Asset {
 
 # 1. Server Release
 Write-Host "Processing Server Release..."
-$serverRel = Create-Release "server-v1.0.4" "Server Dashboard v1.0.4" "Automatic background update enabled."
-Upload-Asset $serverRel.upload_url "installer/edulinker-server-dashboard-setup-v1.0.4.exe" "edulinker-server-dashboard-setup-v1.0.4.exe"
+$serverRel = Create-Release "server-v1.0.5" "Server Dashboard v1.0.5" "Background silent update enabled."
+Upload-Asset $serverRel.upload_url "installer/edulinker-server-dashboard-setup-v1.0.5.exe" "edulinker-server-dashboard-setup-v1.0.5.exe"
 
 # 2. Teacher Release
 Write-Host "Processing Teacher Release..."
-$teacherRel = Create-Release "teacher-v1.0.4" "Teacher App v1.0.4" "Server version sync notification enabled."
-Upload-Asset $teacherRel.upload_url "installer/edulinker-teacher-setup-v1.0.4.exe" "edulinker-teacher-setup-v1.0.4.exe"
+$teacherRel = Create-Release "teacher-v1.0.5" "Teacher App v1.0.5" "Storage path changed to install folder."
+Upload-Asset $teacherRel.upload_url "installer/edulinker-teacher-setup-v1.0.5.exe" "edulinker-teacher-setup-v1.0.5.exe"
 
 Write-Host "Releases completed successfully."
