@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import NetworkBanner from './components/NetworkBanner'
@@ -21,6 +21,24 @@ export interface UserInfo {
 
 function App() {
   const [user, setUser] = useState<UserInfo | null>(null)
+
+  // Auto-update notification
+  useEffect(() => {
+    const wails = (window as any).runtime
+    if (!wails?.EventsOn) return
+    const off = wails.EventsOn('update:available', (info: { version: string; url: string }) => {
+      toast.info(`새 버전 ${info.version} 이 출시되었습니다.`, {
+        duration: Infinity,
+        action: {
+          label: '다운로드',
+          onClick: () => {
+            try { (window as any).go?.main?.App?.OpenExternalURL(info.url) } catch { }
+          },
+        },
+      })
+    })
+    return () => { try { off?.() } catch { } }
+  }, [])
 
   useEffect(() => {
     const handleOnline = () => {

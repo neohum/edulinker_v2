@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,7 +118,13 @@ func (a *App) SyncKnowledge(docsJSON, apiBase string, token string) error {
 				ext := getSafeExt(d.OriginalFilename, d.FileUrl)
 				filePath := filepath.Join(dir, d.ID+ext)
 				if _, err := os.Stat(filePath); os.IsNotExist(err) {
-					downloadUrl := apiBase + d.FileUrl
+					// URL-encode path segments to handle Korean characters and spaces
+					segments := strings.Split(d.FileUrl, "/")
+					for i, seg := range segments {
+						segments[i] = url.PathEscape(seg)
+					}
+					encodedPath := strings.Join(segments, "/")
+					downloadUrl := apiBase + encodedPath
 					log.Printf("[SyncKnowledge] Checking download for %s -> URL: %s", d.OriginalFilename, downloadUrl)
 					req, _ := http.NewRequest("GET", downloadUrl, nil)
 					if token != "" {

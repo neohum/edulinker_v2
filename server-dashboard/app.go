@@ -62,6 +62,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Start system tray in goroutine (safe on Windows, blocking main thread usually needed only for specific OS like macOS but Wails owns main thread)
 	go systray.Run(a.onTrayReady, a.onTrayExit)
+	go a.CheckForUpdate()
 }
 
 func (a *App) onTrayReady() {

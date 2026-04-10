@@ -92,6 +92,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	go systray.Run(a.onTrayReady, a.onTrayExit)
+	go a.CheckForUpdate()
 }
 
 // OpenPrintHTML writes the given HTML string to a temp file and opens it in the system default browser for printing.

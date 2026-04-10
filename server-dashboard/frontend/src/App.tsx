@@ -80,6 +80,22 @@ function App() {
     return currentDeps;
   };
 
+  // Auto-update notification
+  useEffect(() => {
+    const off = EventsOn('update:available', (info: { version: string; url: string }) => {
+      toast.info(`새 버전 ${info.version} 이 출시되었습니다.`, {
+        duration: Infinity,
+        action: {
+          label: '다운로드',
+          onClick: () => {
+            try { (window as any).go?.main?.App?.OpenExternalURL(info.url) } catch { }
+          },
+        },
+      })
+    })
+    return () => { try { (off as any)?.() } catch { } }
+  }, [])
+
   // Boot sequence and event subscriptions
   useEffect(() => {
     const bootSequence = async () => {
