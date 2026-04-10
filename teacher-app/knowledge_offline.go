@@ -32,12 +32,14 @@ type KnowledgeDoc struct {
 }
 
 func (a *App) getKnowledgeDir() string {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		home, _ := os.UserHomeDir()
-		appData = filepath.Join(home, ".edulinker")
+	exePath, err := os.Executable()
+	if err != nil {
+		// fallback to current dir
+		dir := filepath.Join("knowledge_files")
+		os.MkdirAll(dir, 0755)
+		return dir
 	}
-	dir := filepath.Join(appData, "edulinker", "knowledge_files")
+	dir := filepath.Join(filepath.Dir(exePath), "knowledge_files")
 	os.MkdirAll(dir, 0755)
 	return dir
 }

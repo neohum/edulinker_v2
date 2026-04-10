@@ -18,38 +18,29 @@ export function useNetwork() {
     window.addEventListener('server-offline', handleServerOffline);
     window.addEventListener('server-online', handleServerOnline);
 
-    // Initial check on mount
-    fetch(`${API_BASE}/health`)
-      .then(res => {
-        if (!res.ok) window.dispatchEvent(new Event('server-offline'));
-      })
-      .catch(() => window.dispatchEvent(new Event('server-offline')));
+    // Initial check on mount - Delay by 5 seconds to allow backend to wake up/connect
+    const initialTimer = setTimeout(() => {
+      fetch(`${API_BASE}/health`)
+        .then(res => {
+          if (!res.ok) window.dispatchEvent(new Event('server-offline'));
+          else window.dispatchEvent(new Event('server-online'));
+        })
+        .catch(() => window.dispatchEvent(new Event('server-offline')));
+    }, 5000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('server-offline', handleServerOffline);
       window.removeEventListener('server-online', handleServerOnline);
+      clearTimeout(initialTimer);
     };
   }, []);
 
-  // Auto-reconnect polling when server is offline
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (!serverOnline && isOnline) {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`${API_BASE}/health`);
-          if (res.ok) {
-            window.dispatchEvent(new Event('server-online'));
-          }
-        } catch {
-          // Still offline, waiting for next ping
-        }
-      }, 3000); // Ping every 3 seconds
-    }
-    return () => clearInterval(interval);
-  }, [serverOnline, isOnline]);
+  // NOTE: Auto-reconnect polling has been removed here.
+  // NetworkBanner handles reconnection via its own exponential-backoff retry loop.
+  // Having a second polling loop here caused duplicate 'server-online' events
+  // which resulted in duplicate toast notifications across the app.
 
   return {
     isOnline,

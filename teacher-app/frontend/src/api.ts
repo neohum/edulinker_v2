@@ -18,6 +18,11 @@ if (wailsRuntime?.EventsOn) {
 
 let isServerOnline = true;
 
+// Keep isServerOnline in sync with external server-online events
+// (e.g. from NetworkBanner retry), so apiFetch doesn't fire a second server-online
+window.addEventListener('server-online', () => { isServerOnline = true; });
+window.addEventListener('server-offline', () => { isServerOnline = false; });
+
 /**
  * Gets the JWT token from Wails Go backend (per-instance) or localStorage (browser dev).
  * Wails token takes priority to prevent cross-instance token sharing via localStorage.

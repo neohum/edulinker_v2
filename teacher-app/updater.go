@@ -15,7 +15,7 @@ import (
 
 // AppVersion is the current build version of the teacher-app.
 // Update this constant before each release and tag as "teacher-vX.Y.Z".
-const AppVersion = "v1.0.4"
+const AppVersion = "v1.0.5"
 
 const (
 	githubOwner     = "neohum"
@@ -34,6 +34,10 @@ type githubRelease struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 	Body    string `json:"body"`
+	Assets  []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
 }
 
 // CheckForUpdate fetches GitHub Releases and emits "update:available"
@@ -78,13 +82,24 @@ func (a *App) CheckForUpdate() {
 		if !strings.HasPrefix(rel.TagName, githubTagPrefix) {
 			continue
 		}
-		latestVer := strings.TrimPrefix(rel.TagName, "teacher-")
+		latestVer := strings.TrimPrefix(rel.TagName, githubTagPrefix)
 		if semverIsNewer(latestVer, AppVersion) {
 			log.Printf("[Updater] 새 버전 발견: %s (현재: %s)", rel.TagName, AppVersion)
+
+			// Find setup .exe asset
+			var downloadURL string
+			for _, asset := range rel.Assets {
+				if strings.HasSuffix(asset.Name, ".exe") {
+					downloadURL = asset.BrowserDownloadURL
+					break
+				}
+			}
+
 			wailsRuntime.EventsEmit(a.ctx, "update:available", map[string]string{
-				"version": rel.TagName,
-				"url":     rel.HTMLURL,
-				"notes":   rel.Body,
+				"version":      rel.TagName,
+				"url":          rel.HTMLURL,
+				"download_url": downloadURL,
+				"notes":        rel.Body,
 			})
 		} else {
 			log.Printf("[Updater] 최신 버전 사용 중: %s", AppVersion)

@@ -226,11 +226,11 @@ func main() {
 	app.Get("/api/versions", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"teacher-app": fiber.Map{
-				"version": "v1.0.4",
+				"version": "v1.0.5",
 				"url":     "https://github.com/neohum/edulinker_v2/releases",
 			},
 			"server-dashboard": fiber.Map{
-				"version": "v1.0.4",
+				"version": "v1.0.5",
 				"url":     "https://github.com/neohum/edulinker_v2/releases",
 			},
 		})

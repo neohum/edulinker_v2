@@ -4,9 +4,16 @@ import { API_BASE } from '../api';
 
 export default function NetworkBanner() {
     const { isOnline, serverOnline, isFullyOnline } = useNetwork();
+    const [isVisible, setIsVisible] = useState(false);
     const [isRetrying, setIsRetrying] = useState(false);
     const backoffRef = useRef(1000); // Start with 1s
     const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Initial 5s silence on startup to prevent flickering/unnecessary red bars
+    useEffect(() => {
+        const timer = setTimeout(() => setIsVisible(true), 5000);
+        return () => clearTimeout(timer);
+    }, []);
 
     // Reset backoff when fully online
     useEffect(() => {
@@ -48,7 +55,7 @@ export default function NetworkBanner() {
         }
     }, [isOnline, serverOnline]);
 
-    if (isFullyOnline) return null;
+    if (!isVisible || isFullyOnline) return null;
 
     const handleManualRetry = () => {
         if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);

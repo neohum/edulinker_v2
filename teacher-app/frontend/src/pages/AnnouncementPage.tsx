@@ -100,7 +100,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
       if (pending.length === 0) return;
       const token = await getToken();
       let successCount = 0;
-      toast.info(`오프라인에 임시 저장된 ${pending.length}건의 공문을 전송합니다...`, { duration: 3000 });
+      toast.info(`오프라인에 임시 저장된 ${pending.length}건의 공문을 전송합니다...`, { id: 'sync-pending-info', duration: 3000 });
       for (const item of pending) {
         const formData = new FormData();
         formData.append('title', item.title);
@@ -131,7 +131,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
         }
       }
       if (successCount > 0) {
-        toast.success(`${successCount}개의 공문 전송이 완료되었습니다.`);
+        toast.success(`${successCount}개의 공문 전송이 완료되었습니다.`, { id: 'sync-pending-success' });
         fetchAnnouncements();
       }
     } catch (err) {
@@ -145,6 +145,7 @@ export default function AnnouncementPage({ user, counts }: AnnouncementPageProps
 
     const handleOnline = () => {
       if (isOfflineModeRef.current) {
+        isOfflineModeRef.current = false // Update ref immediately to prevent re-entry from duplicate server-online events
         setIsOfflineMode(false)
         setTimeout(() => {
           fetchAnnouncements()

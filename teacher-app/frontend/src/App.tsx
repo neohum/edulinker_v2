@@ -29,13 +29,24 @@ function App() {
   // Auto-update notification
   useEffect(() => {
     // Listen for GitHub update events
-    const off = EventsOn('update:available', (info: { version: string; url: string }) => {
+    const off = EventsOn('update:available', (info: { version: string; url: string; download_url?: string }) => {
       toast.info(`새 버전 ${info.version} 이 출시되었습니다.`, {
         duration: Infinity,
         action: {
-          label: '다운로드',
+          label: '지금 다운로드',
           onClick: () => {
-            try { (window as any).go?.main?.App?.OpenExternalURL(info.url) } catch { }
+            if (info.download_url) {
+              // Direct download using browser
+              const a = document.createElement('a')
+              a.href = info.download_url
+              a.download = '' // Let browser decide filename from URL
+              a.target = '_blank'
+              a.click()
+              toast.success('다운로드를 시작합니다. 완료 후 실행하여 설치를 마무리해주세요.')
+            } else {
+              // Fallback to GitHub page
+              try { (window as any).go?.main?.App?.OpenExternalURL(info.url) } catch { }
+            }
           },
         },
       })

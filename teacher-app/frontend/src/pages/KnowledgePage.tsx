@@ -124,7 +124,7 @@ export default function KnowledgePage() {
           const localData = await (window as any).go.main.App.GetLocalKnowledge()
           setDocs(localData || [])
           if (e.message !== 'already offline') {
-            toast.info("오프라인 모드로 로컬 저장된 데이터를 사용합니다.")
+            toast.info("오프라인 모드로 로컬 저장된 데이터를 사용합니다.", { id: 'knowledge-offline-mode' })
           }
         } catch (err) { }
       }

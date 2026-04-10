@@ -20,19 +20,14 @@ func hashDeterministic(data string) string {
 // initSecureDB initializes the local encrypted SQLite DB.
 // Data is encrypted at the application level before being written to these tables.
 func (a *App) initSecureDB() error {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		appData = filepath.Join(home, ".edulinker")
+	exePath, err := os.Executable()
+	var dbPath string
+	if err != nil {
+		dbPath = "secure_local.db"
+	} else {
+		dbPath = filepath.Join(filepath.Dir(exePath), "secure_local.db")
 	}
-	dbPath := filepath.Join(appData, "edulinker", "secure_local.db")
 
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
-		return err
-	}
 	db, err := sql.Open("sqlite", dbPath+"?_journal=WAL&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
