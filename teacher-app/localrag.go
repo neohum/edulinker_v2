@@ -28,6 +28,48 @@ type LocalRAG struct {
 	app *App
 
 	cachedChunks []cachedChunk
+	embCache     *queryEmbCache // 쿼리 임베딩 캐시
+}
+
+// queryEmbCache: 동일 쿼리 반복 시 Ollama 호출을 건너뛰기 위한 FIFO 캐시.
+// 최대 maxSize 항목을 보관하며 초과 시 가장 오래된 항목을 제거한다.
+type queryEmbCache struct {
+	mu      sync.RWMutex
+	entries map[string][]float64
+	order   []string // insertion order for FIFO eviction
+	maxSize int
+}
+
+func newQueryEmbCache(maxSize int) *queryEmbCache {
+	return &queryEmbCache{
+		entries: make(map[string][]float64, maxSize),
+		maxSize: maxSize,
+	}
+}
+
+func (c *queryEmbCache) get(key string) ([]float64, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	v, ok := c.entries[key]
+	return v, ok
+}
+
+func (c *queryEmbCache) set(key string, vec []float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, exists := c.entries[key]; exists {
+		// already cached — just overwrite (no duplicate in order slice)
+		c.entries[key] = vec
+		return
+	}
+	if len(c.entries) >= c.maxSize {
+		// evict oldest entry
+		oldest := c.order[0]
+		c.order = c.order[1:]
+		delete(c.entries, oldest)
+	}
+	c.entries[key] = vec
+	c.order = append(c.order, key)
 }
 
 type RAGSearchResult struct {
@@ -61,8 +103,9 @@ func (a *App) initLocalRAG() error {
 	}
 
 	a.rag = &LocalRAG{
-		db:  db,
-		app: a,
+		db:       db,
+		app:      a,
+		embCache: newQueryEmbCache(200), // 최근 200개 쿼리 임베딩 캐시
 	}
 	a.warmUpRAGCache()
 	return nil
@@ -549,8 +592,20 @@ func (a *App) SearchKnowledge(query string, topK int) ([]RAGSearchResult, error)
 	var semList []scored
 	hasVec := false
 
-	queryVec, embErr := getLocalEmbedding(context.Background(), query)
-	if embErr == nil && len(queryVec) > 0 {
+	cacheKey := strings.ToLower(strings.TrimSpace(query))
+	var queryVec []float64
+	if cached, ok := a.rag.embCache.get(cacheKey); ok {
+		queryVec = cached
+	} else {
+		var embErr error
+		queryVec, embErr = getLocalEmbedding(context.Background(), query)
+		if embErr != nil || len(queryVec) == 0 {
+			queryVec = nil
+		} else {
+			a.rag.embCache.set(cacheKey, queryVec)
+		}
+	}
+	if len(queryVec) > 0 {
 		hasVec = true
 		for _, c := range allChunks {
 			if len(c.embedding) > 0 {
