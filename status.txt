@@ -1,0 +1,8 @@
+ M admin-web
+ M backend/internal/core/syncagent/admin_heartbeat.go
+ M server-dashboard/app.go
+ M server-dashboard/setup.iss
+ M server-dashboard/updater.go
+ M teacher-app/setup.iss
+ M teacher-app/updater.go
+?? status.txt
