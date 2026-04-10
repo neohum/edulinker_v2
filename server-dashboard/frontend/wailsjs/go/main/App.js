@@ -6,6 +6,10 @@ export function CheckDependencies() {
   return window['go']['main']['App']['CheckDependencies']();
 }
 
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
+}
+
 export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
@@ -20,6 +24,10 @@ export function DeleteDBKnowledgeDoc(arg1) {
 
 export function DeleteDBUser(arg1) {
   return window['go']['main']['App']['DeleteDBUser'](arg1);
+}
+
+export function GetAppVersion() {
+  return window['go']['main']['App']['GetAppVersion']();
 }
 
 export function GetDBAnnouncements() {
@@ -56,6 +64,10 @@ export function HardDeleteDBUser(arg1) {
 
 export function InstallAndStartWithScoop() {
   return window['go']['main']['App']['InstallAndStartWithScoop']();
+}
+
+export function OpenExternalURL(arg1) {
+  return window['go']['main']['App']['OpenExternalURL'](arg1);
 }
 
 export function ReactivateDBUser(arg1) {

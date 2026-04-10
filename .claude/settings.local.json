@@ -68,7 +68,13 @@
       "Bash(tee /dev/stderr)",
       "Bash(go version:*)",
       "Bash(grep -E \"\\\\.\\(go|ts\\)$\")",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(gh release:*)",
+      "Bash(wails version:*)",
+      "Bash(where ISCC)",
+      "Bash(wails build:*)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Inno Setup 6\\\\ISCC.exe\" \"D:\\\\works\\\\edulinker_v2\\\\teacher-app\\\\setup.iss\")",
+      "Bash(C:\\\\Program Files \\(x86\\)\\\\Inno Setup 6\\\\ISCC.exe:*)"
     ]
   }
 }

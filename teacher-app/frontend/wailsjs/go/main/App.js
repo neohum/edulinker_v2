@@ -14,6 +14,10 @@ export function CheckExcel() {
   return window['go']['main']['App']['CheckExcel']();
 }
 
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
+}
+
 export function CheckHancom() {
   return window['go']['main']['App']['CheckHancom']();
 }
@@ -126,6 +130,10 @@ export function GetAILogs() {
   return window['go']['main']['App']['GetAILogs']();
 }
 
+export function GetAppVersion() {
+  return window['go']['main']['App']['GetAppVersion']();
+}
+
 export function GetConvertedPage(arg1, arg2) {
   return window['go']['main']['App']['GetConvertedPage'](arg1, arg2);
 }
@@ -232,6 +240,10 @@ export function Login(arg1, arg2) {
 
 export function Logout() {
   return window['go']['main']['App']['Logout']();
+}
+
+export function OpenExternalURL(arg1) {
+  return window['go']['main']['App']['OpenExternalURL'](arg1);
 }
 
 export function OpenLocalAnnouncementFile(arg1, arg2) {

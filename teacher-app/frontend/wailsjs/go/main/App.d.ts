@@ -8,6 +8,8 @@ export function CheckConnection():Promise<boolean>;
 
 export function CheckExcel():Promise<Record<string, any>>;
 
+export function CheckForUpdate():Promise<void>;
+
 export function CheckHancom():Promise<Record<string, any>>;
 
 export function CheckOfficeStatus():Promise<Record<string, boolean>>;
@@ -64,6 +66,8 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetAILogs():Promise<Array<main.AILog>>;
 
+export function GetAppVersion():Promise<string>;
+
 export function GetConvertedPage(arg1:string,arg2:number):Promise<main.GetConvertedPageResult>;
 
 export function GetCounselingRecords(arg1:string):Promise<Array<main.CounselingRecord>>;
@@ -117,6 +121,8 @@ export function LoadTeacherAsset(arg1:string,arg2:string):Promise<string>;
 export function Login(arg1:string,arg2:string):Promise<main.LoginResult>;
 
 export function Logout():Promise<void>;
+
+export function OpenExternalURL(arg1:string):Promise<void>;
 
 export function OpenLocalAnnouncementFile(arg1:string,arg2:string):Promise<void>;
 

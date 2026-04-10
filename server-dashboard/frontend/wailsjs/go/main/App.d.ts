@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function CheckDependencies():Promise<main.DependencyStatus>;
 
+export function CheckForUpdate():Promise<void>;
+
 export function ClearLogs():Promise<void>;
 
 export function DeleteDBAnnouncement(arg1:string):Promise<void>;
@@ -11,6 +13,8 @@ export function DeleteDBAnnouncement(arg1:string):Promise<void>;
 export function DeleteDBKnowledgeDoc(arg1:string):Promise<void>;
 
 export function DeleteDBUser(arg1:string):Promise<void>;
+
+export function GetAppVersion():Promise<string>;
 
 export function GetDBAnnouncements():Promise<Array<main.DBAnnouncement>>;
 
@@ -29,6 +33,8 @@ export function GetStatus():Promise<main.ServerStatus>;
 export function HardDeleteDBUser(arg1:string):Promise<void>;
 
 export function InstallAndStartWithScoop():Promise<void>;
+
+export function OpenExternalURL(arg1:string):Promise<void>;
 
 export function ReactivateDBUser(arg1:string):Promise<void>;
 
