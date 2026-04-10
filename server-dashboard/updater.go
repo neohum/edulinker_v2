@@ -2,20 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // AppVersion is the current build version of server-dashboard.
 // Update this constant before each release and tag as "server-vX.Y.Z".
-const AppVersion = "v1.0.2"
+const AppVersion = "v1.0.4"
 
 const (
 	githubOwner     = "neohum"
@@ -23,30 +24,30 @@ const (
 	githubTagPrefix = "server-v"
 )
 
-// githubToken is injected at build time via ldflags:
-//
-//	wails build -ldflags "-X main.githubToken=ghp_xxxx"
-//
-// Never commit a real token value here.
+// githubToken is injected at build time via ldflags
 var githubToken = ""
 
 type githubRelease struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 	Body    string `json:"body"`
+	Assets  []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
 }
 
-// CheckForUpdate fetches GitHub Releases and emits "update:available"
-// if a newer version tagged "server-vX.Y.Z" exists.
+// CheckForUpdate fetches GitHub Releases and performs silent update if found.
 func (a *App) CheckForUpdate() {
-	time.Sleep(8 * time.Second)
+	// Wait for app to settle
+	time.Sleep(10 * time.Second)
+	log.Printf("[Updater] 업데이트 확인 시작... (현재 버전: %s)", AppVersion)
 
 	apiURL := "https://api.github.com/repos/" + githubOwner + "/" + githubRepo + "/releases"
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		log.Printf("[Updater] 요청 생성 실패: %v", err)
 		return
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -63,14 +64,11 @@ func (a *App) CheckForUpdate() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[Updater] GitHub API 오류 (HTTP %d): %s", resp.StatusCode, string(body))
 		return
 	}
 
 	var releases []githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		log.Printf("[Updater] 응답 파싱 실패: %v", err)
 		return
 	}
 
@@ -78,19 +76,80 @@ func (a *App) CheckForUpdate() {
 		if !strings.HasPrefix(rel.TagName, githubTagPrefix) {
 			continue
 		}
-		latestVer := strings.TrimPrefix(rel.TagName, "server-")
+		latestVer := strings.TrimPrefix(rel.TagName, githubTagPrefix)
 		if semverIsNewer(latestVer, AppVersion) {
-			log.Printf("[Updater] 새 버전 발견: %s (현재: %s)", rel.TagName, AppVersion)
-			wailsRuntime.EventsEmit(a.ctx, "update:available", map[string]string{
-				"version": rel.TagName,
-				"url":     rel.HTMLURL,
-				"notes":   rel.Body,
-			})
-		} else {
-			log.Printf("[Updater] 최신 버전 사용 중: %s", AppVersion)
+			log.Printf("[Updater] 새 버전 발견: %s. 자동 업데이트를 시작합니다.", rel.TagName)
+			
+			// Find .exe asset
+			var downloadURL string
+			for _, asset := range rel.Assets {
+				if strings.HasSuffix(asset.Name, ".exe") && strings.Contains(asset.Name, "setup") {
+					downloadURL = asset.BrowserDownloadURL
+					break
+				}
+			}
+
+			if downloadURL != "" {
+				go a.performSilentUpdate(downloadURL, rel.TagName)
+			}
 		}
 		return
 	}
+}
+
+func (a *App) performSilentUpdate(url, version string) {
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("edulinker_server_setup_%s.exe", version))
+	log.Printf("[Updater] 업데이트 파일 다운로드 중: %s", url)
+
+	// Download file
+	err := downloadFile(url, tmpFile)
+	if err != nil {
+		log.Printf("[Updater] 다운로드 실패: %v", err)
+		return
+	}
+
+	log.Printf("[Updater] 다운로드 완료. 정숙 설치를 실행합니다: %s", tmpFile)
+	
+	// Execute Inno Setup silently: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+	// We want it to restart the app, so we might omit /NORESTART or handle it.
+	// Most Inno Setup scripts for this project have a [Run] section that restarts the app.
+	cmd := exec.Command(tmpFile, "/VERYSILENT", "/SUPPRESSMSGBOXES")
+	err = cmd.Start()
+	if err != nil {
+		log.Printf("[Updater] 설치 실행 실패: %v", err)
+		return
+	}
+
+	log.Printf("[Updater] 설치 프로그램이 시작되었습니다. 앱이 곧 종료되고 업데이트됩니다.")
+	// The installer will wait for this process to exit before replacing files
+	time.Sleep(2 * time.Second)
+	os.Exit(0)
+}
+
+func downloadFile(url, filepath string) error {
+	client := &http.Client{Timeout: 300 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	if githubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+githubToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 // GetAppVersion returns the current app version string (callable from frontend).

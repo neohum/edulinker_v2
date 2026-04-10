@@ -44,5 +44,6 @@ build/bin/
 # ========== IDEs & Editors ==========
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { UserInfo } from '../App'
 import logoUrl from '../assets/images/logo-universal.png'
+import { GetAppVersion } from '../../wailsjs/go/main/App'
 
 interface SidebarProps {
   user: UserInfo
@@ -72,6 +73,7 @@ const systemItems: NavItem[] = []
 function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [version, setVersion] = useState('v1.0.0')
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('sidebar_favorites')
     if (saved) {
@@ -79,6 +81,12 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
     }
     return ['aianalysis', 'sendoc']
   })
+
+  useEffect(() => {
+    GetAppVersion().then(v => {
+      if (v) setVersion(v)
+    })
+  }, [])
 
   // Load saved group states or default to all closed
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
@@ -222,7 +230,7 @@ function Sidebar({ user, currentPage, badges, onNavigate, onLogout }: SidebarPro
           {!isCollapsed && (
             <div onClick={() => onNavigate('dashboard')} style={{ cursor: 'pointer' }} title="대시보드">
               <div className="sidebar-logo-text">edulinker</div>
-              <div className="sidebar-logo-version">v1.0.0 · Phase 1</div>
+              <div className="sidebar-logo-version">{version}</div>
             </div>
           )}
         </div>

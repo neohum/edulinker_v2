@@ -66,6 +66,8 @@ export function GetAIBenchmark():Promise<main.AIBenchmark>;
 
 export function GetAILogs():Promise<Array<main.AILog>>;
 
+export function GetAPIBase():Promise<string>;
+
 export function GetAppVersion():Promise<string>;
 
 export function GetConvertedPage(arg1:string,arg2:number):Promise<main.GetConvertedPageResult>;

@@ -221,6 +221,21 @@ func main() {
 		})
 	})
 
+	// --- App version endpoint ---
+	// Update these values when releasing a new version of each app.
+	app.Get("/api/versions", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"teacher-app": fiber.Map{
+				"version": "v1.0.4",
+				"url":     "https://github.com/neohum/edulinker_v2/releases",
+			},
+			"server-dashboard": fiber.Map{
+				"version": "v1.0.4",
+				"url":     "https://github.com/neohum/edulinker_v2/releases",
+			},
+		})
+	})
+
 	// --- WebSocket endpoint ---
 	app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {

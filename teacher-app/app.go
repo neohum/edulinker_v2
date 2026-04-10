@@ -61,7 +61,7 @@ type hwpTask struct {
 // NewApp creates a new App application struct.
 func NewApp() *App {
 	return &App{
-		apiBase:     "http://localhost:5200",
+		apiBase:     "http://127.0.0.1:5200",
 		hwpTaskChan: make(chan hwpTask, 1),
 	}
 }
@@ -496,10 +496,18 @@ func (a *App) Logout() {
 	a.authToken = ""
 }
 
+// GetAPIBase returns the current base API URL.
+func (a *App) GetAPIBase() string {
+	return a.apiBase
+}
+
 // SetAPIBase updates the base API URL used by the Go backend proxy.
 func (a *App) SetAPIBase(url string) {
 	// Strip trailing slashes to avoid double-slash issues in endpoints
 	a.apiBase = strings.TrimRight(url, "/")
+	if a.ctx != nil {
+		wailsRuntime.EventsEmit(a.ctx, "api-base-changed", a.apiBase)
+	}
 }
 
 // CheckConnection pings the backend server directly to verify connectivity, avoiding WebView CORS/PNA issues.

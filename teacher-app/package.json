@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "This is the official Wails React-TS template.",
   "main": "index.js",
   "scripts": {

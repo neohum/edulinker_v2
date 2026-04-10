@@ -2,7 +2,7 @@
 ; 생성: 2026-03-20
 
 #define MyAppName "edulinker 교사용"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "edulinker"
 #define MyAppExeName "teacher-app.exe"
 

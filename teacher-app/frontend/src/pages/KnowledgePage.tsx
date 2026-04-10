@@ -48,19 +48,22 @@ export default function KnowledgePage() {
     }
 
     const handleOnline = () => {
-      setIsOfflineMode(prev => {
-        if (prev) {
-          // If we were offline and now online, fetch again!
-          setTimeout(() => {
-            if (activeTab === 'list') fetchDocs()
-          }, 0)
-          return false
-        }
-        return false
-      })
+      setIsOfflineMode(false)
+      // If we were offline and now online, fetch again!
+      setTimeout(() => {
+        if (activeTab === 'list') fetchDocs()
+      }, 0)
     }
+    const handleOffline = () => {
+      setIsOfflineMode(true)
+    }
+
     window.addEventListener('server-online', handleOnline)
-    return () => window.removeEventListener('server-online', handleOnline)
+    window.addEventListener('server-offline', handleOffline)
+    return () => {
+      window.removeEventListener('server-online', handleOnline)
+      window.removeEventListener('server-offline', handleOffline)
+    }
   }, [activeTab])
 
   // Reset to page 1 when search query changes
@@ -73,29 +76,34 @@ export default function KnowledgePage() {
   const [previewMode, setPreviewMode] = useState(false)
 
   const fetchDocs = async () => {
+    // 1. 로컬 DB에서 즉시 불러오기 (서버 연결보다 우선, UI 블로킹 방지)
+    if ((window as any).go?.main?.App?.GetLocalKnowledge) {
+      try {
+        const localData = await (window as any).go.main.App.GetLocalKnowledge()
+        if (localData) {
+          setDocs(localData)
+          setLoading(false) // 로컬 데이터가 있으면 즉시 로딩 해제
+        }
+      } catch (e) {
+        console.error("Local load failed", e)
+      }
+    }
+
     try {
-      setLoading(true)
-
-      // 로컬 DB에서 먼저 데이터를 즉시 불러와서 화면에 빠르게 그려줌 (SWR 패턴)
-      if ((window as any).go?.main?.App?.GetLocalKnowledge) {
-        try {
-          const localData = await (window as any).go.main.App.GetLocalKnowledge()
-          if (localData && localData.length > 0) {
-            setDocs(localData)
-            setLoading(false) // 로컬 데이터가 있으면 로딩 스피너를 즉시 끔
-          }
-        } catch (e) { }
-      }
+      // 오프라인 상태거나 브라우저가 오프라인이면 서버 호출 건너뜀
       if (isOfflineMode || !navigator.onLine) {
-        throw new Error('already offline')
+        setLoading(false)
+        return
       }
 
-      // 백그라운드에서 최신 데이터를 서버로부터 패치
+      // 2. 백그라운드에서 최신 데이터를 서버로부터 패치
       const res = await apiFetch('/api/plugins/knowledge/docs')
       if (res.ok) {
         const data = await res.json()
         setDocs(data || [])
         setIsOfflineMode(false)
+        
+        // 서버 데이터를 성공적으로 가져왔으므로 로컬 DB와 동기화 시도
         if ((window as any).go?.main?.App?.SyncKnowledge) {
           try {
             const { getToken } = await import('../api');
@@ -104,23 +112,57 @@ export default function KnowledgePage() {
           } catch (err) { }
         }
       } else {
-        throw new Error('Server !ok')
+        throw new Error('Server response not ok')
       }
     } catch (e: any) {
-      console.error(e)
+      console.error("Server fetch failed:", e)
       setIsOfflineMode(true)
-      // 최신 서버 호출 실패 시 다시 로컬 데이터 확인해서 offline fallback 알림
+      
+      // 서버 호출 실패 시 최종적으로 로컬 데이터 한 번 더 확인 (만약 위에서 못 불러왔을 경우 대비)
       if ((window as any).go?.main?.App?.GetLocalKnowledge) {
         try {
           const localData = await (window as any).go.main.App.GetLocalKnowledge()
           setDocs(localData || [])
           if (e.message !== 'already offline') {
-            toast.info("오프라인 모드로 로컬에 저장된 규정/정보를 불러왔습니다.", { duration: 3000 })
+            toast.info("오프라인 모드로 로컬 저장된 데이터를 사용합니다.")
           }
         } catch (err) { }
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 파일 열기 로직 통합 (로컬 우선 시도 후 실패 시 다운로드)
+  const handleDownloadOrOpen = async (doc: KnowledgeDoc) => {
+    if (!doc.file_url) return
+
+    // 1. 먼저 로컬에 다운로드된 파일이 있는지 확인하고 있으면 바로 열기 시도
+    if ((window as any).go?.main?.App?.OpenLocalKnowledgeFile) {
+      try {
+        await (window as any).go.main.App.OpenLocalKnowledgeFile(doc.id, doc.original_filename)
+        return // 성공적으로 열었으면 종료
+      } catch (e) {
+        // 로컬에 파일이 없는 경우 (Sync 중이거나 아직 다운로드 전) - 다음 단계(서버 다운로드)로 진행
+        console.log("Local file not found, trying server download...", e)
+      }
+    }
+
+    // 2. 로컬에 파일이 없으면 서버에서 다운로드 시도 (온라인일 때만)
+    if (!isOfflineMode && navigator.onLine) {
+      const encodedPath = doc.file_url!
+        .split('/')
+        .map(seg => encodeURIComponent(seg))
+        .join('/')
+      const a = document.createElement('a')
+      const baseUrl = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE
+      const path = encodedPath.startsWith('/') ? encodedPath : '/' + encodedPath
+      a.href = `${baseUrl}${path}`
+      a.download = doc.original_filename || 'download'
+      a.target = '_blank'
+      a.click()
+    } else {
+      toast.error("파일이 아직 동기화되지 않았거나 서버와 연결할 수 없는 상태입니다.")
     }
   }
 
@@ -506,21 +548,11 @@ export default function KnowledgePage() {
                                   {doc.original_filename}
                                   {doc.file_url && (
                                     <button
-                                      onClick={() => {
-                                        const encodedPath = doc.file_url!
-                                          .split('/')
-                                          .map(seg => encodeURIComponent(seg))
-                                          .join('/')
-                                        const a = document.createElement('a')
-                                        a.href = `${API_BASE}${encodedPath}`
-                                        a.download = doc.original_filename || 'download'
-                                        a.target = '_blank'
-                                        a.click()
-                                      }}
+                                      onClick={() => handleDownloadOrOpen(doc)}
                                       style={{ color: 'var(--accent-blue)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}
                                     >
                                       <i className="fi fi-rr-download" style={{ fontSize: 12 }} />
-                                      다운로드
+                                      {isOfflineMode ? '로컬에서 열기' : '다운로드/열기'}
                                     </button>
                                   )}
                                 </div>
@@ -789,8 +821,12 @@ export default function KnowledgePage() {
                           toast.error(typeof e === 'string' ? e : e.message || '파일을 열 수 없습니다.')
                         }
                       } else {
+                        const encodedPath = selectedDoc.file_url!
+                          .split('/')
+                          .map(seg => encodeURIComponent(seg))
+                          .join('/')
                         const a = document.createElement('a')
-                        a.href = `${API_BASE}${selectedDoc.file_url}`
+                        a.href = `${API_BASE}${encodedPath.startsWith('/') ? '' : '/'}${encodedPath}`
                         a.download = selectedDoc.original_filename || 'download'
                         a.target = '_blank'
                         a.click()

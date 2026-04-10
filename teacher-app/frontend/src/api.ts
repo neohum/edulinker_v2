@@ -1,4 +1,20 @@
-export const API_BASE = 'http://localhost:5200'
+export let API_BASE = 'http://127.0.0.1:5200'
+
+// Initialize API_BASE from Go backend if available
+const wailsApp = (window as any).go?.main?.App
+if (wailsApp?.GetAPIBase) {
+  wailsApp.GetAPIBase().then((base: string) => {
+    if (base) API_BASE = base
+  })
+}
+
+// Listen for API base changes from Go backend
+const wailsRuntime = (window as any).runtime
+if (wailsRuntime?.EventsOn) {
+  wailsRuntime.EventsOn('api-base-changed', (newBase: string) => {
+    if (newBase) API_BASE = newBase
+  })
+}
 
 let isServerOnline = true;
 

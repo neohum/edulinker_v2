@@ -130,6 +130,10 @@ export function GetAILogs() {
   return window['go']['main']['App']['GetAILogs']();
 }
 
+export function GetAPIBase() {
+  return window['go']['main']['App']['GetAPIBase']();
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }
