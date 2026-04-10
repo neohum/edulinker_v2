@@ -356,6 +356,8 @@ func (a *App) buildAndStart() {
 	// Step 2: Run
 	cmd := exec.Command(exePath)
 	cmd.Dir = a.backendDir
+	// Inherit current env and inject dashboard version so admin_heartbeat can report it
+	cmd.Env = append(os.Environ(), "SERVER_DASHBOARD_VERSION="+AppVersion)
 	hiddenProcAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()

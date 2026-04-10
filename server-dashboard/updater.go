@@ -12,11 +12,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // AppVersion is the current build version of server-dashboard.
 // Update this constant before each release and tag as "server-vX.Y.Z".
-const AppVersion = "v1.0.4"
+const AppVersion = "v1.0.5"
 
 const (
 	githubOwner     = "neohum"
@@ -101,29 +103,57 @@ func (a *App) performSilentUpdate(url, version string) {
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("edulinker_server_setup_%s.exe", version))
 	log.Printf("[Updater] 업데이트 파일 다운로드 중: %s", url)
 
-	// Download file
 	err := downloadFile(url, tmpFile)
 	if err != nil {
 		log.Printf("[Updater] 다운로드 실패: %v", err)
 		return
 	}
 
-	log.Printf("[Updater] 다운로드 완료. 정숙 설치를 실행합니다: %s", tmpFile)
-	
-	// Execute Inno Setup silently: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-	// We want it to restart the app, so we might omit /NORESTART or handle it.
-	// Most Inno Setup scripts for this project have a [Run] section that restarts the app.
-	cmd := exec.Command(tmpFile, "/VERYSILENT", "/SUPPRESSMSGBOXES")
-	err = cmd.Start()
-	if err != nil {
-		log.Printf("[Updater] 설치 실행 실패: %v", err)
+	log.Printf("[Updater] 다운로드 완료. 업데이터 스크립트를 준비합니다: %s", tmpFile)
+
+	// Find current exe path for relaunch
+	exePath, _ := os.Executable()
+
+	// Write a PowerShell helper script that:
+	//  1. Waits for this process to exit (so file locks are released)
+	//  2. Runs the Inno Setup installer silently
+	//  3. Relaunches the app
+	pid := os.Getpid()
+	psScript := fmt.Sprintf(`
+$pid = %d
+$installer = '%s'
+$app = '%s'
+
+# Wait for current process to exit
+while (Get-Process -Id $pid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
+
+# Run installer silently
+Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+
+# Relaunch app
+if (Test-Path $app) { Start-Process -FilePath $app }
+`, pid, strings.ReplaceAll(tmpFile, `\`, `\\`), strings.ReplaceAll(exePath, `\`, `\\`))
+
+	psFile := filepath.Join(os.TempDir(), fmt.Sprintf("edulinker_update_%s.ps1", version))
+	if err := os.WriteFile(psFile, []byte(psScript), 0644); err != nil {
+		log.Printf("[Updater] 스크립트 작성 실패: %v", err)
 		return
 	}
 
-	log.Printf("[Updater] 설치 프로그램이 시작되었습니다. 앱이 곧 종료되고 업데이트됩니다.")
-	// The installer will wait for this process to exit before replacing files
-	time.Sleep(2 * time.Second)
-	os.Exit(0)
+	cmd := exec.Command("powershell.exe",
+		"-ExecutionPolicy", "Bypass",
+		"-WindowStyle", "Hidden",
+		"-File", psFile,
+	)
+	if err := cmd.Start(); err != nil {
+		log.Printf("[Updater] 업데이터 스크립트 실행 실패: %v", err)
+		return
+	}
+
+	log.Printf("[Updater] 업데이터 스크립트가 시작되었습니다. 앱을 종료하고 업데이트를 진행합니다.")
+	// Give the PowerShell script a moment to start, then quit cleanly via Wails
+	time.Sleep(500 * time.Millisecond)
+	wailsRuntime.Quit(a.ctx)
 }
 
 func downloadFile(url, filepath string) error {

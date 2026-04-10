@@ -13,7 +13,14 @@ import (
 	"gorm.io/gorm"
 )
 
-const adminServerVersion = "v1.0.0"
+// serverDashboardVersion()은 SERVER_DASHBOARD_VERSION 환경변수로 주입됩니다.
+// server-dashboard가 백엔드를 시작할 때 해당 환경변수를 설정합니다.
+func serverDashboardVersion() string {
+	if v := os.Getenv("SERVER_DASHBOARD_VERSION"); v != "" {
+		return v
+	}
+	return "v1.0.0"
+}
 
 // AdminHeartbeat sends school registration and periodic stats to the admin-web on Railway.
 // 모든 통신은 학교 서버 → admin-web 단방향(outbound)이므로 내부망은 외부에 노출되지 않습니다.
@@ -79,7 +86,7 @@ func (h *AdminHeartbeat) register() error {
 	payload := map[string]string{
 		"school_code":    school.Code,
 		"school_name":    school.Name,
-		"server_version": adminServerVersion,
+		"server_version": serverDashboardVersion(),
 	}
 	if err := h.post("/api/sync/register", payload); err != nil {
 		return err
@@ -122,7 +129,7 @@ func (h *AdminHeartbeat) sendHeartbeat() {
 		"student_count":     studentCount,
 		"parent_count":      parentCount,
 		"active_plugin_ids": activePluginIDs,
-		"server_version":    adminServerVersion,
+		"server_version":    serverDashboardVersion(),
 	}
 
 	if err := h.post("/api/sync/heartbeat", payload); err != nil {
