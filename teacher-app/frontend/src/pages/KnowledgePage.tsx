@@ -287,11 +287,12 @@ export default function KnowledgePage() {
 
           // Call Wails Backend
           const res = await (window as any).go.main.App.ConvertToMarkdown(file.name, base64data)
-          if (res.success) {
+          if (res.success && res.text?.trim()) {
             setContent(prev => prev ? prev + '\n\n' + res.text : res.text)
             toast.success('문서 텍스트 추출 완료')
           } else {
-            toast.error('텍스트 추출 실패: ' + res.error)
+            // 이미지 PDF 등 텍스트 추출 불가 파일 — 파일 자체는 첨부되므로 등록 가능
+            toast.info('본문 텍스트를 추출할 수 없습니다. 파일은 그대로 등록할 수 있습니다.', { duration: 4000 })
           }
           setIsConverting(false)
         }
