@@ -15,7 +15,7 @@ import (
 
 // AppVersion is the current build version of the teacher-app.
 // Update this constant before each release and tag as "teacher-vX.Y.Z".
-const AppVersion = "v1.0.1"
+const AppVersion = "v1.0.2"
 
 const (
 	githubOwner     = "neohum"
