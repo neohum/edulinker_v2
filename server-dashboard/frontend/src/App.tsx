@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { GetStatus, StartServer, StopServer, GetLogs, ClearLogs, CheckDependencies, InstallAndStartWithScoop, GetLocalIP } from '../wailsjs/go/main/App';
+import { GetStatus, StartServer, StopServer, GetLogs, ClearLogs, CheckDependencies, InstallAndStartWithScoop, GetLocalIP, GetAppVersion } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import { Toaster, toast } from 'sonner';
 import logoUrl from './assets/images/logo-universal.png';
@@ -18,6 +18,7 @@ function App() {
   const [bootSequenceActive, setBootSequenceActive] = useState(false);
   const [bootStep, setBootStep] = useState<number>(0);
   const [localIP, setLocalIP] = useState('');
+  const [appVersion, setAppVersion] = useState('');
   const [autoStart, setAutoStart] = useState(() => localStorage.getItem('autoStart') !== 'false');
   const [autoInfra, setAutoInfra] = useState(() => localStorage.getItem('autoInfra') !== 'false');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => localStorage.getItem('sidebar_open') !== 'false');
@@ -101,6 +102,7 @@ function App() {
     const bootSequence = async () => {
       try {
         GetLocalIP().then(setLocalIP).catch(console.error);
+        GetAppVersion().then(setAppVersion).catch(console.error);
         const statusResult = await GetStatus();
         setIsRunning(statusResult.isRunning);
         setUptime(statusResult.uptime);
@@ -406,8 +408,15 @@ function App() {
           <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">Server Dashboard</p>
         </div>
 
-        <div className={`text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 py-1.5 rounded-md mb-6 whitespace-nowrap overflow-hidden text-ellipsis shadow-sm transition-all ${isSidebarOpen ? 'w-full max-w-[180px] px-3' : 'w-14 px-1 text-[10px] text-center'}`}>
-          {isSidebarOpen ? `IP: ${localIP}` : localIP.split('.')[3] || 'IP'}
+        <div className={`flex flex-col items-center mb-6 gap-1 transition-all ${isSidebarOpen ? 'w-full max-w-[180px]' : 'w-14'}`}>
+          <div className={`text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 py-1.5 rounded-md whitespace-nowrap overflow-hidden text-ellipsis shadow-sm w-full transition-all ${isSidebarOpen ? 'px-3' : 'px-1 text-[10px] text-center'}`}>
+            {isSidebarOpen ? `IP: ${localIP}` : localIP.split('.')[3] || 'IP'}
+          </div>
+          {appVersion && (
+            <div className={`text-[11px] text-slate-400 dark:text-slate-500 font-medium transition-all ${isSidebarOpen ? '' : 'hidden'}`}>
+              {appVersion}
+            </div>
+          )}
         </div>
 
         <nav className={`w-full flex flex-col gap-2 ${isSidebarOpen ? 'px-4' : 'px-2'}`}>
