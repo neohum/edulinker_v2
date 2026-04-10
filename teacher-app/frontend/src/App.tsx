@@ -82,8 +82,9 @@ function App() {
           if (serverVer && myVer && semverIsNewer(serverVer, myVer)) {
             setHasNotifiedUpdate(true)
             toast.warning(`새 버전 ${serverVer} 으로 업데이트가 필요합니다.`, {
-              id: 'server-update-toast', // Prevent multiple toasts with same ID
-              duration: 10000,
+              id: 'server-update-toast',
+              duration: Infinity,
+              closeButton: true,
               description: '서버와 버전이 다를 경우 기능이 제한될 수 있습니다.'
             })
           }
