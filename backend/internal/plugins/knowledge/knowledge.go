@@ -154,7 +154,7 @@ func (p *Plugin) createDoc(c *fiber.Ctx) error {
 			fmt.Println("MkdirAll error:", err)
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to create upload directory"})
 		}
-		safeName := uuid.New().String() + "-" + fileHeader.Filename
+		safeName := uuid.New().String() + "-" + sanitizeFilename(fileHeader.Filename)
 		filePath := fmt.Sprintf("%s/%s", uploadDir, safeName)
 		if err := c.SaveFile(fileHeader, filePath); err != nil {
 			fmt.Println("SaveFile error:", err)
@@ -255,4 +255,19 @@ func (p *Plugin) queryChat(c *fiber.Ctx) error {
 	})
 
 	return nil
+}
+
+// sanitizeFilename replaces characters that are problematic in URLs or file systems
+// with safe alternatives while preserving Korean characters and common punctuation.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case '[', ']', '(', ')', '{', '}', '\'', '"', '`', '?', '*', '\\', '/', ':', '|', '<', '>':
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

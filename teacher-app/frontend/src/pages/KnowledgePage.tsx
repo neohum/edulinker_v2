@@ -507,8 +507,12 @@ export default function KnowledgePage() {
                                   {doc.file_url && (
                                     <button
                                       onClick={() => {
+                                        const encodedPath = doc.file_url!
+                                          .split('/')
+                                          .map(seg => encodeURIComponent(seg))
+                                          .join('/')
                                         const a = document.createElement('a')
-                                        a.href = `${API_BASE}${doc.file_url}`
+                                        a.href = `${API_BASE}${encodedPath}`
                                         a.download = doc.original_filename || 'download'
                                         a.target = '_blank'
                                         a.click()
