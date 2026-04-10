@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os/exec"
@@ -13,7 +14,7 @@ import (
 )
 
 // AppVersion is the current build version of server-dashboard.
-// Update this constant before each release and tag the commit as "server-vX.Y.Z".
+// Update this constant before each release and tag as "server-vX.Y.Z".
 const AppVersion = "v1.0.1"
 
 const (
@@ -22,17 +23,23 @@ const (
 	githubTagPrefix = "server-v"
 )
 
+// githubToken is injected at build time via ldflags:
+//
+//	wails build -ldflags "-X main.githubToken=ghp_xxxx"
+//
+// Never commit a real token value here.
+var githubToken = ""
+
 type githubRelease struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 	Body    string `json:"body"`
 }
 
-// CheckForUpdate fetches the GitHub Releases list and emits "update:available"
+// CheckForUpdate fetches GitHub Releases and emits "update:available"
 // if a newer version tagged "server-vX.Y.Z" exists.
-// Should be called in a goroutine from startup.
 func (a *App) CheckForUpdate() {
-	time.Sleep(4 * time.Second) // wait for UI to settle
+	time.Sleep(8 * time.Second)
 
 	apiURL := "https://api.github.com/repos/" + githubOwner + "/" + githubRepo + "/releases"
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -44,6 +51,9 @@ func (a *App) CheckForUpdate() {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "edulinker-server-dashboard/"+AppVersion)
+	if githubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+githubToken)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -52,13 +62,18 @@ func (a *App) CheckForUpdate() {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[Updater] GitHub API 오류 (HTTP %d): %s", resp.StatusCode, string(body))
+		return
+	}
+
 	var releases []githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		log.Printf("[Updater] 응답 파싱 실패: %v", err)
 		return
 	}
 
-	// Find the latest release with the server-v prefix
 	for _, rel := range releases {
 		if !strings.HasPrefix(rel.TagName, githubTagPrefix) {
 			continue
@@ -74,7 +89,7 @@ func (a *App) CheckForUpdate() {
 		} else {
 			log.Printf("[Updater] 최신 버전 사용 중: %s", AppVersion)
 		}
-		return // Only compare against the newest matching release
+		return
 	}
 }
 
@@ -89,7 +104,6 @@ func (a *App) OpenExternalURL(rawURL string) {
 }
 
 // semverIsNewer returns true if candidate is strictly newer than current.
-// Both strings should be in "vX.Y.Z" format.
 func semverIsNewer(candidate, current string) bool {
 	c := parseSemver(candidate)
 	r := parseSemver(current)
