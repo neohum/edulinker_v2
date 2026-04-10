@@ -2,7 +2,7 @@
 ; 생성: 2026-03-25
 
 #define MyAppName "edulinker 서버 대시보드"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6"
 #define MyAppPublisher "edulinker"
 #define MyAppExeName "server-dashboard.exe"
 
