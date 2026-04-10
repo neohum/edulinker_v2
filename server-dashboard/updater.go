@@ -14,7 +14,7 @@ import (
 
 // AppVersion is the current build version of server-dashboard.
 // Update this constant before each release and tag the commit as "server-vX.Y.Z".
-const AppVersion = "v1.0.0"
+const AppVersion = "v1.0.1"
 
 const (
 	githubOwner     = "neohum"
