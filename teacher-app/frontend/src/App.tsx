@@ -7,6 +7,16 @@ import NetworkBanner from './components/NetworkBanner'
 import { apiFetch, API_BASE } from './api'
 import { GetAppVersion } from '../wailsjs/go/main/App'
 
+// Returns true if `a` is strictly newer than `b` (both in "vX.Y.Z" or "X.Y.Z" format)
+function semverIsNewer(a: string, b: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
+  const [aMaj, aMin, aPat] = parse(a)
+  const [bMaj, bMin, bPat] = parse(b)
+  if (aMaj !== bMaj) return aMaj > bMaj
+  if (aMin !== bMin) return aMin > bMin
+  return aPat > bPat
+}
+
 // User info stored after login
 export interface UserInfo {
   id: string
@@ -66,9 +76,12 @@ function App() {
           const data = await res.json()
           const serverVer = data['teacher-app']?.version
           
-          if (serverVer && myVer && serverVer !== myVer) {
+          // Only notify when the server recommends a NEWER version than what is installed.
+          // If the installed app is already newer (e.g. user updated manually before the
+          // server-dashboard was redeployed), suppress the alert to avoid confusing messages.
+          if (serverVer && myVer && semverIsNewer(serverVer, myVer)) {
             setHasNotifiedUpdate(true)
-            toast.warning(`서버가 업데이트되었습니다 (${serverVer}). 최신 교사용 앱 설치를 권장합니다.`, {
+            toast.warning(`새 버전 ${serverVer} 으로 업데이트가 필요합니다.`, {
               id: 'server-update-toast', // Prevent multiple toasts with same ID
               duration: 10000,
               description: '서버와 버전이 다를 경우 기능이 제한될 수 있습니다.'
