@@ -331,22 +331,25 @@ export default function KnowledgePage() {
   }
 
   const handleSave = async () => {
-    if (!title.trim() || !content.trim()) {
-      toast.error('제목과 내용을 모두 입력해주세요.')
+    if (!title.trim()) {
+      toast.error('제목을 입력해주세요.')
       return
     }
+
+    const currentSourceType = selectedFile ? 'file' : 'text'
+    // 본문 추출 실패 시 빈 문자열 허용 (파일이 첨부된 경우 파일명으로 대체, 텍스트만 입력 시 빈 값 허용)
+    const effectiveContent = content.trim() || (selectedFile ? `[${filename} 파일 첨부]` : '')
 
     try {
       setLoading(true)
       let body: any;
-      const currentSourceType = selectedFile ? 'file' : 'text'
 
       if (selectedFile) {
         const formData = new FormData()
         formData.append('title', title)
         formData.append('source_type', currentSourceType)
         formData.append('original_filename', filename)
-        formData.append('content', content)
+        formData.append('content', effectiveContent)
         formData.append('file', selectedFile)
         body = formData
       } else {
@@ -354,7 +357,7 @@ export default function KnowledgePage() {
           title,
           source_type: currentSourceType,
           original_filename: '',
-          content
+          content: effectiveContent
         })
       }
 
@@ -401,14 +404,13 @@ export default function KnowledgePage() {
       setIsOfflineMode(true)
       toast.info('오프라인 상태입니다. 기기에 우선 저장되며, 온라인 시 자동 등록됩니다.', { duration: 5000 })
 
-      const currentSourceType = selectedFile ? 'file' : 'text'
       const offlineDoc = {
         id: 'local-' + Date.now(),
         school_id: '',
         title,
         source_type: currentSourceType,
         original_filename: filename,
-        markdown_content: content.trim(),
+        markdown_content: effectiveContent,
         created_at: new Date().toISOString(),
         user: { name: '나 (오프라인)' }
       }
