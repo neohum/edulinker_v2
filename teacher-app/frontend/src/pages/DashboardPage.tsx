@@ -775,6 +775,7 @@ ${matchContext || '현재 검색된 관련 문서 내용이 없습니다.'}`;
                           <div key={i} style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--accent-blue)', borderRadius: 4, padding: '1px 5px' }}>참고{i + 1}</span>
                                 <i className={`fi ${res.doc.source_type === 'file' ? 'fi-rr-file-hwp' : res.doc.source_type === 'qa' ? 'fi-rr-comment-alt' : res.doc.source_type === 'announcement' ? 'fi-rr-envelope-open' : 'fi-rr-document'}`} style={{ color: res.doc.source_type === 'qa' ? '#f59e0b' : res.doc.source_type === 'announcement' ? '#8b5cf6' : 'var(--accent-blue)' }} />
                                 {res.doc.source_type === 'announcement' ? `[공문] ${res.doc.title}` : res.doc.title}
                               </div>
