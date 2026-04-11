@@ -8,6 +8,8 @@ export function CheckForUpdate():Promise<void>;
 
 export function ClearLogs():Promise<void>;
 
+export function DeactivateMultipleDBUsers(arg1:Array<string>):Promise<void>;
+
 export function DeleteDBAnnouncement(arg1:string):Promise<void>;
 
 export function DeleteDBKnowledgeDoc(arg1:string):Promise<void>;
@@ -29,6 +31,8 @@ export function GetLocalIP():Promise<string>;
 export function GetLogs():Promise<Array<string>>;
 
 export function GetStatus():Promise<main.ServerStatus>;
+
+export function HardDeleteAllInactiveUsers():Promise<void>;
 
 export function HardDeleteDBUser(arg1:string):Promise<void>;
 

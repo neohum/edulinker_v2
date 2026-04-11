@@ -14,6 +14,10 @@ export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
 
+export function DeactivateMultipleDBUsers(arg1) {
+  return window['go']['main']['App']['DeactivateMultipleDBUsers'](arg1);
+}
+
 export function DeleteDBAnnouncement(arg1) {
   return window['go']['main']['App']['DeleteDBAnnouncement'](arg1);
 }
@@ -56,6 +60,10 @@ export function GetLogs() {
 
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
+}
+
+export function HardDeleteAllInactiveUsers() {
+  return window['go']['main']['App']['HardDeleteAllInactiveUsers']();
 }
 
 export function HardDeleteDBUser(arg1) {

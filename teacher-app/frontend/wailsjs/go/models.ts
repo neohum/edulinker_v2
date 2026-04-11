@@ -78,6 +78,10 @@ export namespace main {
 	    date: string;
 	    absence_type: string;
 	    remark: string;
+	    counted_days: number;
+	    has_app: boolean;
+	    has_report: boolean;
+	    has_abs_report: boolean;
 	    created_at: string;
 	
 	    static createFrom(source: any = {}) {
@@ -91,6 +95,10 @@ export namespace main {
 	        this.date = source["date"];
 	        this.absence_type = source["absence_type"];
 	        this.remark = source["remark"];
+	        this.counted_days = source["counted_days"];
+	        this.has_app = source["has_app"];
+	        this.has_report = source["has_report"];
+	        this.has_abs_report = source["has_abs_report"];
 	        this.created_at = source["created_at"];
 	    }
 	}
@@ -606,6 +614,38 @@ export namespace main {
 	        this.heading_context = source["heading_context"];
 	        this.score = source["score"];
 	        this.is_semantic = source["is_semantic"];
+	    }
+	}
+	export class RegisterRequest {
+	    school_code: string;
+	    school_name: string;
+	    name: string;
+	    phone: string;
+	    password: string;
+	    role: string;
+	    class_phone?: string;
+	    department?: string;
+	    task_name?: string;
+	    grade?: number;
+	    class_num?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RegisterRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.school_code = source["school_code"];
+	        this.school_name = source["school_name"];
+	        this.name = source["name"];
+	        this.phone = source["phone"];
+	        this.password = source["password"];
+	        this.role = source["role"];
+	        this.class_phone = source["class_phone"];
+	        this.department = source["department"];
+	        this.task_name = source["task_name"];
+	        this.grade = source["grade"];
+	        this.class_num = source["class_num"];
 	    }
 	}
 	export class SchoolResult {

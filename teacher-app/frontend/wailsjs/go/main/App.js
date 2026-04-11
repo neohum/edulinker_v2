@@ -34,6 +34,10 @@ export function ClearConvertedPages(arg1) {
   return window['go']['main']['App']['ClearConvertedPages'](arg1);
 }
 
+export function ClearLocalClass(arg1, arg2) {
+  return window['go']['main']['App']['ClearLocalClass'](arg1, arg2);
+}
+
 export function ConvertExcelToPdf(arg1, arg2) {
   return window['go']['main']['App']['ConvertExcelToPdf'](arg1, arg2);
 }
@@ -92,6 +96,10 @@ export function DeleteDocumentIndex(arg1) {
 
 export function DeleteLocalSendocDraft(arg1) {
   return window['go']['main']['App']['DeleteLocalSendocDraft'](arg1);
+}
+
+export function DeleteLocalStudentBatch(arg1) {
+  return window['go']['main']['App']['DeleteLocalStudentBatch'](arg1);
 }
 
 export function DeleteOpinionHistory(arg1) {
@@ -182,6 +190,10 @@ export function GetLocalSendocDrafts() {
   return window['go']['main']['App']['GetLocalSendocDrafts']();
 }
 
+export function GetLocalStudents(arg1, arg2) {
+  return window['go']['main']['App']['GetLocalStudents'](arg1, arg2);
+}
+
 export function GetMonthAttendanceRecords(arg1) {
   return window['go']['main']['App']['GetMonthAttendanceRecords'](arg1);
 }
@@ -196,6 +208,10 @@ export function GetOpinionRecords() {
 
 export function GetPlugins() {
   return window['go']['main']['App']['GetPlugins']();
+}
+
+export function GetQueueLength() {
+  return window['go']['main']['App']['GetQueueLength']();
 }
 
 export function GetSchoolYearRecords(arg1) {
@@ -220,6 +236,10 @@ export function HasSendocDraft(arg1) {
 
 export function IndexDocument(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['IndexDocument'](arg1, arg2, arg3, arg4);
+}
+
+export function InsertLocalStudent(arg1) {
+  return window['go']['main']['App']['InsertLocalStudent'](arg1);
 }
 
 export function InstallOllama() {
@@ -266,6 +286,14 @@ export function PullModel(arg1) {
   return window['go']['main']['App']['PullModel'](arg1);
 }
 
+export function QueueOfflineAction(arg1, arg2, arg3) {
+  return window['go']['main']['App']['QueueOfflineAction'](arg1, arg2, arg3);
+}
+
+export function QueueOfflineRegistration(arg1) {
+  return window['go']['main']['App']['QueueOfflineRegistration'](arg1);
+}
+
 export function QuitHwp() {
   return window['go']['main']['App']['QuitHwp']();
 }
@@ -280,6 +308,14 @@ export function Register(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, a
 
 export function SaveAILog(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveAILog'](arg1, arg2, arg3);
+}
+
+export function SaveAttendanceDays(arg1, arg2) {
+  return window['go']['main']['App']['SaveAttendanceDays'](arg1, arg2);
+}
+
+export function SaveAttendanceDocs(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveAttendanceDocs'](arg1, arg2, arg3);
 }
 
 export function SaveAttendanceRecord(arg1, arg2, arg3) {
@@ -350,6 +386,10 @@ export function SetAPIBase(arg1) {
   return window['go']['main']['App']['SetAPIBase'](arg1);
 }
 
+export function SetToken(arg1) {
+  return window['go']['main']['App']['SetToken'](arg1);
+}
+
 export function StartOllama() {
   return window['go']['main']['App']['StartOllama']();
 }
@@ -370,8 +410,20 @@ export function SyncLinkers(arg1) {
   return window['go']['main']['App']['SyncLinkers'](arg1);
 }
 
+export function SyncLocalStudentsConfig(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SyncLocalStudentsConfig'](arg1, arg2, arg3);
+}
+
+export function SyncOfflineData() {
+  return window['go']['main']['App']['SyncOfflineData']();
+}
+
 export function ToggleTodoItem(arg1) {
   return window['go']['main']['App']['ToggleTodoItem'](arg1);
+}
+
+export function UpdateLocalStudent(arg1) {
+  return window['go']['main']['App']['UpdateLocalStudent'](arg1);
 }
 
 export function UploadFileFromBytes(arg1, arg2) {

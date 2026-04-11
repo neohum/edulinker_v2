@@ -1,0 +1,2 @@
+src/pages/SendocPage.tsx(231,33): error TS2322: Type '{ allUsers: any[]; selectedUsers: string[]; setSelectedUsers: Dispatch<SetStateAction<string[]>>; setShowRecipientModal: Dispatch<SetStateAction<boolean>>; ... 5 more ...; setFields: Dispatch<...>; }' is not assignable to type 'IntrinsicAttributes & SendocRecipientModalProps'.
+  Property 'initialTitle' does not exist on type 'IntrinsicAttributes & SendocRecipientModalProps'.

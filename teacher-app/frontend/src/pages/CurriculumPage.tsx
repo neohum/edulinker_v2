@@ -40,7 +40,7 @@ const getDynamicSubjects = (schoolName?: string, grade?: number): string[] => {
     }
     return ['국어', '영어', '수학', '사회', '과학', '도덕', '실과', '음악', '미술', '체육', '창의적 체험활동', '기타'];
   }
-  
+
   if (isMiddle) {
     return ['국어', '도덕', '사회', '역사', '수학', '과학', '기가', '체육', '음악', '미술', '영어', '정보', '한문', '기타'];
   }
@@ -65,24 +65,63 @@ export default function CurriculumPage({ user }: CurriculumPageProps = {}) {
     subject: '국어', title: '', score: '', grade: '', memo: ''
   })
 
-  useEffect(() => { fetchStudents() }, [])
+  useEffect(() => { fetchStudents() }, [user])
   useEffect(() => { if (selectedStudent) fetchEvalRecords(selectedStudent.id) }, [selectedStudent])
 
   const fetchStudents = async () => {
+    const grade = user?.grade || 0
+    const classNum = user?.classNum || 0
+    if (!grade || !classNum) {
+      setStudents([])
+      setLoadingStudents(false)
+      return
+    }
+
+    try {
+      setLoadingStudents(true)
+      // Offline-first Local SQLite Data
+      if ((window as any).go?.main?.App?.GetLocalStudents) {
+        const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+        if (json && json !== '[]') {
+          try {
+            const list = JSON.parse(json)
+            setStudents(list)
+          } catch (e) { }
+        }
+      }
+    } finally {
+      setLoadingStudents(false)
+    }
+
+    // Background sync
+    syncNetworkStudents(grade, classNum)
+  }
+
+  const syncNetworkStudents = async (grade: number, classNum: number) => {
+    if (!navigator.onLine) return
     try {
       let url = '/api/core/users?role=student&page_size=200'
-      if (user?.grade) url += `&grade=${user.grade}`
-      if (user?.classNum) url += `&class_num=${user.classNum}`
+      if (grade) url += `&grade=${grade}`
+      if (classNum) url += `&class_num=${classNum}`
       const res = await apiFetch(url)
       if (res.ok) {
         const data = await res.json()
         const list: Student[] = (data.users || [])
-          .filter((s: any) => (!user?.grade || s.grade === user.grade) && (!user?.classNum || s.class_num === user.classNum))
+          .filter((s: any) => (!grade || s.grade === grade) && (!classNum || s.class_num === classNum))
         list.sort((a, b) => a.number - b.number)
-        setStudents(list)
+
+        if ((window as any).go?.main?.App?.SyncLocalStudentsConfig) {
+          await (window as any).go.main.App.SyncLocalStudentsConfig(grade, classNum, JSON.stringify(list))
+          // Refresh from local db
+          const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+          if (json && json !== '[]') {
+            try { setStudents(JSON.parse(json)) } catch (e) { }
+          }
+        } else {
+          setStudents(list)
+        }
       }
     } catch (e) { console.error(e) }
-    finally { setLoadingStudents(false) }
   }
 
   const fetchEvalRecords = async (studentId: string) => {

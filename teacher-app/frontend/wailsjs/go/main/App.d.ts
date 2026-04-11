@@ -18,6 +18,8 @@ export function CheckOllama():Promise<main.OllamaStatus>;
 
 export function ClearConvertedPages(arg1:string):Promise<void>;
 
+export function ClearLocalClass(arg1:number,arg2:number):Promise<void>;
+
 export function ConvertExcelToPdf(arg1:string,arg2:string):Promise<main.OfficeConvertResult>;
 
 export function ConvertHwp(arg1:string,arg2:string,arg3:string):Promise<main.HwpConvertResult>;
@@ -47,6 +49,8 @@ export function DeleteCurriculumEvaluation(arg1:string):Promise<void>;
 export function DeleteDocumentIndex(arg1:string):Promise<void>;
 
 export function DeleteLocalSendocDraft(arg1:string):Promise<void>;
+
+export function DeleteLocalStudentBatch(arg1:Array<string>):Promise<void>;
 
 export function DeleteOpinionHistory(arg1:string):Promise<void>;
 
@@ -92,6 +96,8 @@ export function GetLocalSendocDraft(arg1:string):Promise<main.LocalDraftMeta>;
 
 export function GetLocalSendocDrafts():Promise<Array<main.DraftListItem>>;
 
+export function GetLocalStudents(arg1:number,arg2:number):Promise<string>;
+
 export function GetMonthAttendanceRecords(arg1:string):Promise<Array<main.AttendanceRecord>>;
 
 export function GetOpinionHistories(arg1:string):Promise<Array<main.OpinionRecord>>;
@@ -99,6 +105,8 @@ export function GetOpinionHistories(arg1:string):Promise<Array<main.OpinionRecor
 export function GetOpinionRecords():Promise<Array<main.OpinionRecord>>;
 
 export function GetPlugins():Promise<Array<main.PluginInfo>>;
+
+export function GetQueueLength():Promise<number>;
 
 export function GetSchoolYearRecords(arg1:number):Promise<Array<main.AttendanceRecord>>;
 
@@ -111,6 +119,8 @@ export function GetToken():Promise<string>;
 export function HasSendocDraft(arg1:string):Promise<boolean>;
 
 export function IndexDocument(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function InsertLocalStudent(arg1:string):Promise<void>;
 
 export function InstallOllama():Promise<main.OllamaStatus>;
 
@@ -134,6 +144,10 @@ export function OpenPrintHTML(arg1:string):Promise<void>;
 
 export function PullModel(arg1:string):Promise<main.PullModelResult>;
 
+export function QueueOfflineAction(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function QueueOfflineRegistration(arg1:main.RegisterRequest):Promise<void>;
+
 export function QuitHwp():Promise<void>;
 
 export function RefineSearchQuery(arg1:string):Promise<string>;
@@ -141,6 +155,10 @@ export function RefineSearchQuery(arg1:string):Promise<string>;
 export function Register(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number,arg11:number):Promise<main.LoginResult>;
 
 export function SaveAILog(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SaveAttendanceDays(arg1:Array<string>,arg2:number):Promise<void>;
+
+export function SaveAttendanceDocs(arg1:Array<string>,arg2:string,arg3:boolean):Promise<void>;
 
 export function SaveAttendanceRecord(arg1:string,arg2:string,arg3:string):Promise<void>;
 
@@ -176,6 +194,8 @@ export function SelectAndUploadFiles():Promise<Array<main.UploadFileResult>>;
 
 export function SetAPIBase(arg1:string):Promise<void>;
 
+export function SetToken(arg1:string):Promise<void>;
+
 export function StartOllama():Promise<main.OllamaStatus>;
 
 export function StopOllama():Promise<main.OllamaStatus>;
@@ -186,6 +206,12 @@ export function SyncKnowledge(arg1:string,arg2:string,arg3:string):Promise<void>
 
 export function SyncLinkers(arg1:string):Promise<void>;
 
+export function SyncLocalStudentsConfig(arg1:number,arg2:number,arg3:string):Promise<void>;
+
+export function SyncOfflineData():Promise<void>;
+
 export function ToggleTodoItem(arg1:string):Promise<void>;
+
+export function UpdateLocalStudent(arg1:string):Promise<void>;
 
 export function UploadFileFromBytes(arg1:string,arg2:string):Promise<main.UploadFileResult>;

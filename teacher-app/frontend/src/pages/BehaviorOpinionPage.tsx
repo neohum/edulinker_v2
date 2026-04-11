@@ -264,33 +264,67 @@ ${context}
   }, [user])
 
   const fetchData = async () => {
-    setLoading(true)
+    const grade = user?.grade || 0
+    const classNum = user?.classNum || 0
+    if (!grade || !classNum) {
+      setStudents([])
+      setLoading(false)
+      return
+    }
+
     try {
-      // 1. Fetch Students
-      let url = '/api/core/users?role=student&page_size=200'
-      if (user?.grade) url += `&grade=${user.grade}`
-      if (user?.classNum) url += `&class_num=${user.classNum}`
-
-      const res = await apiFetch(url)
-      if (res.ok) {
-        const data = await res.json()
-        const list: Student[] = (data.users || []).filter((s: any) =>
-          (!user?.grade || s.grade === user.grade) && (!user?.classNum || s.class_num === user.classNum)
-        ).sort((a: any, b: any) => a.number - b.number)
-        setStudents(list)
+      setLoading(true)
+      // 1. Fetch Students from Local DB immediately
+      if ((window as any).go?.main?.App?.GetLocalStudents) {
+        const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+        if (json && json !== '[]') {
+          try {
+            const list = JSON.parse(json)
+            setStudents(list)
+          } catch (e) { }
+        }
       }
 
-      // 2. Fetch Opinions from Local DB
+      // 2. Fetch Opinions from Local DB immediately
       const localData = await (window as any).go.main.App.GetOpinionRecords()
-      if (localData) {
-        setOpinions(localData)
-      }
+      if (localData) setOpinions(localData)
 
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
+
+    // 3. Trigger network sync in background without blocking UI
+    syncNetworkStudents(grade, classNum)
+  }
+
+  const syncNetworkStudents = async (grade: number, classNum: number) => {
+    if (!navigator.onLine) return
+    try {
+      let url = '/api/core/users?role=student&page_size=200'
+      if (grade) url += `&grade=${grade}`
+      if (classNum) url += `&class_num=${classNum}`
+
+      const res = await apiFetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        const list: Student[] = (data.users || []).filter((s: any) =>
+          (!grade || s.grade === grade) && (!classNum || s.class_num === classNum)
+        ).sort((a: any, b: any) => a.number - b.number)
+
+        if ((window as any).go?.main?.App?.SyncLocalStudentsConfig) {
+          await (window as any).go.main.App.SyncLocalStudentsConfig(grade, classNum, JSON.stringify(list))
+          // Refresh from local db
+          const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+          if (json && json !== '[]') {
+            try { setStudents(JSON.parse(json)) } catch (e) { }
+          }
+        } else {
+          setStudents(list)
+        }
+      }
+    } catch (e) { console.error(e) }
   }
 
   const getOpinionForStudent = (studentId: string) => {

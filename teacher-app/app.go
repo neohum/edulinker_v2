@@ -91,8 +91,22 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Println("[DB] Failed to initialize secure db:", err)
 	}
 
+	go a.startOfflineSyncWorker()
+
 	go systray.Run(a.onTrayReady, a.onTrayExit)
 	go a.CheckForUpdate()
+}
+
+func (a *App) startOfflineSyncWorker() {
+	for {
+		time.Sleep(15 * time.Second)
+		if a.apiBase == "" {
+			continue
+		}
+		if a.CheckConnection() {
+			a.SyncOfflineData()
+		}
+	}
 }
 
 // OpenPrintHTML writes the given HTML string to a temp file and opens it in the system default browser for printing.
@@ -209,7 +223,7 @@ func (a *App) ConvertToMarkdown(filename, base64data string) ConvertToMarkdownRe
 		if !pdfRes.Success {
 			return ConvertToMarkdownResult{Error: pdfRes.Error}
 		}
-		
+
 		// PDF 변환 성공 후 Kordoc을 우선으로 텍스트 추출 (한글 추출률 향상)
 		resKordoc := a.ConvertWithKordoc(filename+".pdf", pdfRes.Data)
 		if resKordoc.Success {
@@ -326,6 +340,11 @@ type RegisterRequest struct {
 	Phone      string `json:"phone"`
 	Password   string `json:"password"`
 	Role       string `json:"role"`
+	ClassPhone string `json:"class_phone,omitempty"`
+	Department string `json:"department,omitempty"`
+	TaskName   string `json:"task_name,omitempty"`
+	Grade      int    `json:"grade,omitempty"`
+	ClassNum   int    `json:"class_num,omitempty"`
 }
 
 // LoginResult is the response from the login API.
@@ -362,9 +381,49 @@ func (a *App) Register(schoolCode, schoolName, name, phone, password, role, clas
 		"class_num":   classNum,
 	}
 	bodyBytes, _ := json.Marshal(reqData)
-	resp, err := http.Post(a.apiBase+"/api/auth/register", "application/json", bytes.NewReader(bodyBytes))
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, _ := http.NewRequest("POST", a.apiBase+"/api/auth/register", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
-		return LoginResult{Success: false, Error: "서버에 연결할 수 없습니다"}
+		queueReq := RegisterRequest{
+			SchoolCode: schoolCode,
+			SchoolName: schoolName,
+			Name:       name,
+			Phone:      phone,
+			Password:   password,
+			Role:       role,
+			ClassPhone: classPhone,
+			Department: department,
+			TaskName:   taskName,
+			Grade:      grade,
+			ClassNum:   classNum,
+		}
+		if errQueue := a.QueueOfflineRegistration(queueReq); errQueue != nil {
+			return LoginResult{Success: false, Error: "오프라인 등록 정보를 저장할 수 없습니다: " + errQueue.Error()}
+		}
+
+		lr := LoginResult{
+			Success:    true,
+			Token:      "offline_token_signup_" + phone,
+			UserID:     "offline_user_" + phone,
+			UserName:   name,
+			UserRole:   role,
+			SchoolName: schoolName,
+			Department: department,
+			TaskName:   taskName,
+			ClassPhone: classPhone,
+			Grade:      grade,
+			ClassNum:   classNum,
+			IsOffline:  true,
+		}
+
+		profileBytes, _ := json.Marshal(lr)
+		a.saveOfflineLogin(phone, password, string(profileBytes))
+		a.authToken = lr.Token
+		return lr
 	}
 	defer resp.Body.Close()
 
@@ -484,6 +543,11 @@ func (a *App) Login(phone, password string) LoginResult {
 // GetToken returns the current JWT token for frontend API calls.
 func (a *App) GetToken() string {
 	return a.authToken
+}
+
+// SetToken explicitly sets the JWT token from the frontend.
+func (a *App) SetToken(token string) {
+	a.authToken = token
 }
 
 // IsLoggedIn checks if the user has a valid token.

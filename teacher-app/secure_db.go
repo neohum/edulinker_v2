@@ -6,8 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -184,6 +189,36 @@ func (a *App) initSecureDB() error {
 			vector_json TEXT NOT NULL,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
+
+		-- Offline Registrations Queue
+		CREATE TABLE IF NOT EXISTS offline_registrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			payload_json TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- General Actions Queue
+		CREATE TABLE IF NOT EXISTS local_offline_actions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			method TEXT NOT NULL,
+			url TEXT NOT NULL,
+			payload_json TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- Local Students (Offline First Primary Store)
+		CREATE TABLE IF NOT EXISTS local_students (
+			id VARCHAR(255) PRIMARY KEY,
+			student_number INTEGER NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			grade INTEGER NOT NULL,
+			class_num INTEGER NOT NULL,
+			gender VARCHAR(10),
+			parent_phone VARCHAR(50),
+			parent_phone2 VARCHAR(50),
+			is_active BOOLEAN DEFAULT 1,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	if err != nil {
 		return err
@@ -191,6 +226,10 @@ func (a *App) initSecureDB() error {
 
 	// Schema migration for existing DBs
 	db.Exec("ALTER TABLE local_curriculum ADD COLUMN grade TEXT NOT NULL DEFAULT ''")
+	db.Exec("ALTER TABLE local_attendance ADD COLUMN counted_days REAL DEFAULT 1.0")
+	db.Exec("ALTER TABLE local_attendance ADD COLUMN has_app BOOLEAN DEFAULT 0")
+	db.Exec("ALTER TABLE local_attendance ADD COLUMN has_report BOOLEAN DEFAULT 0")
+	db.Exec("ALTER TABLE local_attendance ADD COLUMN has_abs_report BOOLEAN DEFAULT 0")
 
 	a.secureDB = db
 	return nil
@@ -341,4 +380,436 @@ func (a *App) LoadTeacherAsset(assetType, userID string) string {
 		return ""
 	}
 	return vectorJSON
+}
+
+// QueueOfflineRegistration saves registration payload to local DB for background sync.
+func (a *App) QueueOfflineRegistration(req RegisterRequest) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("로컬 DB가 초기화되지 않았습니다")
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	encPayload := Encrypt(string(reqBytes))
+
+	_, err = a.secureDB.Exec("INSERT INTO offline_registrations (payload_json) VALUES (?)", encPayload)
+	return err
+}
+
+var syncMutex sync.Mutex
+
+// SyncOfflineData reads queued offline registrations and pushes them to the server.
+func (a *App) SyncOfflineData() {
+	if a.secureDB == nil || a.apiBase == "" {
+		return
+	}
+
+	// Prevent concurrent execution of SyncOfflineData
+	if !syncMutex.TryLock() {
+		fmt.Println("[SyncOfflineData] Sync already in progress, skipping...")
+		return
+	}
+	defer syncMutex.Unlock()
+
+	type offlineReg struct {
+		id      int
+		payload string
+	}
+	var regs []offlineReg
+	rows, err := a.secureDB.Query("SELECT id, payload_json FROM offline_registrations")
+	if err == nil {
+		for rows.Next() {
+			var r offlineReg
+			if err := rows.Scan(&r.id, &r.payload); err == nil {
+				regs = append(regs, r)
+			}
+		}
+		rows.Close()
+	}
+
+	for _, r := range regs {
+		decData := Decrypt(r.payload)
+		resp, err := http.Post(a.apiBase+"/api/auth/register", "application/json", strings.NewReader(decData))
+		if err == nil {
+			if resp.StatusCode == 201 {
+				a.secureDB.Exec("DELETE FROM offline_registrations WHERE id = ?", r.id)
+			} else if resp.StatusCode == 400 {
+				data, _ := io.ReadAll(resp.Body)
+				var errResp map[string]string
+				json.Unmarshal(data, &errResp)
+				if strings.Contains(errResp["error"], "already") || strings.Contains(errResp["error"], "존재") {
+					a.secureDB.Exec("DELETE FROM offline_registrations WHERE id = ?", r.id)
+				}
+			}
+			resp.Body.Close()
+		}
+	}
+
+	type offlineAction struct {
+		id      int
+		method  string
+		url     string
+		payload string
+	}
+	var acts []offlineAction
+	actRows, actErr := a.secureDB.Query("SELECT id, method, url, payload_json FROM local_offline_actions ORDER BY id ASC")
+	if actErr == nil {
+		for actRows.Next() {
+			var r offlineAction
+			if scanErr := actRows.Scan(&r.id, &r.method, &r.url, &r.payload); scanErr == nil {
+				acts = append(acts, r)
+			}
+		}
+		actRows.Close()
+	}
+
+	for _, r := range acts {
+		decData := Decrypt(r.payload)
+		fmt.Printf("[SyncOfflineData] Attempting sync for Action ID %d: %s %s, Payload: %s\n", r.id, r.method, a.apiBase+r.url, decData)
+		req, reqErr := http.NewRequest(r.method, a.apiBase+r.url, strings.NewReader(decData))
+		if reqErr == nil {
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+a.authToken)
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, respErr := client.Do(req)
+			if respErr == nil {
+				fmt.Printf("[SyncOfflineData] Action ID %d hit Server, Status: %d\n", r.id, resp.StatusCode)
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					a.secureDB.Exec("DELETE FROM local_offline_actions WHERE id = ?", r.id)
+					fmt.Printf("[SyncOfflineData] Action ID %d deleted from queue (Success)\n", r.id)
+				} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+					// DO NOT delete if 401 Unauthorized or 403 Forbidden - these happen when the token is temporarily lost or expired (especially during hot-reload)
+					if resp.StatusCode != 401 && resp.StatusCode != 403 {
+						a.secureDB.Exec("DELETE FROM local_offline_actions WHERE id = ?", r.id)
+						fmt.Printf("[SyncOfflineData] Action ID %d deleted from queue (Client Error): %s\n", r.id, string(bodyBytes))
+					} else {
+						fmt.Printf("[SyncOfflineData] Action ID %d retained in queue (Auth Error): %s\n", r.id, string(bodyBytes))
+					}
+				}
+				resp.Body.Close()
+			} else {
+				fmt.Printf("[SyncOfflineData] Action ID %d HTTP Request Failed: %v\n", r.id, respErr)
+			}
+		}
+	}
+}
+
+// QueueOfflineAction explicitly queues a generic HTTP REST action for later syncing when online
+func (a *App) QueueOfflineAction(method, targetURL, payload string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("local DB not initialized")
+	}
+	encPayload := Encrypt(payload)
+	_, err := a.secureDB.Exec("INSERT INTO local_offline_actions (method, url, payload_json) VALUES (?, ?, ?)", method, targetURL, encPayload)
+
+	// Fast-track syncing if we're currently online (reduces race condition with immediate Excel uploads)
+	if err == nil {
+		go func() {
+			if a.apiBase != "" && a.CheckConnection() {
+				a.SyncOfflineData()
+			}
+		}()
+	}
+
+	return err
+}
+
+// GetQueueLength returns the number of pending offline actions related to users in the queue.
+func (a *App) GetQueueLength() int {
+	if a.secureDB == nil {
+		return 0
+	}
+	var count int
+	a.secureDB.QueryRow("SELECT COUNT(*) FROM local_offline_actions WHERE url LIKE '%/api/core/users%'").Scan(&count)
+	return count
+}
+
+// --- Local SQLite Student Management ---
+
+// SyncLocalStudentsConfig overwrites the local students table for a given class.
+func (a *App) SyncLocalStudentsConfig(grade, classNum int, studentsJSON string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("로컬 DB가 초기화되지 않았습니다")
+	}
+
+	// [CRITICAL FIX]: If there are any pending offline queue actions related to students/users,
+	// the local SQLite is currently MORE updated than the server.
+	// Overwriting it now would destroy offline creations before they sync.
+	var pendingCount int
+	a.secureDB.QueryRow("SELECT COUNT(*) FROM local_offline_actions WHERE url LIKE '%/api/core/users%'").Scan(&pendingCount)
+	if pendingCount > 0 {
+		return nil // Graceful abort: protect local integrity until queue flushes
+	}
+
+	tx, err := a.secureDB.Begin()
+	if err != nil {
+		return err
+	}
+
+	// Delete existing class students
+	_, err = tx.Exec("DELETE FROM local_students WHERE grade = ? AND class_num = ?", grade, classNum)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	var students []map[string]interface{}
+	if err := json.Unmarshal([]byte(studentsJSON), &students); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO local_students (id, student_number, name, grade, class_num, gender, parent_phone, parent_phone2, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	for _, s := range students {
+		id, _ := s["id"].(string)
+		number := int(s["number"].(float64))
+		name, _ := s["name"].(string)
+		g := int(s["grade"].(float64))
+		c := int(s["class_num"].(float64))
+		gender, _ := s["gender"].(string)
+		p1, _ := s["parent_phone"].(string)
+		p2, _ := s["parent_phone2"].(string)
+		isActive, _ := s["is_active"].(bool)
+
+		_, err = stmt.Exec(id, number, name, g, c, gender, p1, p2, isActive)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetLocalStudents fetches students from local SQLite by grade and class.
+func (a *App) GetLocalStudents(grade, classNum int) string {
+	if a.secureDB == nil {
+		return "[]"
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	if grade == 0 && classNum == 0 {
+		rows, err = a.secureDB.Query(`
+			SELECT id, student_number, name, grade, class_num, gender, parent_phone, parent_phone2, is_active 
+			FROM local_students 
+			ORDER BY grade ASC, class_num ASC, student_number ASC
+		`)
+	} else if grade > 0 && classNum == 0 {
+		rows, err = a.secureDB.Query(`
+			SELECT id, student_number, name, grade, class_num, gender, parent_phone, parent_phone2, is_active 
+			FROM local_students 
+			WHERE grade = ?
+			ORDER BY class_num ASC, student_number ASC
+		`, grade)
+	} else {
+		rows, err = a.secureDB.Query(`
+			SELECT id, student_number, name, grade, class_num, gender, parent_phone, parent_phone2, is_active 
+			FROM local_students 
+			WHERE grade = ? AND class_num = ? 
+			ORDER BY student_number ASC
+		`, grade, classNum)
+	}
+	if err != nil {
+		return "[]"
+	}
+	defer rows.Close()
+
+	var students []map[string]interface{}
+	for rows.Next() {
+		var id, name, gender, p1, p2 string
+		var number, g, c int
+		var isActive bool
+
+		if err := rows.Scan(&id, &number, &name, &g, &c, &gender, &p1, &p2, &isActive); err == nil {
+			students = append(students, map[string]interface{}{
+				"id":            id,
+				"number":        number,
+				"name":          name,
+				"grade":         g,
+				"class_num":     c,
+				"gender":        gender,
+				"parent_phone":  p1,
+				"parent_phone2": p2,
+				"is_active":     isActive,
+			})
+		}
+	}
+
+	if len(students) == 0 {
+		return "[]"
+	}
+	jsonData, _ := json.Marshal(students)
+	return string(jsonData)
+}
+
+// InsertLocalStudent inserts a single student locally. (Called instantly offline)
+func (a *App) InsertLocalStudent(studentJSON string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("local DB uninitialized")
+	}
+
+	var s map[string]interface{}
+	if err := json.Unmarshal([]byte(studentJSON), &s); err != nil {
+		return err
+	}
+
+	id, _ := s["id"].(string)
+	number := int(s["number"].(float64))
+	name, _ := s["name"].(string)
+	g := int(s["grade"].(float64))
+	c := int(s["class_num"].(float64))
+	gender, _ := s["gender"].(string)
+	p1, _ := s["parent_phone"].(string)
+	p2, _ := s["parent_phone2"].(string)
+	isActive, _ := s["is_active"].(bool)
+
+	_, err := a.secureDB.Exec(`
+		INSERT INTO local_students (id, student_number, name, grade, class_num, gender, parent_phone, parent_phone2, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id, number, name, g, c, gender, p1, p2, isActive)
+
+	if err == nil {
+		// Prepare a matching POST request for remote server queue mechanism
+		queuePayload := map[string]interface{}{
+			"grade":         g,
+			"class_num":     c,
+			"number":        number,
+			"name":          name,
+			"gender":        gender,
+			"parent_phone":  p1,
+			"parent_phone2": p2,
+		}
+		qBytes, _ := json.Marshal(queuePayload)
+		a.QueueOfflineAction("POST", "/api/core/users/add-student", string(qBytes))
+	}
+	return err
+}
+
+// UpdateLocalStudent updates a local student and queues it.
+func (a *App) UpdateLocalStudent(studentJSON string) error {
+	if a.secureDB == nil {
+		return fmt.Errorf("local DB uninitialized")
+	}
+
+	var s map[string]interface{}
+	if err := json.Unmarshal([]byte(studentJSON), &s); err != nil {
+		return err
+	}
+
+	id, _ := s["id"].(string)
+	number := int(s["number"].(float64))
+	name, _ := s["name"].(string)
+	gender, _ := s["gender"].(string)
+	p1, _ := s["parent_phone"].(string)
+	p2, _ := s["parent_phone2"].(string)
+
+	_, err := a.secureDB.Exec(`
+		UPDATE local_students 
+		SET student_number = ?, name = ?, gender = ?, parent_phone = ?, parent_phone2 = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, number, name, gender, p1, p2, id)
+
+	if err == nil {
+		// Standardize queue update using explicit backend PUT fields rules
+		queuePayload := map[string]interface{}{
+			"number":        number,
+			"name":          name,
+			"gender":        gender,
+			"parent_phone":  p1,
+			"parent_phone2": p2,
+		}
+		qBytes, _ := json.Marshal(queuePayload)
+		// We use standard offline queue
+		if !strings.HasPrefix(id, "local_") {
+			a.QueueOfflineAction("PUT", "/api/core/users/"+id, string(qBytes))
+		}
+	}
+
+	return err
+}
+
+// DeleteLocalStudentBatch deletes local rows by IDs and queues sync.
+func (a *App) DeleteLocalStudentBatch(ids []string) error {
+	if a.secureDB == nil || len(ids) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	cleanIds := make([]string, 0)
+
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+		if !strings.HasPrefix(id, "local_") {
+			cleanIds = append(cleanIds, id)
+		}
+	}
+
+	inClause := strings.Join(placeholders, ",")
+
+	// Local Cascade Delete
+	a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_attendance WHERE student_id IN (%s)", inClause), args...)
+	a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_counseling WHERE student_id IN (%s)", inClause), args...)
+	a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_opinions WHERE student_id IN (%s)", inClause), args...)
+	a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_curriculum WHERE student_id IN (%s)", inClause), args...)
+
+	query := fmt.Sprintf("DELETE FROM local_students WHERE id IN (%s)", inClause)
+	_, err := a.secureDB.Exec(query, args...)
+
+	if err == nil && len(cleanIds) > 0 {
+		payload := map[string]interface{}{"ids": cleanIds}
+		qBytes, _ := json.Marshal(payload)
+		a.QueueOfflineAction("POST", "/api/core/users/delete-students-batch", string(qBytes))
+	}
+	return err
+}
+
+// ClearLocalClass removes an entire class locally with cascade, and queues sync.
+func (a *App) ClearLocalClass(grade, classNum int) error {
+	if a.secureDB == nil {
+		return nil
+	}
+
+	// First find student IDs to cascade delete
+	rows, err := a.secureDB.Query("SELECT id FROM local_students WHERE grade = ? AND class_num = ?", grade, classNum)
+	if err == nil {
+		var ids []interface{}
+		var placeholders []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err == nil {
+				ids = append(ids, id)
+				placeholders = append(placeholders, "?")
+			}
+		}
+		rows.Close()
+
+		if len(ids) > 0 {
+			inClause := strings.Join(placeholders, ",")
+			a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_attendance WHERE student_id IN (%s)", inClause), ids...)
+			a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_counseling WHERE student_id IN (%s)", inClause), ids...)
+			a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_opinions WHERE student_id IN (%s)", inClause), ids...)
+			a.secureDB.Exec(fmt.Sprintf("DELETE FROM local_curriculum WHERE student_id IN (%s)", inClause), ids...)
+		}
+	}
+
+	_, err = a.secureDB.Exec("DELETE FROM local_students WHERE grade = ? AND class_num = ?", grade, classNum)
+	if err == nil {
+		a.QueueOfflineAction("DELETE", fmt.Sprintf("/api/core/users/students-by-class?grade=%d&class_num=%d", grade, classNum), "")
+	}
+	return err
 }

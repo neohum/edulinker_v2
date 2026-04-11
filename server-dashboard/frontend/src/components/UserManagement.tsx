@@ -144,6 +144,46 @@ export default function UserManagement() {
     ));
   };
 
+  const handleHardDeleteAll = () => {
+    if (inactiveUsers.length === 0) {
+      toast.info('삭제할 비활성 사용자가 없습니다.');
+      return;
+    }
+    toast.warning(`비활성화된 사용자 ${inactiveUsers.length}명을 모두 영구 삭제하시겠습니까? (복구 불가)`, {
+      action: {
+        label: '전체 영구 삭제',
+        onClick: async () => {
+          try {
+            await (window as any).go.main.App.HardDeleteAllInactiveUsers();
+            toast.success(`비활성 사용자 전체 영구 삭제 완료`);
+            fetchUsers();
+          } catch (err: any) { toast.error(`실패: ${err.message || err}`); }
+        }
+      },
+      cancel: { label: '취소', onClick: () => { } }
+    });
+  };
+
+  const handleDeactivateAllFiltered = () => {
+    if (filtered.length === 0) {
+      toast.info('비활성화할 사용자가 없습니다.');
+      return;
+    }
+    toast.warning(`현재 필터링된 활성 사용자 ${filtered.length}명을 모두 비활성화하시겠습니까?`, {
+      action: {
+        label: '전체 비활성화',
+        onClick: async () => {
+          try {
+            await (window as any).go.main.App.DeactivateMultipleDBUsers(filtered.map(u => u.id));
+            toast.success(`필터링된 사용자 전체 비활성화 완료`);
+            fetchUsers();
+          } catch (err: any) { toast.error(`실패: ${err.message || err}`); }
+        }
+      },
+      cancel: { label: '취소', onClick: () => { } }
+    });
+  };
+
   const handleEditPosition = (id: string, currentPosition?: string) => {
     toast.custom((t) => (
       <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-[320px]">
@@ -240,12 +280,30 @@ export default function UserManagement() {
           className="w-20 px-3 py-2 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-300 dark:border-slate-700 text-sm outline-none focus:border-indigo-500 dark:text-slate-200" min="1" max="20" />
       </div>
 
+      {tab === 'active' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-indigo-200 dark:border-indigo-800/30 bg-indigo-50 dark:bg-indigo-900/10">
+          <p className="text-sm text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
+            <i className="fi fi-rr-info" />
+            학년도 변경 등, 현재 필터링된 전체 사용자를 일괄 비활성화할 수 있습니다.
+          </p>
+          <button onClick={handleDeactivateAllFiltered} disabled={filtered.length === 0}
+            className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap">
+            <i className="fi fi-rr-ban" /> 필터링된 사용자 전체 비활성화
+          </button>
+        </div>
+      )}
+
       {tab === 'inactive' && (
-        <p className="text-sm text-amber-700 dark:text-amber-400 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/10 flex items-center gap-2">
-          <i className="fi fi-rr-info" />
-          비활성 사용자는 로그인이 불가능합니다. 재활성화하거나 영구 삭제할 수 있습니다.
-          <strong className="ml-1 text-rose-600">영구 삭제는 복구 불가입니다.</strong>
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/10">
+          <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+            <i className="fi fi-rr-info" />
+            비활성 사용자는 로그인이 불가능하며, 영구 삭제 시 복구 불가입니다.
+          </p>
+          <button onClick={handleHardDeleteAll} disabled={inactiveUsers.length === 0}
+            className="text-xs px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap">
+            <i className="fi fi-rr-trash" /> 비활성 사용자 전체 영구 삭제
+          </button>
+        </div>
       )}
 
       {loading ? (

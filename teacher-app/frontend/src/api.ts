@@ -27,19 +27,29 @@ window.addEventListener('server-offline', () => { isServerOnline = false; });
  * Gets the JWT token from Wails Go backend (per-instance) or localStorage (browser dev).
  * Wails token takes priority to prevent cross-instance token sharing via localStorage.
  */
+/**
+ * Gets the JWT token from Wails Go backend (per-instance) or localStorage (browser dev).
+ * Wails token takes priority to prevent cross-instance token sharing via localStorage.
+ */
 export async function getToken(): Promise<string> {
   // 1. Try getting from Wails Go backend first (per-instance, no sharing)
+  const wailsApp = (window as any).go?.main?.App
   try {
-    const wailsApp = (window as any).go?.main?.App
     if (wailsApp?.GetToken) {
       const token = await wailsApp.GetToken()
       if (token) return token
     }
   } catch { }
 
-  // 2. Fallback to localStorage (browser dev mode only)
+  // 2. Fallback to localStorage
   const stored = localStorage.getItem('token')
-  if (stored) return stored
+  if (stored) {
+    // If backend lost its token (e.g. wails dev hot-reload), push the localStorage token back to it
+    try {
+      if (wailsApp?.SetToken) wailsApp.SetToken(stored)
+    } catch { }
+    return stored
+  }
 
   return ''
 }

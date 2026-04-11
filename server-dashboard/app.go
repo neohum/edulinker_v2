@@ -272,7 +272,9 @@ func (a *App) StartServer() error {
 
 func (a *App) ensureLocalInfra() {
 	userProfile := os.Getenv("USERPROFILE")
-	if userProfile == "" { return }
+	if userProfile == "" {
+		return
+	}
 
 	if !checkPort("6379") {
 		redisExe := filepath.Join(userProfile, "scoop", "apps", "redis", "current", "redis-server.exe")
@@ -822,6 +824,28 @@ func (a *App) DeleteDBUser(id string) error {
 	return err
 }
 
+func (a *App) DeactivateMultipleDBUsers(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("UPDATE users SET is_active = false WHERE id IN (%s)", strings.Join(placeholders, ","))
+	_, err = db.Exec(query, args...)
+	return err
+}
+
 func (a *App) GetInactiveDBUsers() ([]DBUser, error) {
 	db, err := getDBConn()
 	if err != nil {
@@ -941,6 +965,60 @@ func (a *App) HardDeleteDBUser(id string) error {
 	if _, err := tx.Exec("DELETE FROM users WHERE id = $1", id); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("사용자 본체 레코드 영구 삭제 실패: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+func (a *App) HardDeleteAllInactiveUsers() error {
+	db, err := getDBConn()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	queries := []struct {
+		desc string
+		sql  string
+	}{
+		{"sendoc 참조 해제", "UPDATE sendocs SET author_id = NULL WHERE author_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"schoolevent 참조 해제", "UPDATE school_events SET author_id = NULL WHERE author_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"gatong 참조 해제", "UPDATE gatongs SET author_id = NULL WHERE author_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"학부모-학생 연결", "DELETE FROM parent_students WHERE parent_id IN (SELECT id FROM users WHERE is_active = false) OR student_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"sendoc 수신자", "DELETE FROM sendoc_recipients WHERE user_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"gatong 응답", "DELETE FROM gatong_responses WHERE user_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"schoolevent 참여", "DELETE FROM school_event_participants WHERE user_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"ai 분석 기록", "DELETE FROM ai_analysis_logs WHERE teacher_id IN (SELECT id FROM users WHERE is_active = false) OR target_student_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"학생 상담 기록", "DELETE FROM student_counselings WHERE teacher_id IN (SELECT id FROM users WHERE is_active = false) OR student_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"학생 결석 기록", "DELETE FROM student_absences WHERE student_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"교사 인사 기록", "DELETE FROM teacher_hr_records WHERE teacher_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"교육과정 계획", "DELETE FROM curriculum_plans WHERE teacher_id IN (SELECT id FROM users WHERE is_active = false)"},
+		{"교육과정 평가", "DELETE FROM curriculum_evaluations WHERE teacher_id IN (SELECT id FROM users WHERE is_active = false) OR student_id IN (SELECT id FROM users WHERE is_active = false)"},
+	}
+
+	for _, q := range queries {
+		tx.Exec("SAVEPOINT delete_all_sp")
+		if _, err := tx.Exec(q.sql); err != nil {
+			if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "릴레이션") || strings.Contains(err.Error(), "42P01") {
+				tx.Exec("ROLLBACK TO SAVEPOINT delete_all_sp")
+			} else {
+				tx.Rollback()
+				return fmt.Errorf("%s 처리 중 DB 오류: %w", q.desc, err)
+			}
+		} else {
+			tx.Exec("RELEASE SAVEPOINT delete_all_sp")
+		}
+	}
+
+	// Finally, Hard delete the inactive users themselves
+	if _, err := tx.Exec("DELETE FROM users WHERE is_active = false"); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("비활성 사용자 본체 레코드 영구 삭제 실패: %w", err)
 	}
 
 	return tx.Commit()

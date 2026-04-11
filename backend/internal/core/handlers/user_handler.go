@@ -36,18 +36,18 @@ type CreateUserRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Name        string  `json:"name,omitempty"`
-	Phone       string  `json:"phone,omitempty"`
-	ClassPhone  string  `json:"class_phone,omitempty"`
-	Email       string  `json:"email,omitempty"`
-	IsActive    *bool   `json:"is_active,omitempty"`
-	Grade       *int    `json:"grade,omitempty"`
-	ClassNum    *int    `json:"class_num,omitempty"`
-	Department  *string `json:"department,omitempty"`
-	TaskName    *string `json:"task_name,omitempty"`
-	Position    *string `json:"position,omitempty"`
-	Gender      *string `json:"gender,omitempty"`
-	Number      *int    `json:"number,omitempty"`
+	Name         string  `json:"name,omitempty"`
+	Phone        string  `json:"phone,omitempty"`
+	ClassPhone   string  `json:"class_phone,omitempty"`
+	Email        string  `json:"email,omitempty"`
+	IsActive     *bool   `json:"is_active,omitempty"`
+	Grade        *int    `json:"grade,omitempty"`
+	ClassNum     *int    `json:"class_num,omitempty"`
+	Department   *string `json:"department,omitempty"`
+	TaskName     *string `json:"task_name,omitempty"`
+	Position     *string `json:"position,omitempty"`
+	Gender       *string `json:"gender,omitempty"`
+	Number       *int    `json:"number,omitempty"`
 	PIN          *string `json:"pin,omitempty"`
 	ParentPhone  *string `json:"parent_phone,omitempty"`
 	ParentPhone2 *string `json:"parent_phone2,omitempty"`
@@ -69,13 +69,14 @@ type ImportStudentResult struct {
 }
 
 type AddStudentRequest struct {
-	Grade       int    `json:"grade"`
-	ClassNum    int    `json:"class_num"`
-	Number      int    `json:"number"`
-	Name        string `json:"name"`
-	Gender      string `json:"gender,omitempty"`
-	PIN         string `json:"pin,omitempty"`
-	ParentPhone string `json:"parent_phone,omitempty"`
+	Grade        int    `json:"grade"`
+	ClassNum     int    `json:"class_num"`
+	Number       int    `json:"number"`
+	Name         string `json:"name"`
+	Gender       string `json:"gender,omitempty"`
+	PIN          string `json:"pin,omitempty"`
+	ParentPhone  string `json:"parent_phone,omitempty"`
+	ParentPhone2 string `json:"parent_phone2,omitempty"`
 }
 
 // ── Handlers ──
@@ -390,21 +391,43 @@ func (h *UserHandler) AddStudent(c *fiber.Ctx) error {
 	var existing models.User
 	if h.db.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ? AND number = ?",
 		schoolID, models.RoleStudent, req.Grade, req.ClassNum, req.Number).First(&existing).Error == nil {
+
+		// If the existing student is deactivated, we can safely reactivate and update them instead of returning Conflict
+		if !existing.IsActive {
+			existing.IsActive = true
+			existing.Name = req.Name
+			existing.Gender = req.Gender
+			if req.ParentPhone != "" {
+				existing.ParentPhone = req.ParentPhone
+			}
+			if req.ParentPhone2 != "" {
+				existing.ParentPhone2 = req.ParentPhone2
+			}
+			if req.PIN != "" {
+				if pinHash, err := bcrypt.GenerateFromPassword([]byte(req.PIN), bcrypt.DefaultCost); err == nil {
+					existing.PIN = string(pinHash)
+				}
+			}
+			h.db.Save(&existing)
+			return c.Status(fiber.StatusCreated).JSON(existing)
+		}
+
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": fmt.Sprintf("%d학년 %d반 %d번은 이미 등록되어 있습니다 (%s)", req.Grade, req.ClassNum, req.Number, existing.Name),
 		})
 	}
 
 	student := models.User{
-		SchoolID:    schoolID,
-		Name:        req.Name,
-		Role:        models.RoleStudent,
-		Grade:       req.Grade,
-		Class:       req.ClassNum,
-		Number:      req.Number,
-		Gender:      req.Gender,
-		ParentPhone: req.ParentPhone,
-		IsActive:    true,
+		SchoolID:     schoolID,
+		Name:         req.Name,
+		Role:         models.RoleStudent,
+		Grade:        req.Grade,
+		Class:        req.ClassNum,
+		Number:       req.Number,
+		Gender:       req.Gender,
+		ParentPhone:  req.ParentPhone,
+		ParentPhone2: req.ParentPhone2,
+		IsActive:     true,
 	}
 
 	pinHash, err := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
@@ -507,7 +530,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 		gradeStr := strings.TrimSpace(row[gradeCol])
 		classStr := strings.TrimSpace(row[classCol])
 		numStr := strings.TrimSpace(row[numCol])
-		
+
 		gender := ""
 		gRaw := ""
 		if genderCol >= 0 && genderCol < len(row) {
@@ -555,7 +578,7 @@ func (h *UserHandler) ImportStudentsExcel(c *fiber.Ctx) error {
 		}
 
 		pin := "1234"
-		
+
 		applogger.Log.Info().
 			Int("row", rowNum).
 			Str("name", name).
@@ -852,9 +875,51 @@ func (h *UserHandler) DeleteStudentsBatch(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "삭제할 학생 ID를 지정해주세요"})
 	}
 
-	result := h.db.Model(&models.User{}).Where("school_id = ? AND role = ? AND id IN ?",
-		schoolID, models.RoleStudent, req.IDs).Update("is_active", false)
+	// Execute cascade deletion of teacher-related student records
+	tx := h.db.Begin()
 
+	queries := []struct {
+		desc string
+		sql  string
+	}{
+		{"sendoc 참조 해제", "UPDATE sendocs SET author_id = NULL WHERE author_id IN ?"},
+		{"schoolevent 참조 해제", "UPDATE school_events SET author_id = NULL WHERE author_id IN ?"},
+		{"gatong 참조 해제", "UPDATE gatongs SET author_id = NULL WHERE author_id IN ?"},
+		{"학부모-학생 연결", "DELETE FROM parent_students WHERE parent_id IN ? OR student_id IN ?"},
+		{"sendoc 수신자", "DELETE FROM sendoc_recipients WHERE user_id IN ?"},
+		{"gatong 응답", "DELETE FROM gatong_responses WHERE user_id IN ?"},
+		{"schoolevent 참여", "DELETE FROM school_event_participants WHERE user_id IN ?"},
+		{"ai 분석 기록", "DELETE FROM ai_analysis_logs WHERE teacher_id IN ? OR target_student_id IN ?"},
+		{"학생 상담 기록", "DELETE FROM student_counselings WHERE teacher_id IN ? OR student_id IN ?"},
+		{"학생 결석 기록", "DELETE FROM student_absences WHERE student_id IN ?"},
+		{"출결 기록", "DELETE FROM attendance_records WHERE student_id IN ?"},
+		{"교사 인사 기록", "DELETE FROM teacher_hr_records WHERE teacher_id IN ?"},
+		{"교육과정 계획", "DELETE FROM curriculum_plans WHERE teacher_id IN ?"},
+		{"교육과정 평가", "DELETE FROM curriculum_evaluations WHERE teacher_id IN ? OR student_id IN ?"},
+	}
+
+	for _, q := range queries {
+		tx.Exec("SAVEPOINT delete_all_sp")
+		args := []interface{}{req.IDs}
+		if strings.Contains(q.sql, "OR") {
+			args = append(args, req.IDs)
+		}
+		if err := tx.Exec(q.sql, args...).Error; err != nil {
+			if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "릴레이션") || strings.Contains(err.Error(), "42P01") {
+				tx.Exec("ROLLBACK TO SAVEPOINT delete_all_sp")
+			} else {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("%s 처리 중 DB 오류: %v", q.desc, err)})
+			}
+		} else {
+			tx.Exec("RELEASE SAVEPOINT delete_all_sp")
+		}
+	}
+
+	// Finally, hard delete the students themselves
+	result := tx.Where("school_id = ? AND role = ? AND id IN ?", schoolID, models.RoleStudent, req.IDs).Delete(&models.User{})
+
+	tx.Commit()
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("학생 %d명이 삭제되었습니다", result.RowsAffected),
 		"deleted": result.RowsAffected,
@@ -875,8 +940,57 @@ func (h *UserHandler) DeleteStudentsByClass(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "학년과 반을 지정해주세요"})
 	}
 
-	result := h.db.Model(&models.User{}).Where("school_id = ? AND role = ? AND grade = ? AND class_num = ?",
-		schoolID, models.RoleStudent, grade, classNum).Update("is_active", false)
+	// First, lookup the matching student IDs for cascading deletes
+	var studentIDs []uuid.UUID
+	h.db.Model(&models.User{}).Where("school_id = ? AND role = ? AND grade = ? AND class_num = ?",
+		schoolID, models.RoleStudent, grade, classNum).Pluck("id", &studentIDs)
+
+	tx := h.db.Begin()
+
+	if len(studentIDs) > 0 {
+		queries := []struct {
+			desc string
+			sql  string
+		}{
+			{"sendoc 참조 해제", "UPDATE sendocs SET author_id = NULL WHERE author_id IN ?"},
+			{"schoolevent 참조 해제", "UPDATE school_events SET author_id = NULL WHERE author_id IN ?"},
+			{"gatong 참조 해제", "UPDATE gatongs SET author_id = NULL WHERE author_id IN ?"},
+			{"학부모-학생 연결", "DELETE FROM parent_students WHERE parent_id IN ? OR student_id IN ?"},
+			{"sendoc 수신자", "DELETE FROM sendoc_recipients WHERE user_id IN ?"},
+			{"gatong 응답", "DELETE FROM gatong_responses WHERE user_id IN ?"},
+			{"schoolevent 참여", "DELETE FROM school_event_participants WHERE user_id IN ?"},
+			{"ai 분석 기록", "DELETE FROM ai_analysis_logs WHERE teacher_id IN ? OR target_student_id IN ?"},
+			{"학생 상담 기록", "DELETE FROM student_counselings WHERE teacher_id IN ? OR student_id IN ?"},
+			{"학생 결석 기록", "DELETE FROM student_absences WHERE student_id IN ?"},
+			{"출결 기록", "DELETE FROM attendance_records WHERE student_id IN ?"},
+			{"교사 인사 기록", "DELETE FROM teacher_hr_records WHERE teacher_id IN ?"},
+			{"교육과정 계획", "DELETE FROM curriculum_plans WHERE teacher_id IN ?"},
+			{"교육과정 평가", "DELETE FROM curriculum_evaluations WHERE teacher_id IN ? OR student_id IN ?"},
+		}
+
+		for _, q := range queries {
+			tx.Exec("SAVEPOINT delete_all_sp")
+			args := []interface{}{studentIDs}
+			if strings.Contains(q.sql, "OR") {
+				args = append(args, studentIDs)
+			}
+			if err := tx.Exec(q.sql, args...).Error; err != nil {
+				if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "릴레이션") || strings.Contains(err.Error(), "42P01") {
+					tx.Exec("ROLLBACK TO SAVEPOINT delete_all_sp")
+				} else {
+					tx.Rollback()
+					return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("%s 처리 중 DB 오류: %v", q.desc, err)})
+				}
+			} else {
+				tx.Exec("RELEASE SAVEPOINT delete_all_sp")
+			}
+		}
+	}
+
+	result := tx.Where("school_id = ? AND role = ? AND grade = ? AND class_num = ?",
+		schoolID, models.RoleStudent, grade, classNum).Delete(&models.User{})
+
+	tx.Commit()
 
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("%d학년 %d반 학생 %d명이 삭제되었습니다", grade, classNum, result.RowsAffected),

@@ -40,25 +40,64 @@ export default function CounselingPage({ user }: CounselingPageProps) {
     content: '',
   })
 
-  useEffect(() => { fetchStudents() }, [])
+  useEffect(() => { fetchStudents() }, [user])
   useEffect(() => { if (selectedStudent) fetchRecords(selectedStudent.id) }, [selectedStudent])
 
   const fetchStudents = async () => {
+    const grade = user?.grade || 0
+    const classNum = user?.classNum || 0
+    if (!grade || !classNum) {
+      setStudents([])
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      // Offline-first Local SQLite Data
+      if ((window as any).go?.main?.App?.GetLocalStudents) {
+        const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+        if (json && json !== '[]') {
+          try {
+            const list = JSON.parse(json)
+            setStudents(list)
+          } catch (e) { }
+        }
+      }
+    } finally {
+      setLoading(false)
+    }
+
+    // Background sync
+    syncNetworkStudents(grade, classNum)
+  }
+
+  const syncNetworkStudents = async (grade: number, classNum: number) => {
+    if (!navigator.onLine) return
     try {
       let url = '/api/core/users?role=student&page_size=200'
-      if (user.grade) url += `&grade=${user.grade}`
-      if (user.classNum) url += `&class_num=${user.classNum}`
+      if (grade) url += `&grade=${grade}`
+      if (classNum) url += `&class_num=${classNum}`
       const res = await apiFetch(url)
       if (res.ok) {
         const data = await res.json()
         const list: Student[] = (data.users || []).filter((s: any) =>
-          (!user.grade || s.grade === user.grade) && (!user.classNum || s.class_num === user.classNum)
+          (!grade || s.grade === grade) && (!classNum || s.class_num === classNum)
         )
         list.sort((a, b) => a.number - b.number)
-        setStudents(list)
+
+        if ((window as any).go?.main?.App?.SyncLocalStudentsConfig) {
+          await (window as any).go.main.App.SyncLocalStudentsConfig(grade, classNum, JSON.stringify(list))
+          // Refresh from local db
+          const json = await (window as any).go.main.App.GetLocalStudents(grade, classNum)
+          if (json && json !== '[]') {
+            try { setStudents(JSON.parse(json)) } catch (e) { }
+          }
+        } else {
+          setStudents(list)
+        }
       }
     } catch (e) { console.error(e) }
-    finally { setLoading(false) }
   }
 
   const fetchRecords = async (studentId: string) => {

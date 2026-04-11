@@ -1,0 +1,5 @@
+src/pages/SendocPage.tsx(224,13): error TS2322: Type '{ canvasRef: any; zoom: number; viewMode: "designer"; backgroundUrl: string | null; fields: DocField[]; setFields: Dispatch<SetStateAction<DocField[]>>; ... 14 more ...; setCurrentPageIdx: Dispatch<...>; }' is not assignable to type 'IntrinsicAttributes & SendocDesignerCanvasProps'.
+  Property 'canvasRef' does not exist on type 'IntrinsicAttributes & SendocDesignerCanvasProps'.
+src/pages/SendocPage.tsx(236,97): error TS2322: Type '{ allUsers: any[]; selectedUsers: string[]; setSelectedUsers: Dispatch<SetStateAction<string[]>>; onClose: () => void; onSend: () => string | number | undefined; isSending: boolean; initialTitle: string; onTitleChange: Dispatch<...>; fields: DocField[]; setFields: Dispatch<...>; }' is not assignable to type 'IntrinsicAttributes & SendocRecipientModalProps'.
+  Property 'onClose' does not exist on type 'IntrinsicAttributes & SendocRecipientModalProps'.
+src/pages/SendocPage.tsx(273,131): error TS2322: Type '(htmlContent: string) => Promise<void>' is not assignable to type '() => void'.

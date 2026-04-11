@@ -590,8 +590,14 @@ function LoginPage({ onLogin }: LoginPageProps) {
               className="btn-primary"
               type="submit"
               disabled={loading}
+              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
             >
-              {loading ? '처리 중...' : (isRegister ? '회원 가입' : '로그인')}
+              {loading ? (
+                <>
+                  <i className="fi fi-rr-spinner" style={{ animation: 'spin 1s linear infinite' }} />
+                  처리 중...
+                </>
+              ) : (isRegister ? '회원 가입' : '로그인')}
             </button>
 
             <div style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.875rem' }}>

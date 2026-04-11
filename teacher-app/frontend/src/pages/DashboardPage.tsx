@@ -150,7 +150,7 @@ function DashboardPage({ user, onLogout, onUpdateUser }: DashboardPageProps) {
     }
   }
 
-  const handleNavigate = (page: string) => {
+  const handleNavigate = async (page: string) => {
     if ((window as any).isAIGenerating) {
       if (!window.confirm('AI 답변 생성이 진행 중입니다. 다른 메뉴로 이동하면 생성이 즉시 중단됩니다. 그래도 이동하시겠습니까?')) {
         return;
@@ -160,6 +160,27 @@ function DashboardPage({ user, onLogout, onUpdateUser }: DashboardPageProps) {
       }
       (window as any).isAIGenerating = false;
     }
+
+    if (['attendance', 'counseling', 'behavior-opinion', 'curriculum'].includes(page)) {
+      try {
+        const studentsRaw = await (window as any).go.main.App.GetLocalStudents(Number(user?.grade || 0), Number(user?.classNum || 0));
+        let students = [];
+        if (typeof studentsRaw === 'string') {
+          try { students = JSON.parse(studentsRaw); } catch (e) { }
+        } else if (Array.isArray(studentsRaw)) {
+          students = studentsRaw;
+        }
+
+        if (!students || students.length === 0) {
+          toast.error('학생 관리에 학생이 1명도 등록되어 있지 않습니다. 학생 관리에 학생을 먼저 등록해 주세요.');
+          setCurrentPage('studentmgmt');
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to check students before navigation', e);
+      }
+    }
+
     setCurrentPage(page as PageView);
   }
 
